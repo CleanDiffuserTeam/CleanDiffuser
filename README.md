@@ -10,7 +10,7 @@
 
 <p align="center">
     <br>
-    <img src="assets/github_logo.jpg" width="200"/>
+    <img src="assets/github_logo.jpg" width="300"/>
     <br>
 <p>
 
@@ -22,7 +22,7 @@
 ·
 <a href="https://cleandiffuserteam.github.io/CleanDiffuserDocs/">Documentation</a>
 ·
-<a href="">中文版本</a>
+<a href="README_ZH.md">中文版</a>
 ·
 </p>
 
@@ -34,7 +34,7 @@
 - 📈 Wandb logging and Hydra configuration
 - 🌏 Unified environmental interface and efficient dataloader
 
-We strongly recommend reading [papers]() and [documents](https://github.com/CleanDiffuserTeam/CleanDiffuserDocs) to learn more about CleanDiffuser and its design philosophy.
+We strongly recommend reading [papers]() and [documents](https://cleandiffuserteam.github.io/CleanDiffuserDocs/) to learn more about CleanDiffuser and its design philosophy.
 
 <p align="center">
     <br>
@@ -49,7 +49,7 @@ We strongly recommend reading [papers]() and [documents](https://github.com/Clea
 <li><a href="#getting-started">Getting Started</a></li>
 <li><a href="#usage">Usage</a></li>
 <li><a href="#feature">Feature</a></li>
-<li><a href="#feature">Implemented Components</a></li>
+<li><a href="#algorithm">Implemented Components</a></li>
 <li><a href="#roadmap">Roadmap</a></li>
 <li><a href="#contributing">Contributing</a></li>
 <li><a href="#license">License</a></li>
