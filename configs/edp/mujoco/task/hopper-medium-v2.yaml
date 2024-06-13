@@ -1,0 +1,4 @@
+env_name: "hopper-medium-v2"
+
+weight_temperature: 300.
+eta: 1.

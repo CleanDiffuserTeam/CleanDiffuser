@@ -1,0 +1,4 @@
+env_name: "antmaze-medium-diverse-v2"
+
+weight_temperature: 5.
+eta: 3.0

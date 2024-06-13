@@ -1,0 +1,44 @@
+defaults:
+  - _self_
+  - task: kitchen-mixed-v0
+
+pipeline_name: dql_d4rl_kitchen
+mode: train
+seed: 0
+device: cuda:0
+
+# Environment
+discount: 0.99
+
+# Actor
+solver: ddpm
+diffusion_steps: 5
+sampling_steps: 5
+predict_noise: True
+ema_rate: 0.995
+actor_learning_rate: 0.0003
+
+# Critic
+hidden_dim: 256
+critic_learning_rate: 0.0003
+
+# Training
+gradient_steps: 2000000
+batch_size: 256
+ema_update_interval: 5
+log_interval: 1000
+save_interval: 100000
+
+# Inference
+ckpt: latest
+num_envs: 50
+num_episodes: 3
+num_candidates: 50
+temperature: 0.5
+use_ema: True
+
+# hydra
+hydra:
+  job:
+    chdir: false
+

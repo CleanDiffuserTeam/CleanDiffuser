@@ -1,0 +1,4 @@
+env_name: "kitchen-partial-v0"
+target_return: 0.85
+w_cfg: 1.0
+horizon: 32
