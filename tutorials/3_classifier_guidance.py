@@ -11,6 +11,41 @@ from cleandiffuser.nn_classifier import BaseNNClassifier, MLPNNClassifier
 from cleandiffuser.nn_diffusion import PearceMlp
 
 
+"""
+In this tutorial, we will review the applications of classifier guidance (CG) and how to customize it for a diffusion model. 
+
+Compared to CFG, CG is slightly more complex. CG requires an additional classifier that is independent of the diffusion model. 
+This classifier needs to predict the log probability of noisy data x_t matching condition c, i.e.,
+
+Classifier.logp
+Inputs:
+    - x_t: (b, *x_shape)
+    - t:   (b,)
+    - c:   (b, *c_shape)
+
+Outputs:
+    - logp(c|x_t, t): (b, 1).
+    
+Therefore, CG is more flexible than CFG. Its functionality entirely depends on how you define the log probability.
+In this tutorial, we will attempt to use CG to replace CFG for sampling p(a|s).
+Note that
+
+\nabla\log p(a_t|s) = \nabla\log p(a_t) + \nabla\log p(s|a_t),
+
+where the first term on the right side represents directly learning the action distribution using the diffusion model, 
+and the second term represents the classifier.
+We can define the log probability as
+
+logp(s|a_t, t) = - MSE(pred_state - state), pred_state = MLP(a_t, t).
+
+In this context, our remaining tasks are clear: 
+1. Use an MLP to predict the state to which a_t belongs. 
+2. 
+"""
+
+"""
+Use an MLP to predict the state to which a_t belongs. 
+"""
 class MyObsNNClassifier(BaseNNClassifier):
     """ pred_obs = nn_classifier(act, t) """
     def __init__(self, obs_dim, act_dim, emb_dim, timestep_emb_type):
@@ -24,7 +59,9 @@ class MyObsNNClassifier(BaseNNClassifier):
         pred_obs = self.mlp(torch.cat([x, self.map_noise(t)], dim=-1))
         return pred_obs
 
-
+"""
+Define logp using negative MSE.
+"""
 class MyObsClassifier(BaseClassifier):
     """ logp(s | a, t) = - MSE(pred_obs - obs) """
     def __init__(self, nn_classifier: MyObsNNClassifier, device: str = "cpu"):
@@ -55,6 +92,12 @@ if __name__ == "__main__":
     # --------------- Network Architecture -----------------
     nn_diffusion = PearceMlp(act_dim, To=0, emb_dim=64, hidden_dim=256, timestep_emb_type="positional")
 
+    """
+    `MyObsNNClassifier` and `MyObsClassifier` use a MLP for prediction and define logp using negative MSE.
+    This is a simple and common design. 
+    To avoid rewriting from scratch each time we use it, we can also utilize the pre-defined `MLPNNClassifier` and `MSEClassifier` in CleanDiffuser. 
+    The following two implementations are equivalent.
+    """
     if use_customized_classifier:
         nn_classifier = MyObsNNClassifier(obs_dim, act_dim, 32, "positional")
         classifier = MyObsClassifier(nn_classifier, device)
@@ -90,14 +133,14 @@ if __name__ == "__main__":
                   f'avg_loss_classifier: {avg_loss_classifier / 1000 :.3f}')
             avg_loss_diffusion, avg_loss_classifier = 0., 0.
 
-    savepath = "tutorials/results/3_CG/"
+    savepath = "tutorials/results/3_classifier_guidance/"
     if not os.path.exists(savepath):
         os.makedirs(savepath)
     actor.save(savepath + "diffusion.pt")
     classifier.save(savepath + "classifier.pt")
 
     # -------------- Inference -----------------
-    savepath = "tutorials/results/3_CG/"
+    savepath = "tutorials/results/3_classifier_guidance/"
     actor.load(savepath + "diffusion.pt")
     classifier.load(savepath + "classifier.pt")
     actor.eval()
@@ -126,3 +169,11 @@ if __name__ == "__main__":
 
     print(f'Mean score: {np.clip(cum_rew, 0., 4.).mean() * 25.}')
     env_eval.close()
+
+"""
+You may have noticed that the algorithm's performance is very poor. 
+I believe this is quite understandable.
+Our way of defining logp assumes that the state to which an action belongs follows a Gaussian distribution, which is quite unreasonable. 
+It can be imagined that the agent may use similar actions across many different states. 
+Although CG can be useful in certain specific designs, it may not work well in the context of state-condition relationships!
+"""
