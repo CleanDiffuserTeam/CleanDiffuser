@@ -18,7 +18,7 @@
 
 <p align="center">
 ·
-<a href="">ArXiv</a>
+<a href="assets/CleanDiffuser.pdf">Paper</a>
 ·
 <a href="https://cleandiffuserteam.github.io/CleanDiffuserDocs/">Documentation</a>
 ·
@@ -34,7 +34,7 @@
 - 📈 Wandb logging and Hydra configuration
 - 🌏 Unified environmental interface and efficient dataloader
 
-We strongly recommend reading [papers]() and [documents](https://cleandiffuserteam.github.io/CleanDiffuserDocs/) to learn more about CleanDiffuser and its design philosophy.
+We strongly recommend reading [papers](assets/CleanDiffuser.pdf) and [documents](https://cleandiffuserteam.github.io/CleanDiffuserDocs/) to learn more about CleanDiffuser and its design philosophy.
 
 <p align="center">
     <br>
