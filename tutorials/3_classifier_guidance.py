@@ -10,7 +10,6 @@ from cleandiffuser.diffusion.diffusionsde import DiscreteDiffusionSDE
 from cleandiffuser.nn_classifier import BaseNNClassifier, MLPNNClassifier
 from cleandiffuser.nn_diffusion import PearceMlp
 
-
 """
 In this tutorial, we will review the applications of classifier guidance (CG) and how to customize it for a diffusion model. 
 
@@ -46,8 +45,11 @@ In this context, our remaining tasks are clear:
 """
 Use an MLP to predict the state to which a_t belongs. 
 """
+
+
 class MyObsNNClassifier(BaseNNClassifier):
     """ pred_obs = nn_classifier(act, t) """
+
     def __init__(self, obs_dim, act_dim, emb_dim, timestep_emb_type):
         super().__init__(emb_dim, timestep_emb_type)
         self.mlp = nn.Sequential(
@@ -59,11 +61,15 @@ class MyObsNNClassifier(BaseNNClassifier):
         pred_obs = self.mlp(torch.cat([x, self.map_noise(t)], dim=-1))
         return pred_obs
 
+
 """
 Define logp using negative MSE.
 """
+
+
 class MyObsClassifier(BaseClassifier):
     """ logp(s | a, t) = - MSE(pred_obs - obs) """
+
     def __init__(self, nn_classifier: MyObsNNClassifier, device: str = "cpu"):
         super().__init__(
             nn_classifier, ema_rate=0.995, grad_clip_norm=None, optim_params=None, device=device)

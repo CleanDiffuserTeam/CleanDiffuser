@@ -31,7 +31,6 @@ In tutorial 1, we simply set dropout=0 because we directly fit the diffusion mod
 In this tutorial, we attempt to customize a CFG version.
 """
 
-
 """
 Let's begin by customizing a `nn_condition`, which aims to encode the condition variable into features for `nn_diffusion` to use. 
 Imaging a complex scenario where our condition variable may include 3D point clouds, language instructions, images, and so on, 
@@ -52,6 +51,8 @@ and during training, generate a mask of shape (b, 1) with `dropout` probability,
 
 The remaining works are the same as tutorial 1. We just need to replace the original `nn_condition` with `MyObsNNCondition`.
 """
+
+
 class MyObsNNCondition(BaseNNCondition):
     def __init__(self, obs_dim, emb_dim, hidden_dim, dropout=0.2):
         super().__init__()
@@ -84,7 +85,7 @@ if __name__ == "__main__":
     Fortunately, CleanDiffuser has already implemented an `MLPCondition`, which can easily achieve the same effect. 
     The following two `nn_condition` are equivalent.
     """
-    
+
     if use_customized_nn_condition:
         nn_condition = MyObsNNCondition(obs_dim, emb_dim=64, hidden_dim=64, dropout=0.2)
     else:
