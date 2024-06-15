@@ -22,7 +22,7 @@ For sampling, we intend to use DDPM.
 
 if __name__ == "__main__":
     
-    device = "cuda:0"
+    device = "cuda:2"
     
     # --------------- Setting Up the Environment ---------------
     
@@ -74,7 +74,7 @@ if __name__ == "__main__":
         nn_diffusion, nn_condition, predict_noise=False, optim_params={"lr": 3e-4},
         x_max=+1. * torch.ones((1, act_dim)),
         x_min=-1. * torch.ones((1, act_dim)),
-        diffusion_steps=5, ema_rate=0.9999, device=device)
+        diffusion_steps=50, ema_rate=0.9999, device=device)
     
     # --------------- Training -------------------
     actor.train()
@@ -107,6 +107,17 @@ if __name__ == "__main__":
     savepath = "tutorials/results/1_a_minimal_DBC_implementation/"
     actor.load(savepath + "diffusion.pt")
     actor.eval()
+    
+    # Since we use `DiscreteDiffusionSDE`, the sampling steps should be between [1, diffusion steps], and here we default to selecting 5 steps. 
+    # We can obtain the supported solvers from `supported_solvers`, for example:
+    #
+    # >>> print(actor.supported_solvers)
+    # ['ddpm', 'ddim', 'ode_dpmsolver_1', 'ode_dpmsolver++_1', 'ode_dpmsolver++_2M', 'sde_dpmsolver_1', 'sde_dpmsolver++_1', 'sde_dpmsolver++_2M']
+    #
+    # and here we default to selecting `ddpm`.
+    
+    sampling_steps = 5
+    solver = "ddpm"
 
     # concurrently evaluate 50 environments
     env_eval = gym.vector.make("kitchen-complete-v0", num_envs=50)
@@ -117,7 +128,7 @@ if __name__ == "__main__":
         
         # sample with DDPM and 5 sampling steps
         act, log = actor.sample(
-            prior, solver="ddpm", n_samples=50, sample_steps=5,
+            prior, solver=solver, n_samples=50, sample_steps=sampling_steps,
             temperature=0.5, w_cfg=1.0,
             condition_cfg=torch.tensor(obs, device=device, dtype=torch.float32))
         act = act.cpu().numpy()
