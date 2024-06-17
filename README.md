@@ -18,6 +18,8 @@
 
 <p align="center">
 ·
+<a href="https://arxiv.org/abs/2406.09509">ArXiv</a>
+·
 <a href="assets/CleanDiffuser.pdf">Paper</a>
 ·
 <a href="https://cleandiffuserteam.github.io/CleanDiffuserDocs/">Documentation</a>
@@ -34,7 +36,7 @@
 - 📈 Wandb logging and Hydra configuration
 - 🌏 Unified environmental interface and efficient dataloader
 
-We strongly recommend reading [papers](assets/CleanDiffuser.pdf) and [documents](https://cleandiffuserteam.github.io/CleanDiffuserDocs/) to learn more about CleanDiffuser and its design philosophy.
+We strongly recommend reading [papers](https://arxiv.org/abs/2406.09509) and [documents](https://cleandiffuserteam.github.io/CleanDiffuserDocs/) to learn more about CleanDiffuser and its design philosophy.
 
 <p align="center">
     <br>
@@ -228,6 +230,16 @@ Distributed under the Apache License 2.0. See `LICENSE.txt` for more information
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+
+## 🙏 Acknowledgement
+
+- [huggingface diffusers](https://github.com/huggingface/diffusers)  
+- [diffuser](https://github.com/jannerm/diffuser)  
+- [diffusion policy](https://github.com/real-stanford/diffusion_policy)  
+- [robomimic](https://github.com/ARISE-Initiative/robomimic)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 <!-- CONTACT -->
 ## ✉️ Contact
 
@@ -239,11 +251,12 @@ For any questions, please feel free to email `zibindong@outlook.com` and `yuanyf
 
 If you find our work useful, please consider citing:
 ```
-@misc{cleandiffuser,
-  author = {CleanDiffuserTeam},
-  title = {CleanDiffuser},
+@article{cleandiffuser,
+  author = {Zibin Dong and Yifu Yuan and Jianye Hao and Fei Ni and Yi Ma and Pengyi Li and Yan Zheng},
+  title = {CleanDiffuser: An Easy-to-use Modularized Library for Diffusion Models in Decision Making},
+  journal = {arXiv preprint arXiv:2406.09509},
   year = {2024},
-  howpublished = {\url{https://github.com/CleanDiffuserTeam/CleanDiffuser}},
+  url = {https://arxiv.org/abs/2406.09509},
 }
 ```
 
