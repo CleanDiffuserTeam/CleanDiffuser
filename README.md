@@ -61,6 +61,11 @@ We strongly recommend reading [papers](https://arxiv.org/abs/2406.09509) and [do
 </details>
 
 <!-- GETTING STARTED -->
+## 🔥 News
+
+- [**2024-06-17**] 🔥 We released arxiv version of [**CleanDiffuser: An Easy-to-use Modularized Library for Diffusion Models in Decision Making**](https://arxiv.org/abs/2406.09509). 
+
+<!-- GETTING STARTED -->
 ## 🛠️ Getting Started
 
 We recommend installing and experiencing CleanDiffuser through a Conda virtual environment.
@@ -163,41 +168,41 @@ python pipelines/diffuser_d4rl_mujoco.py mode=inference ckpt=latest
 ## 🎁 Implemented Components
 
 
-| **Category**                | **Items**                      |
-|-----------------------------|--------------------------------|
-| **SDE/ODE with Solvers**    |                                |
-| *Diffusion SDE*             | DDPM                           |
-|                             | DDIM                           |
-|                             | DPM-Solver                     |
-|                             | DPM-Solver++                   |
-| *EDM*                       | Eular                          |
-|                             | 2nd Order Heun                 |
-| *Recitified Flow*           | Euler                          |
-| **Network Architectures**   | Pearce_MLP                     |
-|                             | Chi_UNet1d                     |
-|                             | Pearce_Transformer             |
-|                             | LNResnet                       |
-|                             | Chi_Transformer                |
-|                             | DQL_MLP                        |
-|                             | Janner_UNet1d                  |
-|                             | DiT1d                          |
-|                             |                                |
-| **Guided Sampling Methods** | Classifier Guidance            |
-|                             | Classifier-free Guidance       |
-|                             |                                |
-| **Pipelines**               |                                |
-| *Planners*                  | Diffuser                       |
-|                             | Decision Diffuser              |
-|                             | AdaptDiffuser                  |
-| *Policies*                  | DQL                            |
-|                             | EDP                            |
-|                             | IDQL                           |
-|                             | Diffusion Policy               |
-|                             | DiffusionBC                    |
-| *Data Synthesizers*         | SynthER                        |
-|                             |                                |
-
-
+| **Category**                | **Items**                      | **Paper**                      |
+|-----------------------------|--------------------------------|--------------------------------|
+| **SDE/ODE with Solvers**    |                                |                                |
+| *Diffusion SDE*             | DDPM                           |✅[Denoising Diffusion Probabilistic Models](https://arxiv.org/abs/2006.11239)|
+|                             | DDIM                           |✅[Denoising Diffusion Implicit Models](https://arxiv.org/abs/2010.02502)|
+|                             | DPM-Solver                     |✅[DPM-Solver: A Fast ODE Solver for Diffusion Probabilistic Model Sampling in Around 10 Steps](https://arxiv.org/abs/2206.00927)|
+|                             | DPM-Solver++                   |✅[DPM-Solver++: Fast Solver for Guided Sampling of Diffusion Probabilistic Models](https://arxiv.org/abs/2211.01095)|
+| *EDM*                       | Eular                          |✅[Elucidating the Design Space of Diffusion-Based Generative Models](https://arxiv.org/abs/2206.00364)|
+|                             | 2nd Order Heun                 |                                |
+| *Recitified Flow*           | Euler                          |✅[Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow](https://arxiv.org/abs/2209.03003)|
+|                             |                                |                                |
+| **Network Architectures**   |                                |                                |
+|                             | Pearce_MLP                     |✅[Imitating Human Behaviour with Diffusion Models](https://arxiv.org/abs/2301.10677)|                                |
+|                             | Pearce_Transformer             |                                |
+|                             | Chi_UNet1d                     |✅[Diffusion Policy: Visuomotor Policy Learning via Action Diffusion](https://arxiv.org/abs/2303.04137)|                                |
+|                             | Chi_Transformer                |                                |
+|                             | LNResnet                       |✅[IDQL: Implicit Q-Learning as an Actor-Critic Method with Diffusion Policies](https://arxiv.org/abs/2304.10573)|                                
+|                             | DQL_MLP                        |✅[Diffusion Policies as an Expressive Policy Class for Offline Reinforcement Learning](https://arxiv.org/abs/2208.06193)|                                
+|                             | Janner_UNet1d                  |✅[Planning with Diffusion for Flexible Behavior Synthesis](https://arxiv.org/abs/2205.09991)|                       
+|                             | DiT1d                          |✅[AlignDiff: Aligning Diverse Human Preferences via Behavior-Customisable Diffusion Model](https://arxiv.org/abs/2310.02054)|                       
+|                             |                                |                                |
+| **Guided Sampling Methods** | Classifier Guidance            |✅[Planning with Diffusion for Flexible Behavior Synthesis](https://arxiv.org/abs/2205.09991)|                                 
+|                             | Classifier-free Guidance       |✅[Is Conditional Generative Modeling all you need for Decision-Making?](https://arxiv.org/abs/2211.15657)|                                                                 
+|                             |                                |                                |
+| **Pipelines**               |                                |                                |
+| *Planners*                  | Diffuser                       |✅[Planning with Diffusion for Flexible Behavior Synthesis](https://arxiv.org/abs/2205.09991)|
+|                             | Decision Diffuser              |✅[Is Conditional Generative Modeling all you need for Decision-Making?](https://arxiv.org/abs/2211.15657)|
+|                             | AdaptDiffuser                  |✅[AdaptDiffuser: Diffusion Models as Adaptive Self-evolving Planners](https://arxiv.org/abs/2302.01877)|
+| *Policies*                  | DQL                            |✅[Diffusion Policies as an Expressive Policy Class for Offline Reinforcement Learning](https://arxiv.org/abs/2208.06193)| 
+|                             | EDP                            |✅[Efficient Diffusion Policies for Offline Reinforcement Learning](https://arxiv.org/abs/2305.20081)| 
+|                             | IDQL                           |✅[IDQL: Implicit Q-Learning as an Actor-Critic Method with Diffusion Policies](https://arxiv.org/abs/2304.10573)|
+|                             | Diffusion Policy               |✅[Diffusion Policy: Visuomotor Policy Learning via Action Diffusion](https://arxiv.org/abs/2303.04137)|                                
+|                             | DiffusionBC                    |✅[Imitating Human Behaviour with Diffusion Models](https://arxiv.org/abs/2301.10677)|                                
+| *Data Synthesizers*         | SynthER                        |✅[Synthetic Experience Replay](https://arxiv.org/abs/2303.06614)|                                
+|                             |                                |                                |
 
 <!-- ROADMAP -->
 ## 🧭 Roadmap
