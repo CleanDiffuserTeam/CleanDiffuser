@@ -3,7 +3,7 @@ pipeline_name: dbc_pusht
 # env
 env_name: pusht-v0
 abs_action: false
-dataset_path: dev/pusht_cchi_v7_replay.zarr
+dataset_path: dev/pusht/pusht_cchi_v7_replay.zarr
 mode: train
 max_episode_steps: 300
 obs_keys: ["state", "action", "keypoint"]
