@@ -24,8 +24,8 @@
 ·
 <a href="https://cleandiffuserteam.github.io/CleanDiffuserDocs/">Documentation</a>
 ·
-<a href="README_ZH.md">中文版</a>
-·
+<!-- <a href="README_ZH.md">中文版</a>
+· -->
 </p>
 
 **CleanDiffuser** is an easy-to-use modularized Diffusion Model library tailored for decision-making, which comprehensively integrates different types of diffusion algorithmic branches. CleanDiffuser offers a variety of advanced *diffusion models*, *network structures*, diverse *conditions*, and *algorithm pipelines* in a simple and user-friendly manner. Inheriting the design philosophy of [CleanRL](https://github.com/vwxyzjn/cleanrl) and [Diffusers](https://github.com/huggingface/diffusers), CleanDiffuser emphasizes **usability, simplicity, and customizability**. We hope that CleanDiffuser will serve as a foundational tool library, providing long-term support for Diffusion Model research in the decision-making community, facilitating the application of research for scientists and practitioners alike. The highlight features of CleanDiffuser are:
@@ -43,26 +43,11 @@ We strongly recommend reading [papers](https://arxiv.org/abs/2406.09509) and [do
     <img src="assets/framework.png" width="700"/>
     <br>
 <p>
-    
-<!-- TABLE OF CONTENTS -->
-<details>
-  <summary>Table of Contents</summary>
-<ol>
-<li><a href="#getting-started">Getting Started</a></li>
-<li><a href="#usage">Usage</a></li>
-<li><a href="#feature">Feature</a></li>
-<li><a href="#algorithm">Implemented Components</a></li>
-<li><a href="#roadmap">Roadmap</a></li>
-<li><a href="#contributing">Contributing</a></li>
-<li><a href="#license">License</a></li>
-<li><a href="#contact">Contact</a></li>
-<li><a href="#acknowledgments">Acknowledgments</a></li>
-</ol>
-</details>
 
-<!-- GETTING STARTED -->
-## 🔥 News
+<!-- NEWS -->
+## 🔥 News and Change Log
 
+- [**2024-06-20**] 🛠️ We have prepared dependency requirements for **Tutorial**, **RL**, and **IL** environments to avoid compatibility issues.
 - [**2024-06-17**] 🔥 We released arxiv version of [**CleanDiffuser: An Easy-to-use Modularized Library for Diffusion Models in Decision Making**](https://arxiv.org/abs/2406.09509). 
 
 <!-- GETTING STARTED -->
@@ -73,7 +58,7 @@ We recommend installing and experiencing CleanDiffuser through a Conda virtual e
 First, install the dependencies related to the mujoco-py environment. For more details, see https://github.com/openai/mujoco-py#install-mujoco
 
 ```bash
-apt-get install libosmesa6-dev libgl1-mesa-glx libglfw3 patchelf
+sudo apt-get install libosmesa6-dev libgl1-mesa-glx libglfw3 patchelf
 ```
 
 Download CleanDiffuser and add this folder to your PYTHONPATH. You can also add it to .bashrc for convenience:
@@ -93,41 +78,92 @@ conda install -c fvcore -c iopath -c conda-forge fvcore iopath
 pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py39_cu113_pyt1121/download.html
 ```
 
-Install the remaining dependencies:
-```bash
-pip install -r requirements.txt
+> **Note:** 
+> 
+> Due to compatibility issues, we have separate installation for the *Tutorial*, *RL* and *IL* environments, and **we recommend running them with different virtual environments**. (The *Tutorial* and *RL* installation processes can be compatible.)
 
-# If you need to run D4RL-related environments, install D4RL additionally:
+### Installation for Tutorials
+
+```bash
 pip install git+https://github.com/Farama-Foundation/d4rl@master#egg=d4rl
+pip install -r requirements/req_tutorials.txt
 ```
 
-If you need to reproduce imitation learning related environments (PushT, Kitchen, Robomimic), you need to download the datasets additionally. We recommend downloading the corresponding compressed files from [Datasets](https://diffusion-policy.cs.columbia.edu/data/training/). We provide the default dataset path as `dev/`:
+Try it now!   
+```bash
+python tutorials/1_a_minimal_DBC_implementation.py
+```
+
+### Installation for RL Environments (D4RL)
+```bash
+pip install git+https://github.com/Farama-Foundation/d4rl@master#egg=d4rl
+pip install -r requirements/req_rl.txt
+```
+
+Try it now!   
+```bash
+python pipelines/diffuser_d4rl_mujoco.py
+```
+
+### Installation for IL Environments (Pusht, Relay Kitchen and Robomimic)
+
+Install dependencies:  
+```bash
+pip install -r requirements/req_il.txt
+pip install setuptools==65.5.0 pip==21  # gym 0.21 installation is broken with more recent versions
+pip install gym==0.21.0
+```
+
+Download the corresponding dataset (take `pusht` as an example):  
+```bash
+mkdir dev && cd dev
+wget https://diffusion-policy.cs.columbia.edu/data/training/pusht.zip  # download pusht dataset
+unzip pusht.zip && rm -f pusht.zip && cd ..
+```
+
+Try it now!  
+```bash
+python pipelines/dp_pusht.py
+```
+
+If you need to reproduce more Imitation Learning environments (`pusht`, `kitchen`, `robomimic`), you need to download the datasets additionally. We recommend downloading the corresponding compressed files from [Datasets](https://diffusion-policy.cs.columbia.edu/data/training/). We provide the default dataset path as `dev/`:
 
 ```bash
 dev/
 .
 ├── kitchen
-├── pusht_cchi_v7_replay.zarr
+├── pusht
 ├── robomimic
 ```
 
-<!-- USAGE EXAMPLES -->
-## 💻 Usage
+<!-- TUTORIALS -->
+## 🍷 Tutorials
 
-The `cleandiffuser` folder contains the core components of the CleanDiffuser codebase, including `Diffusion Models`, `Network Architectures`, and `Guided Sampling`. It also provides unified `Env and Dataset Interfaces`.
+We will make every effort to provide detailed `tutorials` for beginners in the field of **Diffusion Models in Decision Making**, which is also beneficial for learning the core components of CleanDiffuser and expanding them into new algorithms. **Our vision is not only to offer a benchmark for the community but more importantly, to enable everyone to implement and innovate diffusion algorithms more easily based on CleanDiffuser.**  
 
-In the `tutorials` folder, we provide the simplest runnable tutorials and algorithms, which can be understood in conjunction with the documentation.
+> **Note:** 
+> 
+> In the `tutorials`, we generally only explain and demonstrate individual mechanisms or components, rather than a complete algorithm, and therefore ignore the extra tricks and take just a few minutes of training time. This may cause performance drop, which is normal!
 
-<!-- ```bash
+We have now provided the following tutorials and are continuously updating more:
+
+```bash
 # Build the DiffusionBC algorithm with minimal code
 python tutorials/1_a_minimal_DBC_implementation.py
-# Construct a Diffusion Model without guidance
+# Customize classifier-free guidance
 python tutorials/2_classifier-free_guidance.py
-# Construct a Diffusion Model with guidance
-python tutorials/3_classifier_guidance
-# Apply your customized Diffusion Model
-python tutorials/4_customize_your_diffusion_network_backbone
-``` -->
+# Customize classifier guidance
+python tutorials/3_classifier_guidance.py
+# Customize diffusion network backbone
+python tutorials/4_customize_your_diffusion_network_backbone.py
+```
+
+If you wish to reproduce the results of the paper perfectly, we recommend using the full implementation in `pipelines`.
+
+<!-- USAGE EXAMPLES -->
+## 💻 Pipelines
+
+The `cleandiffuser` folder contains the core components of the CleanDiffuser codebase, including `Diffusion Models`, `Network Architectures`, and `Guided Sampling`. It also provides unified `Env and Dataset Interfaces`.
 
 In CleanDiffuser, we can combine independent modules to algorithms pipelines like building blocks. In the `pipelines` folder, we provide all the algorithms currently implemented in CleanDiffuser. By linking with the Hydra configurations in the `configs` folder, you can reproduce the results presented in the papers:
 
@@ -189,8 +225,9 @@ python pipelines/diffuser_d4rl_mujoco.py mode=inference ckpt=latest
 |                             | Janner_UNet1d                  |✅[Planning with Diffusion for Flexible Behavior Synthesis](https://arxiv.org/abs/2205.09991)|                       
 |                             | DiT1d                          |✅[AlignDiff: Aligning Diverse Human Preferences via Behavior-Customisable Diffusion Model](https://arxiv.org/abs/2310.02054)|                       
 |                             |                                |                                |
-| **Guided Sampling Methods** | Classifier Guidance            |✅[Planning with Diffusion for Flexible Behavior Synthesis](https://arxiv.org/abs/2205.09991)|                                 
-|                             | Classifier-free Guidance       |✅[Is Conditional Generative Modeling all you need for Decision-Making?](https://arxiv.org/abs/2211.15657)|                                                                 
+| **Guided Sampling Methods** |                                |                                |
+|                             | Classifier Guidance            |✅[Diffusion Models Beat GANs on Image Synthesis](https://arxiv.org/abs/2105.05233)|                                 
+|                             | Classifier-free Guidance       |✅[Classifier-Free Diffusion Guidance](https://arxiv.org/abs/2207.12598)|                                                                 
 |                             |                                |                                |
 | **Pipelines**               |                                |                                |
 | *Planners*                  | Diffuser                       |✅[Planning with Diffusion for Flexible Behavior Synthesis](https://arxiv.org/abs/2205.09991)|
@@ -204,13 +241,11 @@ python pipelines/diffuser_d4rl_mujoco.py mode=inference ckpt=latest
 | *Data Synthesizers*         | SynthER                        |✅[Synthetic Experience Replay](https://arxiv.org/abs/2303.06614)|                                
 |                             |                                |                                |
 
-<!-- ROADMAP -->
+<!-- ROADMAP
 ## 🧭 Roadmap
 
 - [ ] Updating the reproduced [ACT](https://arxiv.org/abs/2304.13705) and [BC-RNN](https://arxiv.org/abs/2108.03298) for comparison
-- [ ] Unifying some old APIs into a new unified version
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+- [ ] Unifying some old APIs into a new unified version -->
 
 <!-- CONTRIBUTING -->
 ## 🙏 Contributing
@@ -226,32 +261,25 @@ Don't forget to give the project a star! Thanks again!
 4. Push to the Branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
 <!-- LICENSE -->
 ## 🏷️ License
 
 Distributed under the Apache License 2.0. See `LICENSE.txt` for more information.
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-## 🙏 Acknowledgement
+<!-- ACKNOWLEDGEMENT -->
+## 💓 Acknowledgement
 
 - [huggingface diffusers](https://github.com/huggingface/diffusers)  
 - [diffuser](https://github.com/jannerm/diffuser)  
 - [diffusion policy](https://github.com/real-stanford/diffusion_policy)  
 - [robomimic](https://github.com/ARISE-Initiative/robomimic)
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
 <!-- CONTACT -->
 ## ✉️ Contact
 
 For any questions, please feel free to email `zibindong@outlook.com` and `yuanyf@tju.edu.cn`.
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
+<!-- CITATION -->
 ## 📝 Citation
 
 If you find our work useful, please consider citing:
@@ -264,5 +292,3 @@ If you find our work useful, please consider citing:
   url = {https://arxiv.org/abs/2406.09509},
 }
 ```
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
