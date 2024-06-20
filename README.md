@@ -150,11 +150,11 @@ We have now provided the following tutorials and are continuously updating more:
 ```bash
 # Build the DiffusionBC algorithm with minimal code
 python tutorials/1_a_minimal_DBC_implementation.py
-# Construct a Diffusion Model without guidance
+# Customize classifier-free guidance
 python tutorials/2_classifier-free_guidance.py
-# Construct a Diffusion Model with guidance
+# Customize classifier guidance
 python tutorials/3_classifier_guidance.py
-# Apply your customized Diffusion Model
+# Customize diffusion network backbone
 python tutorials/4_customize_your_diffusion_network_backbone.py
 ```
 
