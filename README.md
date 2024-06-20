@@ -139,29 +139,29 @@ dev/
 <!-- TUTORIALS -->
 ## 🍷 Tutorials
 
-We aim to develop CleanDiffuser into a convenient library for building diffusion decision-making algorithms. 
+We will make every effort to provide detailed `tutorials` for beginners in the field of **Diffusion Models in Decision Making**, which is also beneficial for learning the core components of CleanDiffuser and expanding them into new algorithms. **Our vision is not only to offer a benchmark for the community but more importantly, to enable everyone to implement and innovate diffusion algorithms more easily based on CleanDiffuser.**  
 
+> **Note:** 
+> 
+> In the `tutorials`, we generally only explain and demonstrate individual mechanisms or components, rather than a complete algorithm, and therefore ignore the extra tricks and take just a few minutes of training time. This may cause performance drop, which is normal!
 
-In the `tutorials` folder, we provide the simplest runnable tutorials and algorithms, which can be understood in conjunction with the documentation.
+We have now provided the following tutorials and are continuously updating more:
 
-<!-- ```bash
+```bash
 # Build the DiffusionBC algorithm with minimal code
 python tutorials/1_a_minimal_DBC_implementation.py
 # Construct a Diffusion Model without guidance
 python tutorials/2_classifier-free_guidance.py
 # Construct a Diffusion Model with guidance
-python tutorials/3_classifier_guidance
+python tutorials/3_classifier_guidance.py
 # Apply your customized Diffusion Model
-python tutorials/4_customize_your_diffusion_network_backbone
-``` -->
+python tutorials/4_customize_your_diffusion_network_backbone.py
+```
 
-gym==0.21.0
-pip==21
-setuptools==65.5.0
-
+If you wish to reproduce the results of the paper perfectly, we recommend using the full implementation in `pipelines`.
 
 <!-- USAGE EXAMPLES -->
-## 💻 Usage
+## 💻 Pipelines
 
 The `cleandiffuser` folder contains the core components of the CleanDiffuser codebase, including `Diffusion Models`, `Network Architectures`, and `Guided Sampling`. It also provides unified `Env and Dataset Interfaces`.
 
@@ -225,8 +225,9 @@ python pipelines/diffuser_d4rl_mujoco.py mode=inference ckpt=latest
 |                             | Janner_UNet1d                  |✅[Planning with Diffusion for Flexible Behavior Synthesis](https://arxiv.org/abs/2205.09991)|                       
 |                             | DiT1d                          |✅[AlignDiff: Aligning Diverse Human Preferences via Behavior-Customisable Diffusion Model](https://arxiv.org/abs/2310.02054)|                       
 |                             |                                |                                |
-| **Guided Sampling Methods** | Classifier Guidance            |✅[Planning with Diffusion for Flexible Behavior Synthesis](https://arxiv.org/abs/2205.09991)|                                 
-|                             | Classifier-free Guidance       |✅[Is Conditional Generative Modeling all you need for Decision-Making?](https://arxiv.org/abs/2211.15657)|                                                                 
+| **Guided Sampling Methods** |                                |                                |
+|                             | Classifier Guidance            |✅[Diffusion Models Beat GANs on Image Synthesis](https://arxiv.org/abs/2105.05233)|                                 
+|                             | Classifier-free Guidance       |✅[Classifier-Free Diffusion Guidance](https://arxiv.org/abs/2207.12598)|                                                                 
 |                             |                                |                                |
 | **Pipelines**               |                                |                                |
 | *Planners*                  | Diffuser                       |✅[Planning with Diffusion for Flexible Behavior Synthesis](https://arxiv.org/abs/2205.09991)|
