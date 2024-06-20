@@ -146,7 +146,7 @@ Thanks to Hydra, CleanDiffuser also supports flexible running of algorithms thro
 # Load PushT config
 python pipelines/dp_pusht.py --config-path=../configs/dp/pusht/dit --config-name=pusht
 # Load PushT config and overwrite some hyperparameters
-python pipelines/dp_pusht.py --config-path=../configs/dp/pusht/dit --config-name=pusht dataset_path=path/to/dataset seed=42 device=cuda:1
+python pipelines/dp_pusht.py --config-path=../configs/dp/pusht/dit --config-name=pusht dataset_path=path/to/dataset seed=42 device=cuda:0
 # Train Diffuser in hopper-medium-v2 task
 python pipelines/diffuser_d4rl_mujoco.py task=hopper-medium-v2 
 ```
