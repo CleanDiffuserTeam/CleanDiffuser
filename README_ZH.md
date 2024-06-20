@@ -26,6 +26,8 @@
 ·
 </p>
 
+### **注意：由于维护人员不足，中文版readme暂时落后英文版readme一个版本，如果需要完整的了解CleanDiffuser，建议暂时先查看英文版！（我们预计将在一周内将中文版readme也更新到最新版本）**
+
 **CleanDiffuser** 是一个易用的模块化扩散模型库，专为决策任务定制，综合集成了不同类型的扩散算法分支。CleanDiffuser 以简单且用户友好的方式提供多种高级的 扩散模型、网络结构、多样的条件嵌入和算法管道。继承了 [CleanRL](https://github.com/vwxyzjn/cleanrl) 和 [Diffusers](https://github.com/huggingface/diffusers) 的核心设计理念，CleanDiffuser 强调可用性、简单性和可定制性。我们希望 CleanDiffuser 能成为一个基础工具库，为决策领域的扩散模型研究提供长期支持，促进科研人员和实践者的应用。CleanDiffuser 的亮点功能包括：
 
 - 🚀 专为决策制定任务设计的惊人特性  

@@ -86,7 +86,7 @@ class MyObsClassifier(BaseClassifier):
 
 if __name__ == "__main__":
 
-    device = "cuda:2"
+    device = "cuda:0"
     use_customized_classifier = True
 
     # --------------- Create Environment ---------------

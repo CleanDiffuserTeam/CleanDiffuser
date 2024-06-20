@@ -111,7 +111,7 @@ class MyMixerNNDiffusion(BaseNNDiffusion):
 
 if __name__ == "__main__":
 
-    device = "cuda:3"
+    device = "cuda:0"
 
     # --------------- Create Environment ---------------
     env = gym.make("kitchen-complete-v0")
