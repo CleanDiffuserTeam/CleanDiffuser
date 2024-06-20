@@ -22,7 +22,7 @@ For sampling, we intend to use DDPM.
 
 if __name__ == "__main__":
     
-    device = "cuda:2"
+    device = "cuda:0"
     
     # --------------- Setting Up the Environment ---------------
     

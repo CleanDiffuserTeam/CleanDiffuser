@@ -1,7 +1,4 @@
-pip==22.2.2
-setuptools==54.0.0
 hydra-core==1.2.0
-cython==0.29.32
 wandb==0.13.3
 dill==0.3.5.1
 av==10.0.0
@@ -21,11 +18,9 @@ scikit-video==1.1.11
 scikit-image==0.19.3
 threadpoolctl==3.1.0
 matplotlib==3.6.1
-robosuite@https://github.com/cheng-chi/robosuite/archive/277ab9588ad7a4f4b55cf75508b44aa67ec171f0.tar.gz
-robomimic==0.2.0
 dm-control==1.0.9
 free-mujoco-py==2.1.6
 imagecodecs==2022.8.8
 cython==0.29.32
-gym==0.21.0
-numba==0.56.0
+robosuite@https://github.com/cheng-chi/robosuite/archive/277ab9588ad7a4f4b55cf75508b44aa67ec171f0.tar.gz
+robomimic==0.2.0

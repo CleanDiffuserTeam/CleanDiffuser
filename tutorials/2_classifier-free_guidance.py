@@ -67,7 +67,7 @@ class MyObsNNCondition(BaseNNCondition):
 
 if __name__ == "__main__":
 
-    device = "cuda:2"
+    device = "cuda:0"
     use_customized_nn_condition = True
 
     # --------------- Create Environment ---------------
