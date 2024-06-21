@@ -202,9 +202,27 @@ class TD3BC:
 def pipeline(args):
     set_seed(args.seed)
 
-    save_path = f'results/{args.pipeline_name}/{args.task.env_name}/'
-    if os.path.exists(save_path) is False:
-        os.makedirs(save_path)
+    save_path = f'results/{args.pipeline_name}/{args.task.env_name}/{args.save_name}/'
+
+    if args.mode == "train":
+        if os.path.exists(save_path) is False:
+            os.makedirs(save_path)
+        elif args.save_name == "test":
+            import shutil
+            shutil.rmtree(save_path)
+            os.makedirs(save_path)
+            warn_file = open(save_path + "reminder.txt", 'w')
+            print("WARNING: This is a temporary folder for quick testing, and will be happily overwrite each time the pipeline is run.", file=warn_file)
+            print("To save your results safely, specify a save_name arg when running from the command line.", file=warn_file)
+        else:
+            raise FileExistsError(f"Save path {save_path} is not empty")
+    
+    if args.output_to_file:
+        print("redirected stdout and stderr to log file")
+        import sys
+        f = open(save_path+"log.txt", 'a', buffering=1)
+        sys.stdout = f
+        sys.stderr = sys.stdout
 
     # ---------------------- Create Dataset ----------------------
     env = gym.make(args.task.env_name)

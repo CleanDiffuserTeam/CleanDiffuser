@@ -6,6 +6,8 @@ pipeline_name: synther_d4rl_kitchen
 mode: inference
 seed: 0
 device: cuda:0
+output_to_file: False
+save_name: test
 
 # Actor
 solver: ddpm
