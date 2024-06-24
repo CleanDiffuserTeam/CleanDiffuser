@@ -108,7 +108,8 @@ class ContinuousEDM(DiffusionModel):
         self.sigma_data, self.sigma_min, self.sigma_max = sigma_data, sigma_min, sigma_max
         self.rho, self.P_mean, self.P_std = rho, P_mean, P_std
 
-        self.x_max, self.x_min = x_max, x_min
+        self.x_max = x_max.to(device) if isinstance(x_max, torch.Tensor) else x_max
+        self.x_min = x_min.to(device) if isinstance(x_min, torch.Tensor) else x_min
 
         # ==================== Continuous Time-step Range ====================
         self.t_diffusion = [sigma_min, sigma_max]
@@ -409,9 +410,9 @@ class ContinuousEDM(DiffusionModel):
             x_next = xt - dot_x * delta_t
             x_next = x_next * (1. - self.fix_mask) + prior * self.fix_mask
 
-            if solver == "heun":
+            if solver == "heun" and i > 1:
                 pred, logp = self.guided_sampling(
-                    xt, t / sample_step_schedule[i] * sample_step_schedule[i - 1], sigmas[i - 1],
+                    x_next, t / sample_step_schedule[i] * sample_step_schedule[i - 1], sigmas[i - 1],
                     model, condition_vec_cfg, w_cfg, condition_vec_cg, w_cg, requires_grad)
                 if self.clip_pred:
                     pred = pred.clip(self.x_min, self.x_max)

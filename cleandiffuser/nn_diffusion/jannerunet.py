@@ -103,11 +103,12 @@ class JannerUNet1d(BaseNNDiffusion):
             emb_dim: int = 32,
             kernel_size: int = 3,
             dim_mult: List[int] = [1, 2, 2, 2],
-            timestep_emb_type: str = "positional",
             norm_type: str = "groupnorm",
             attention: bool = False,
+            timestep_emb_type: str = "positional",
+            timestep_emb_params: Optional[dict] = None
     ):
-        super().__init__(emb_dim, timestep_emb_type)
+        super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
 
         dims = [in_dim] + [model_dim * m for m in np.cumprod(dim_mult)]
         in_out = list(zip(dims[:-1], dims[1:]))
