@@ -1,7 +1,11 @@
+from typing import Optional
+
 import torch
 import torch.nn as nn
 
-from cleandiffuser.utils import FourierEmbedding, SinusoidalEmbedding, PositionalEmbedding
+from cleandiffuser.utils import (FourierEmbedding, PositionalEmbedding,
+                                 SinusoidalEmbedding)
+
 from .base_nn_diffusion import BaseNNDiffusion
 
 
@@ -64,8 +68,9 @@ class ChiTransformer(BaseNNDiffusion):
             p_drop_emb: float = 0.0, p_drop_attn: float = 0.3,
             n_cond_layers: int = 0,
             timestep_emb_type: str = "positional",
+            timestep_emb_params: Optional[dict] = None
     ):
-        super().__init__(d_model, timestep_emb_type)
+        super().__init__(d_model, timestep_emb_type, timestep_emb_params)
 
         T = Ta
         T_cond = 1 + To

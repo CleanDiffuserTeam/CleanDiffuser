@@ -7,6 +7,7 @@ from cleandiffuser.utils import at_least_ndim, GroupNorm1d
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
 
 
+
 class FCBlock(nn.Module):
     def __init__(self, in_dim: int, out_dim: int):
         super().__init__()
@@ -35,10 +36,12 @@ class MLPSieve(BaseNNDiffusion):
     """
 
     def __init__(
-            self, a_dim: int, history_len: int, timestep_emb_type: str = "positional",
-            hidden_dim: int = 512, emb_dim: int = 128
+            self, a_dim: int, history_len: int,
+            hidden_dim: int = 512, emb_dim: int = 128,
+            timestep_emb_type: str = "positional",
+            timestep_emb_params: Optional[dict] = None
     ):
-        super().__init__(emb_dim, timestep_emb_type)
+        super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
 
         self.act_emb = EmbeddingBlock(a_dim, emb_dim)
         self.fc1 = FCBlock(emb_dim * (3 + history_len), hidden_dim)

@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 import torch.nn as nn
 
@@ -34,9 +36,9 @@ class FCBlock(nn.Module):
 class PearceMlp(BaseNNDiffusion):
     def __init__(
             self, act_dim: int, To: int = 1, timestep_emb_type: str = "positional",
-            emb_dim: int = 128, hidden_dim: int = 512
+            emb_dim: int = 128, hidden_dim: int = 512, timestep_emb_params: Optional[dict] = None,
     ):
-        super().__init__(emb_dim, timestep_emb_type)
+        super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
 
         self.act_emb = nn.Sequential(
             nn.Linear(act_dim, emb_dim), nn.LeakyReLU(), nn.Linear(emb_dim, emb_dim))

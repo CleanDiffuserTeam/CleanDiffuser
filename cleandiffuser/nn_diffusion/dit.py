@@ -51,16 +51,18 @@ class FinalLayer1d(nn.Module):
 
 
 class DiT1d(BaseNNDiffusion):
-    def __init__(self,
-                 in_dim: int,
-                 emb_dim: int,
-                 d_model: int = 384,
-                 n_heads: int = 6,
-                 depth: int = 12,
-                 dropout: float = 0.0,
-                 timestep_emb_type: str = "positional",
-                 ):
-        super().__init__(emb_dim, timestep_emb_type)
+    def __init__(
+        self,
+        in_dim: int,
+        emb_dim: int,
+        d_model: int = 384,
+        n_heads: int = 6,
+        depth: int = 12,
+        dropout: float = 0.0,
+        timestep_emb_type: str = "positional",
+        timestep_emb_params: Optional[dict] = None
+    ):
+        super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
         self.in_dim, self.emb_dim = in_dim, emb_dim
         self.d_model = d_model
 

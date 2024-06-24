@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 import torch.nn as nn
 
@@ -25,9 +27,10 @@ class IDQLMlp(BaseNNDiffusion):
             hidden_dim: int = 256,
             n_blocks: int = 3,
             dropout: float = 0.1,
-            timestep_emb_type: str = "positional"
+            timestep_emb_type: str = "positional",
+            timestep_emb_params: Optional[dict] = None
     ):
-        super().__init__(emb_dim, timestep_emb_type)
+        super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
 
         self.time_mlp = nn.Sequential(
             nn.Linear(emb_dim, emb_dim * 2), nn.Mish(), nn.Linear(emb_dim * 2, emb_dim))
