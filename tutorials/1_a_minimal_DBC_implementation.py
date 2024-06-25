@@ -63,7 +63,7 @@ if __name__ == "__main__":
     """
     We choose `DiscreteDiffusionSDE`, which optimizes a score-matching loss to learn the score function in VPSDE 
     and discretizes the time interval of the diffusion process into a finite number of timesteps. 
-    During sampling, we can choose any number of sampling steps greater than 1 and not less than `diffusion_steps`, 
+    During sampling, we can choose any number of sampling steps greater than 1 and not more than `diffusion_steps`, 
     and we can select a range of available solvers. When instantiating this class, we also define several other parameters. 
     Setting `predict_noise=False` will instruct the NN to directly predict denoised actions rather than noise. 
     `optim_params` will override the default creation parameters of the optimizer. 
