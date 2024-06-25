@@ -171,10 +171,24 @@ Timestep embeddings.
 These are used to embed the timestep (b, ), either discrete or continuous, into a vector (b, dim).
 """
 
-
 # -----------------------------------------------------------
-# Timestep embedding used in the DDPM++ and ADM architectures
+# Timestep embedding used in the DDPM++ and ADM architectures, from https://github.com/NVlabs/edm/blob/main/training/networks.py#L269
 class PositionalEmbedding(nn.Module):
+    def __init__(self, dim: int, max_positions: int = 10000, endpoint: bool = False):
+        super().__init__()
+        self.dim = dim
+        self.max_positions = max_positions
+        self.endpoint = endpoint
+
+    def forward(self, x):
+        freqs = torch.arange(start=0, end=self.dim // 2, dtype=torch.float32, device=x.device)
+        freqs = freqs / (self.dim // 2 - (1 if self.endpoint else 0))
+        freqs = (1 / self.max_positions) ** freqs
+        x = x.ger(freqs.to(x.dtype))
+        x = torch.cat([x.cos(), x.sin()], dim=1)
+        return x
+    
+class UntrainablePositionalEmbedding(nn.Module):
     def __init__(self, dim: int, max_positions: int = 10000, endpoint: bool = False):
         super().__init__()
         self.dim = dim
@@ -220,7 +234,23 @@ class FourierEmbedding(nn.Module):
         emb = x.ger((2 * np.pi * self.freqs).to(x.dtype))
         emb = torch.cat([emb.cos(), emb.sin()], -1)
         return self.mlp(emb)
+    
+class UntrainableFourierEmbedding(nn.Module):
+    def __init__(self, dim: int, scale=16):
+        super().__init__()
+        self.freqs = nn.Parameter(torch.randn(dim // 2) * scale, requires_grad=False)
 
+    def forward(self, x: torch.Tensor):
+        emb = x.ger((2 * np.pi * self.freqs).to(x.dtype))
+        emb = torch.cat([emb.cos(), emb.sin()], -1)
+        return emb
+    
+SUPPORTED_TIMESTEP_EMBEDDING = {
+    "positional": PositionalEmbedding,
+    "fourier": FourierEmbedding,
+    "untrainable_fourier": UntrainableFourierEmbedding,
+    "untrainable_positional": UntrainablePositionalEmbedding,
+}
 
 # -----------------------------------------------------------
 # Beautiful model size visualization from https://github.com/jannerm/diffuser/tree/main

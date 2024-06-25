@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
+from typing import Optional
 
 
 class TimeSiren(nn.Module):
@@ -89,10 +90,12 @@ class EmbeddingBlock(nn.Module):
 
 class PearceTransformer(BaseNNDiffusion):
     def __init__(
-            self, act_dim: int, To: int = 1, timestep_emb_type: str = "positional",
-            emb_dim: int = 128, trans_emb_dim: int = 64, nhead: int = 16
+            self, act_dim: int, To: int = 1,
+            emb_dim: int = 128, trans_emb_dim: int = 64, nhead: int = 16,
+            timestep_emb_type: str = "positional",
+            timestep_emb_params: Optional[dict] = None
     ):
-        super().__init__(emb_dim, timestep_emb_type)
+        super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
 
         self.act_emb = nn.Sequential(
             nn.Linear(act_dim, emb_dim), nn.LeakyReLU(), nn.Linear(emb_dim, emb_dim))

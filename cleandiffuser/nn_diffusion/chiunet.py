@@ -1,10 +1,11 @@
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import torch
 import torch.nn as nn
 
 from cleandiffuser.utils import GroupNorm1d
+
 from .base_nn_diffusion import BaseNNDiffusion
 from .jannerunet import Downsample1d, Upsample1d
 
@@ -57,8 +58,9 @@ class ChiUNet1d(BaseNNDiffusion):
             obs_as_global_cond: bool = True,
             dim_mult: List[int] = [1, 2, 2],
             timestep_emb_type: str = "positional",
+            timestep_emb_params: Optional[dict] = None
     ):
-        super().__init__(emb_dim, timestep_emb_type)
+        super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
 
         self.obs_as_global_cond = obs_as_global_cond
         self.model_dim = model_dim

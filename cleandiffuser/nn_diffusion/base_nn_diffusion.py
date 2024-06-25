@@ -3,7 +3,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from cleandiffuser.utils import PositionalEmbedding, FourierEmbedding
+from cleandiffuser.utils import SUPPORTED_TIMESTEP_EMBEDDING
 
 
 class BaseNNDiffusion(nn.Module):
@@ -18,11 +18,15 @@ class BaseNNDiffusion(nn.Module):
      which are inputted as a tensor dictionary, or a single condition, directly inputted as a tensor.
     """
 
-    def __init__(self, emb_dim: int, timestep_emb_type: str = "positional"):
-        assert timestep_emb_type in ["positional", "fourier"]
+    def __init__(
+        self, emb_dim: int, 
+        timestep_emb_type: str = "positional",
+        timestep_emb_params: Optional[dict] = None
+    ):
+        assert timestep_emb_type in SUPPORTED_TIMESTEP_EMBEDDING.keys()
         super().__init__()
-        self.map_noise = PositionalEmbedding(emb_dim, endpoint=True) if timestep_emb_type == "positional" \
-            else FourierEmbedding(emb_dim)
+        timestep_emb_params = timestep_emb_params or {}
+        self.map_noise = SUPPORTED_TIMESTEP_EMBEDDING[timestep_emb_type](emb_dim, **timestep_emb_params)
 
     def forward(self,
                 x: torch.Tensor, noise: torch.Tensor,
