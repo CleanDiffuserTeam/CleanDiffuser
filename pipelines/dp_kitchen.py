@@ -254,7 +254,7 @@ def pipeline(args):
         agent.model_ema.eval()
 
         metrics = {'step': 0}
-        metrics.update(inference(args, env, dataset, agent, logger))
+        metrics.update(inference(args, envs, dataset, agent, logger))
         logger.log(metrics, category='inference')
         
     else:
