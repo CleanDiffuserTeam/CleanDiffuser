@@ -39,7 +39,7 @@ logp(s|a_t, t) = - MSE(pred_state - state), pred_state = MLP(a_t, t).
 
 In this context, our remaining tasks are clear: 
 1. Use an MLP to predict the state to which a_t belongs. 
-2. 
+2. Define logp using negative MSE. 
 """
 
 """
