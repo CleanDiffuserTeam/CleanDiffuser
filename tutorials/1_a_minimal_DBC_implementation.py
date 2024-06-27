@@ -23,6 +23,7 @@ For sampling, we intend to use DDPM.
 if __name__ == "__main__":
     
     device = "cuda:0"
+    mode = "rendering"
     
     # --------------- Setting Up the Environment ---------------
     
@@ -77,70 +78,120 @@ if __name__ == "__main__":
         diffusion_steps=50, ema_rate=0.9999, device=device)
     
     # --------------- Training -------------------
-    actor.train()
-    
-    avg_loss = 0.
-    
-    # train for 100,000 gradient steps
-    for t in range(100000):
+    if mode == "training":
         
-        # sample a batch
-        idx = np.random.randint(0, size, (256,))
-        obs = torch.tensor(dataset['observations'][idx], device=device).float()
-        act = torch.tensor(dataset['actions'][idx], device=device).float()
+        actor.train()
         
-        # one-step update
-        avg_loss += actor.update(act, obs)["loss"]
+        avg_loss = 0.
         
-        # logging
-        if (t + 1) % 1000 == 0:
-            print(f'[t={t + 1}] {avg_loss / 1000}')
-            avg_loss = 0.
+        # train for 100,000 gradient steps
+        for t in range(100000):
+            
+            # sample a batch
+            idx = np.random.randint(0, size, (256,))
+            obs = torch.tensor(dataset['observations'][idx], device=device).float()
+            act = torch.tensor(dataset['actions'][idx], device=device).float()
+            
+            # one-step update
+            avg_loss += actor.update(act, obs)["loss"]
+            
+            # logging
+            if (t + 1) % 1000 == 0:
+                print(f'[t={t + 1}] {avg_loss / 1000}')
+                avg_loss = 0.
 
-    # model saving
-    savepath = "tutorials/results/1_a_minimal_DBC_implementation/"
-    if not os.path.exists(savepath):
-        os.makedirs(savepath)
-    actor.save(savepath + "diffusion.pt")
+        # model saving
+        savepath = "tutorials/results/1_a_minimal_DBC_implementation/"
+        if not os.path.exists(savepath):
+            os.makedirs(savepath)
+        actor.save(savepath + "diffusion.pt")
             
     # -------------- Inference -----------------
-    savepath = "tutorials/results/1_a_minimal_DBC_implementation/"
-    actor.load(savepath + "diffusion.pt")
-    actor.eval()
-    
-    # Since we use `DiscreteDiffusionSDE`, the sampling steps should be between [1, diffusion steps], and here we default to selecting 5 steps. 
-    # We can obtain the supported solvers from `supported_solvers`, for example:
-    #
-    # >>> print(actor.supported_solvers)
-    # ['ddpm', 'ddim', 'ode_dpmsolver_1', 'ode_dpmsolver++_1', 'ode_dpmsolver++_2M', 'sde_dpmsolver_1', 'sde_dpmsolver++_1', 'sde_dpmsolver++_2M']
-    #
-    # and here we default to selecting `ddpm`.
-    
-    sampling_steps = 5
-    solver = "ddpm"
+    elif mode == "inference":
+        
+        savepath = "tutorials/results/1_a_minimal_DBC_implementation/"
+        actor.load(savepath + "diffusion.pt")
+        actor.eval()
+        
+        # Since we use `DiscreteDiffusionSDE`, the sampling steps should be between [1, diffusion steps], and here we default to selecting 5 steps. 
+        # We can obtain the supported solvers from `supported_solvers`, for example:
+        #
+        # >>> print(actor.supported_solvers)
+        # ['ddpm', 'ddim', 'ode_dpmsolver_1', 'ode_dpmsolver++_1', 'ode_dpmsolver++_2M', 'sde_dpmsolver_1', 'sde_dpmsolver++_1', 'sde_dpmsolver++_2M']
+        #
+        # and here we default to selecting `ddpm`.
+        
+        sampling_steps = 5
+        solver = "ddpm"
 
-    # concurrently evaluate 50 environments
-    env_eval = gym.vector.make("kitchen-complete-v0", num_envs=50)
-    
-    obs, cum_done, cum_rew = env_eval.reset(), 0., 0.
-    prior = torch.zeros((50, act_dim), device=device)
-    for t in range(280):
+        # concurrently evaluate 50 environments
+        env_eval = gym.vector.make("kitchen-complete-v0", num_envs=50)
         
-        # sample with DDPM and 5 sampling steps
-        act, log = actor.sample(
-            prior, solver=solver, n_samples=50, sample_steps=sampling_steps,
-            temperature=0.5, w_cfg=1.0,
-            condition_cfg=torch.tensor(obs, device=device, dtype=torch.float32))
-        act = act.cpu().numpy()
-        
-        obs, rew, done, info = env_eval.step(act)
-        cum_done = np.logical_or(cum_done, done)
-        cum_rew += rew
-        
-        print(f'[t={t}] cum_rew: {cum_rew}')
+        obs, cum_done, cum_rew = env_eval.reset(), 0., 0.
+        prior = torch.zeros((50, act_dim), device=device)
+        for t in range(280):
+            
+            # sample with DDPM and 5 sampling steps
+            act, log = actor.sample(
+                prior, solver=solver, n_samples=50, sample_steps=sampling_steps,
+                temperature=0.5, w_cfg=1.0,
+                condition_cfg=torch.tensor(obs, device=device, dtype=torch.float32))
+            act = act.cpu().numpy()
+            
+            obs, rew, done, info = env_eval.step(act)
+            cum_done = np.logical_or(cum_done, done)
+            cum_rew += rew
+            
+            print(f'[t={t}] cum_rew: {cum_rew}')
 
-        if cum_done.all():
-            break
-    
-    print(f'Mean score: {np.clip(cum_rew, 0., 4.).mean() * 25.}')
-    env_eval.close()
+            if cum_done.all():
+                break
+        
+        print(f'Mean score: {np.clip(cum_rew, 0., 4.).mean() * 25.}')
+        env_eval.close()
+
+    # -------------- Renderring -----------------
+    elif mode == "rendering":
+        
+        """
+        To modify the camera position, check the XML file in the environment's assets folder:
+        `PATH_TO_D4RL/d4rl/kitchen/adept_envs/franka/assets/franka_kitchen_jntpos_act_ab.xml`
+        Line 52 and 54 define the camera position and orientation.
+        """
+        
+        import imageio
+        
+        savepath = "tutorials/results/1_a_minimal_DBC_implementation/"
+        actor.load(savepath + "diffusion.pt")
+        actor.eval()
+        
+        sampling_steps = 5
+        solver = "ddpm"
+
+        env_eval = gym.make("kitchen-complete-v0")
+        writer = imageio.get_writer(savepath + "rendering.mp4", fps=30)
+        
+        obs, cum_rew = env_eval.reset(), 0.
+        prior = torch.zeros((1, act_dim), device=device)
+        for t in range(280):
+            
+            # sample with DDPM and 5 sampling steps
+            act, log = actor.sample(
+                prior, solver=solver, n_samples=1, sample_steps=sampling_steps,
+                temperature=0.5, w_cfg=1.0,
+                condition_cfg=torch.tensor(obs[None, ], device=device, dtype=torch.float32))
+            act = act.cpu().numpy()
+            
+            obs, rew, done, info = env_eval.step(act[0])
+            cum_rew += rew
+            
+            writer.append_data(env_eval.sim.render(camera_id=1, height=200, width=200))
+            
+            print(f'[t={t}] cum_rew: {cum_rew}')
+
+            # if done:
+            #     break
+
+        env_eval.close()
+        writer.close()
+        
