@@ -124,7 +124,7 @@ def pipeline(args):
         hl_n_gradient_step = 0
         ll_n_gradient_step = 0
 
-        hl_log = {"hl_avg_loss_diffusion": 0., "ll_avg_loss_classifier": 0.}
+        hl_log = {"hl_avg_loss_diffusion": 0., "hl_avg_loss_classifier": 0.}
         ll_log = {"ll_avg_loss_diffusion": 0., "ll_avg_loss_classifier": 0.}
 
         for hl_batch, ll_batch in zip(loop_dataloader(hl_dataloader), loop_dataloader(ll_dataloader)):
@@ -190,3 +190,5 @@ def pipeline(args):
                 break
 
 
+if __name__ == "__main__":
+    pipeline()
