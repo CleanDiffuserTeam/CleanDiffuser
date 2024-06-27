@@ -156,16 +156,18 @@ def pipeline(args):
 
             # ----------- Logging ------------
             if (hl_n_gradient_step + 1) % args.log_interval == 0:
-                hl_log["gradient_steps"] = hl_n_gradient_step + 1
+                hl_log["hl_gradient_steps"] = hl_n_gradient_step + 1
                 hl_log["hl_avg_loss_diffusion"] /= args.log_interval
+                hl_log["hl_avg_loss_classifier"] /= args.log_interval
                 print(hl_log)
-                hl_log = {"hl_avg_loss_diffusion": 0.}
+                hl_log = {"hl_avg_loss_diffusion": 0., "hl_avg_loss_classifier": 0.}
 
             if (ll_n_gradient_step + 1) % args.log_interval == 0:
-                ll_log["gradient_steps"] = ll_n_gradient_step + 1
+                ll_log["ll_gradient_steps"] = ll_n_gradient_step + 1
                 ll_log["ll_avg_loss_diffusion"] /= args.log_interval
+                ll_log["ll_avg_loss_classifier"] /= args.log_interval
                 print(ll_log)
-                ll_log = {"ll_avg_loss_diffusion": 0.}
+                ll_log = {"ll_avg_loss_diffusion": 0., "ll_avg_loss_classifier": 0.}
 
             # ----------- Saving ------------
             if (hl_n_gradient_step + 1) % args.save_interval == 0:
