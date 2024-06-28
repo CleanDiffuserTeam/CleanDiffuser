@@ -14,7 +14,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 
 from cleandiffuser.classifier import CumRewClassifier
-from cleandiffuser.dataset.d4rl_antmaze_dataset import D4RLAntmazeDataset
+from cleandiffuser.dataset.d4rl_maze2d_dataset import D4RLMaze2DDataset
 from cleandiffuser.dataset.dataset_utils import loop_dataloader
 from cleandiffuser.diffusion import DiscreteDiffusionSDE
 from cleandiffuser.nn_classifier import HalfJannerUNet1d
@@ -35,7 +35,7 @@ def pipeline(args):
     env = gym.make(args.task.env_name)
 
     # HL -- downsampled
-    hl_dataset = D4RLAntmazeDataset( # change the dataset
+    hl_dataset = D4RLMaze2DDataset( # change the dataset
         env.get_dataset(), horizon=args.task.horizon, discount=args.discount,
         noreaching_penalty=args.noreaching_penalty,)
     hl_dataloader = DataLoader(
@@ -43,7 +43,7 @@ def pipeline(args):
     hl_obs_dim, hl_act_dim = hl_dataset.o_dim, hl_dataset.a_dim
 
     # LL -- short horizon
-    ll_dataset = D4RLAntmazeDataset(
+    ll_dataset = D4RLMaze2DDataset(
         env.get_dataset(), horizon=args.task.ll_horizon, discount=args.discount,
         noreaching_penalty=args.noreaching_penalty,)
     ll_dataloader = DataLoader(

@@ -5,6 +5,7 @@ import gym
 import hydra
 import numpy as np
 import torch
+from tqdm import tqdm
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 
@@ -77,6 +78,7 @@ def pipeline(args):
         n_gradient_step = 0
         log = {"avg_loss_diffusion": 0., "avg_loss_classifier": 0.}
 
+        pbar = tqdm(total=args.diffusion_gradient_steps)
         for batch in loop_dataloader(dataloader):
 
             obs = batch["obs"]["state"].to(args.device)
@@ -110,6 +112,10 @@ def pipeline(args):
             n_gradient_step += 1
             if n_gradient_step >= args.diffusion_gradient_steps:
                 break
+
+            pbar.update(1)
+
+        pbar.close()
 
     # ---------------------- Inference ----------------------
     elif args.mode == "inference":
