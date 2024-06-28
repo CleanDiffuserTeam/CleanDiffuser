@@ -3,8 +3,8 @@ defaults:
   - task: maze2d-umaze-v1
 
 pipeline_name: shd_d4rl_maze2d
-# mode: train
-mode: inference
+mode: train
+# mode: inference
 seed: 0
 device: cuda:0
 
