@@ -132,9 +132,9 @@ def pipeline(args):
         for hl_batch, ll_batch in zip(loop_dataloader(hl_dataloader), loop_dataloader(ll_dataloader)):
             
             # hl downsample by the ll_horizon, namely horizon / ll_horizon
-            hl_obs = hl_batch["obs"]["state"][::args.task.ll_horizon].to(args.device)
-            hl_act = hl_batch["act"][::args.task.ll_horizon].to(args.device)
-            hl_val = hl_batch["val"][::args.task.ll_horizon].to(args.device)
+            hl_obs = hl_batch["obs"]["state"][:, ::args.task.ll_horizon, :].to(args.device)
+            hl_act = hl_batch["act"][:,::args.task.ll_horizon, :].to(args.device)
+            hl_val = hl_batch["val"].to(args.device)
             hl_x = torch.cat([hl_obs, hl_act], -1)
 
             ll_obs = ll_batch["obs"]["state"].to(args.device)
@@ -175,15 +175,17 @@ def pipeline(args):
             # ----------- Saving ------------
             if (hl_n_gradient_step + 1) % args.save_interval == 0:
                 hl_agent.save(save_path + f"hl_diffusion_ckpt_{hl_n_gradient_step + 1}.pt")
-                hl_agent.save_classifier(save_path + f"hl_classifier_ckpt_{hl_n_gradient_step + 1}.pt")
+                hl_agent.classifier.save(save_path + f"hl_classifier_ckpt_{hl_n_gradient_step + 1}.pt")
                 hl_agent.save(save_path + f"hl_diffusion_ckpt_latest.pt")
-                hl_agent.save_classifier(save_path + f"hl_classifier_ckpt_latest.pt")
+                hl_agent.classifier.save(save_path + f"hl_classifier_ckpt_latest.pt")
+
+                # print('save to', save_path + f"hl_diffusion_ckpt_{hl_n_gradient_step + 1}.pt")
 
             if (ll_n_gradient_step + 1) % args.save_interval == 0:
                 ll_agent.save(save_path + f"ll_diffusion_ckpt_{ll_n_gradient_step + 1}.pt")
-                ll_agent.save_classifier(save_path + f"ll_classifier_ckpt_{ll_n_gradient_step + 1}.pt")
+                ll_agent.classifier.save(save_path + f"ll_classifier_ckpt_{ll_n_gradient_step + 1}.pt")
                 ll_agent.save(save_path + f"ll_diffusion_ckpt_latest.pt")
-                ll_agent.save_classifier(save_path + f"ll_classifier_ckpt_latest.pt")
+                ll_agent.classifier.save(save_path + f"ll_classifier_ckpt_latest.pt")
 
             hl_n_gradient_step += 1
             ll_n_gradient_step += 1
@@ -201,22 +203,22 @@ def pipeline(args):
     elif args.mode == "inference":
 
         hl_agent.load(save_path + f"hl_diffusion_ckpt_{args.ckpt}.pt")
-        hl_agent.load_classifier(save_path + f"hl_classifier_ckpt_{args.ckpt}.pt")
+        hl_agent.classifier.load(save_path + f"hl_classifier_ckpt_{args.ckpt}.pt")
 
         ll_agent.load(save_path + f"ll_diffusion_ckpt_{args.ckpt}.pt")
-        ll_agent.load_classifier(save_path + f"ll_classifier_ckpt_{args.ckpt}.pt")
+        ll_agent.classifier.load(save_path + f"ll_classifier_ckpt_{args.ckpt}.pt")
 
         hl_agent.eval()
         ll_agent.eval()
 
-        env_eval = gym.make(args.task.env_name)
+        env_eval = gym.vector.make(args.task.env_name, args.num_envs)
         normalizer = hl_dataset.get_normalizer()
         episode_rewards = []
 
         hl_prior = torch.zeros((args.num_envs, args.task.hl_horizon, hl_obs_dim + hl_act_dim), device=args.device)
         ll_prior = torch.zeros((args.num_envs, args.task.ll_horizon, ll_obs_dim + ll_act_dim), device=args.device)
 
-        for _ in range(args.n_eval_episodes):
+        for _ in range(args.num_episodes):
 
             obs, ep_reward, cum_done, t = env_eval.reset(), 0., 0., 0
 
@@ -237,7 +239,7 @@ def pipeline(args):
                 hl_logp = hl_log["log_p"].view(args.num_candidates, args.num_envs, -1).sum(-1)
                 hl_idx = hl_logp.argmax(0)
                 # get next obs
-                hl_next_state = hl_traj.view(args.num_candidates, args.num_envs, args.task.horizon, -1)[
+                hl_next_state = hl_traj.view(args.num_candidates, args.num_envs, args.task.hl_horizon, -1)[
                       hl_idx, torch.arange(args.num_envs), 1, :hl_obs_dim]
 
                 # LL
@@ -254,8 +256,9 @@ def pipeline(args):
                 # select the best plan
                 ll_logp = ll_log["log_p"].view(args.num_candidates, args.num_envs, -1).sum(-1)
                 ll_idx = ll_logp.argmax(0)
-                act = ll_traj.view(args.num_candidates, args.num_envs, args.task.horizon, -1)[
+                act = ll_traj.view(args.num_candidates, args.num_envs, args.task.ll_horizon, -1)[
                     ll_idx, torch.arange(args.num_envs), 0, ll_obs_dim:]
+                act = act.clip(-1., 1.).cpu().numpy()
                 
                 # step
                 obs, rew, done, info = env_eval.step(act)
