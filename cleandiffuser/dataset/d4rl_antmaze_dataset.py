@@ -101,7 +101,7 @@ class D4RLAntmazeDataset(BaseDataset):
 
         data = {
             'obs': {
-                'state': self.seq_obs[path_idx, start:end]},
+            'state': self.seq_obs[path_idx, start:end]},
             'act': self.seq_act[path_idx, start:end],
             'rew': self.seq_rew[path_idx, start:end],
             'val': values}

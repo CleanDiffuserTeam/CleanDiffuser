@@ -44,7 +44,7 @@ def pipeline(args):
 
     # LL -- short horizon
     ll_dataset = D4RLAntmazeDataset(
-        env.get_dataset(), horizon=args.task.horizon, discount=args.discount,
+        env.get_dataset(), horizon=args.task.ll_horizon, discount=args.discount,
         noreaching_penalty=args.noreaching_penalty,)
     ll_dataloader = DataLoader(
         ll_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True, drop_last=True)
@@ -57,7 +57,7 @@ def pipeline(args):
         timestep_emb_type="positional", attention=False, kernel_size=5)
     
     hl_nn_classifier = HalfJannerUNet1d(
-        args.task.horizon, hl_obs_dim + hl_act_dim, out_dim=1,
+        args.task.hl_horizon, hl_obs_dim + hl_act_dim, out_dim=1,
         model_dim=args.model_dim, emb_dim=args.model_dim, dim_mult=args.task.dim_mult,
         timestep_emb_type="positional", kernel_size=3)
     
@@ -67,7 +67,7 @@ def pipeline(args):
         timestep_emb_type="positional", attention=False, kernel_size=5)
 
     ll_nn_classifier = HalfJannerUNet1d(
-        args.task.horizon, ll_obs_dim + ll_act_dim, out_dim=1,
+        args.task.ll_horizon, ll_obs_dim + ll_act_dim, out_dim=1,
         model_dim=args.model_dim, emb_dim=args.model_dim, dim_mult=args.task.dim_mult,
         timestep_emb_type="positional", kernel_size=3)
     
@@ -86,14 +86,14 @@ def pipeline(args):
     ll_classifier = CumRewClassifier(ll_nn_classifier, device=args.device)
 
     # ----------------- Masking -------------------
-    hl_fix_mask = torch.zeros((args.task.horizon, hl_obs_dim + hl_act_dim))
+    hl_fix_mask = torch.zeros((args.task.hl_horizon, hl_obs_dim + hl_act_dim))
     hl_fix_mask[0, :hl_obs_dim] = 1.
-    hl_loss_weight = torch.ones((args.task.horizon, hl_obs_dim + hl_act_dim))
+    hl_loss_weight = torch.ones((args.task.hl_horizon, hl_obs_dim + hl_act_dim))
     hl_loss_weight[0, hl_obs_dim:] = args.action_loss_weight
 
-    ll_fix_mask = torch.zeros((args.task.horizon, ll_obs_dim + ll_act_dim))
+    ll_fix_mask = torch.zeros((args.task.ll_horizon, ll_obs_dim + ll_act_dim))
     ll_fix_mask[0, :ll_obs_dim] = 1.
-    ll_loss_weight = torch.ones((args.task.horizon, ll_obs_dim + ll_act_dim))
+    ll_loss_weight = torch.ones((args.task.ll_horizon, ll_obs_dim + ll_act_dim))
     ll_loss_weight[0, ll_obs_dim:] = args.action_loss_weight
     
     # need design
@@ -128,10 +128,11 @@ def pipeline(args):
         ll_log = {"ll_avg_loss_diffusion": 0., "ll_avg_loss_classifier": 0.}
 
         for hl_batch, ll_batch in zip(loop_dataloader(hl_dataloader), loop_dataloader(ll_dataloader)):
-
-            hl_obs = hl_batch["obs"]["state"].to(args.device)
-            hl_act = hl_batch["act"].to(args.device)
-            hl_val = hl_batch["val"].to(args.device)
+            
+            # hl downsample by the ll_horizon, namely horizon / ll_horizon
+            hl_obs = hl_batch["obs"]["state"][::args.task.ll_horizon].to(args.device)
+            hl_act = hl_batch["act"][::args.task.ll_horizon].to(args.device)
+            hl_val = hl_batch["val"][::args.task.ll_horizon].to(args.device)
             hl_x = torch.cat([hl_obs, hl_act], -1)
 
             ll_obs = ll_batch["obs"]["state"].to(args.device)
@@ -171,16 +172,16 @@ def pipeline(args):
 
             # ----------- Saving ------------
             if (hl_n_gradient_step + 1) % args.save_interval == 0:
-                hl_agent.save(save_path + f"diffusion_ckpt_{hl_n_gradient_step + 1}.pt")
-                hl_agent.classifier.save(save_path + f"classifier_ckpt_{hl_n_gradient_step + 1}.pt")
-                hl_agent.save(save_path + f"diffusion_ckpt_latest.pt")
-                hl_agent.classifier.save(save_path + f"classifier_ckpt_latest.pt")
+                hl_agent.save(save_path + f"hl_diffusion_ckpt_{hl_n_gradient_step + 1}.pt")
+                hl_agent.save_classifier(save_path + f"hl_classifier_ckpt_{hl_n_gradient_step + 1}.pt")
+                hl_agent.save(save_path + f"hl_diffusion_ckpt_latest.pt")
+                hl_agent.save_classifier(save_path + f"hl_classifier_ckpt_latest.pt")
 
             if (ll_n_gradient_step + 1) % args.save_interval == 0:
-                ll_agent.save(save_path + f"diffusion_ckpt_{ll_n_gradient_step + 1}.pt")
-                ll_agent.classifier.save(save_path + f"classifier_ckpt_{ll_n_gradient_step + 1}.pt")
-                ll_agent.save(save_path + f"diffusion_ckpt_latest.pt")
-                ll_agent.classifier.save(save_path + f"classifier_ckpt_latest.pt")
+                ll_agent.save(save_path + f"ll_diffusion_ckpt_{ll_n_gradient_step + 1}.pt")
+                ll_agent.save_classifier(save_path + f"ll_classifier_ckpt_{ll_n_gradient_step + 1}.pt")
+                ll_agent.save(save_path + f"ll_diffusion_ckpt_latest.pt")
+                ll_agent.save_classifier(save_path + f"ll_classifier_ckpt_latest.pt")
 
             hl_n_gradient_step += 1
             ll_n_gradient_step += 1
@@ -190,6 +191,84 @@ def pipeline(args):
 
             if ll_n_gradient_step >= args.classifier_gradient_steps:
                 break
+
+    # ---------------------- Inference ----------------------
+    elif args.mode == "inference":
+
+        hl_agent.load(save_path + f"hl_diffusion_ckpt_{args.ckpt}.pt")
+        hl_agent.load_classifier(save_path + f"hl_classifier_ckpt_{args.ckpt}.pt")
+
+        ll_agent.load(save_path + f"ll_diffusion_ckpt_{args.ckpt}.pt")
+        ll_agent.load_classifier(save_path + f"ll_classifier_ckpt_{args.ckpt}.pt")
+
+        hl_agent.eval()
+        ll_agent.eval()
+
+        env_eval = gym.make(args.task.env_name)
+        normalizer = hl_dataset.get_normalizer()
+        episode_rewards = []
+
+        hl_prior = torch.zeros((args.num_envs, args.task.hl_horizon, hl_obs_dim + hl_act_dim), device=args.device)
+        ll_prior = torch.zeros((args.num_envs, args.task.ll_horizon, ll_obs_dim + ll_act_dim), device=args.device)
+
+        for _ in range(args.n_eval_episodes):
+
+            obs, ep_reward, cum_done, t = env_eval.reset(), 0., 0., 0
+
+            while not np.all(cum_done) and t < 1000 + 1:
+                # normalize obs
+                obs = torch.tensor(normalizer.normalize(obs), device=args.device, dtype=torch.float32)
+
+                # HL
+                hl_prior[:, 0, :hl_obs_dim] = obs
+                hl_traj, hl_log = hl_agent.sample(
+                    hl_prior.repeat(args.num_candidates, 1, 1),
+                    solver=args.solver,
+                    n_samples=args.num_candidates * args.num_envs,
+                    sample_steps=args.sampling_steps,
+                    use_ema=args.use_ema, w_cg=args.task.w_cg, temperature=args.temperature)
+
+                # select the best plan
+                hl_logp = hl_log["log_p"].view(args.num_candidates, args.num_envs, -1).sum(-1)
+                hl_idx = hl_logp.argmax(0)
+                # get next obs
+                hl_next_state = hl_traj.view(args.num_candidates, args.num_envs, args.task.horizon, -1)[
+                      hl_idx, torch.arange(args.num_envs), 1, :hl_obs_dim]
+
+                # LL
+                ll_prior[:, 0, :ll_obs_dim] = obs
+                ll_traj, ll_log = ll_agent.sample(
+                    ll_prior.repeat(args.num_candidates, 1, 1),
+                    solver=args.solver,
+                    n_samples=args.num_candidates * args.num_envs,
+                    sample_steps=args.sampling_steps,
+                    use_ema=args.use_ema, w_cg=args.task.w_cg, temperature=args.temperature)
+                
+                # select the best plan
+                ll_logp = ll_log["log_p"].view(args.num_candidates, args.num_envs, -1).sum(-1)
+                ll_idx = ll_logp.argmax(0)
+                act = ll_traj.view(args.num_candidates, args.num_envs, args.task.horizon, -1)[
+                    ll_idx, torch.arange(args.num_envs), 0, ll_obs_dim:]
+                
+                # step
+                obs, rew, done, info = env_eval.step(act)
+
+                t += 1
+                cum_done = done if cum_done is None else np.logical_or(cum_done, done)
+                ep_reward += rew
+                print(f'[t={t}] xy: {obs[:, :2]}')
+                print(f'[t={t}] cum_rew: {ep_reward}, '
+                      f'logp: {hl_logp[hl_idx, torch.arange(args.num_envs)]}')
+
+            # clip the reward to [0, 1] since the max cumulative reward is 1
+            episode_rewards.append(np.clip(ep_reward, 0., 1.))
+
+        episode_rewards = [list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards]
+        episode_rewards = np.array(episode_rewards)
+        print(np.mean(episode_rewards, -1), np.std(episode_rewards, -1))
+
+    else:
+        raise ValueError(f"Invalid mode: {args.mode}")
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ defaults:
   - _self_
   - task: antmaze-medium-play-v2
 
-pipeline_name: diffuser_d4rl_antmaze
+pipeline_name: shd_d4rl_antmaze
 mode: train
 seed: 0
 device: cuda:0
