@@ -9,6 +9,7 @@ import gym
 import hydra
 import numpy as np
 import torch
+from tqdm import tqdm
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 
@@ -126,6 +127,8 @@ def pipeline(args):
         hl_log = {"hl_avg_loss_diffusion": 0., "hl_avg_loss_classifier": 0.}
         ll_log = {"ll_avg_loss_diffusion": 0., "ll_avg_loss_classifier": 0.}
 
+        pbar = tqdm(total=args.diffusion_gradient_steps)
+
         for hl_batch, ll_batch in zip(loop_dataloader(hl_dataloader), loop_dataloader(ll_dataloader)):
             
             # hl downsample by the ll_horizon, namely horizon / ll_horizon
@@ -191,6 +194,9 @@ def pipeline(args):
             if ll_n_gradient_step >= args.classifier_gradient_steps:
                 break
 
+            pbar.update(1)
+
+        pbar.close()
     # ---------------------- Inference ----------------------
     elif args.mode == "inference":
 
