@@ -11,23 +11,26 @@ from collections import defaultdict
 from cleandiffuser.dataset.imagecodecs import register_codecs, Jpeg2k
 from cleandiffuser.dataset.base_dataset import BaseDataset
 from cleandiffuser.dataset.replay_buffer import ReplayBuffer
-from cleandiffuser.dataset.dataset_utils import SequenceSampler, EmptyNormalizer, RotationTransformer, dict_apply, MinMaxNormalizer, ImageNormalizer
+from cleandiffuser.dataset.dataset_utils import SequenceSampler, EmptyNormalizer, RotationTransformer, dict_apply, \
+    MinMaxNormalizer, ImageNormalizer
+
 register_codecs()
+
 
 class RobomimicDataset(BaseDataset):
     def __init__(self,
-            dataset_dir,
-            horizon=1,
-            pad_before=0,
-            pad_after=0,
-            obs_keys = ['object', 'robot0_eef_pos', 'robot0_eef_quat', 'robot0_gripper_qpos'],
-            abs_action = False,
-            rotation_rep='rotation_6d',
-        ):
+                 dataset_dir,
+                 horizon=1,
+                 pad_before=0,
+                 pad_after=0,
+                 obs_keys=('object', 'robot0_eef_pos', 'robot0_eef_quat', 'robot0_gripper_qpos'),
+                 abs_action=False,
+                 rotation_rep='rotation_6d',
+                 ):
         super().__init__()
         self.rotation_transformer = RotationTransformer(
             from_rep='axis_angle', to_rep=rotation_rep)
-        
+
         self.replay_buffer = ReplayBuffer.create_empty_numpy()
         with h5py.File(dataset_dir) as file:
             demos = file['data']
@@ -40,13 +43,13 @@ class RobomimicDataset(BaseDataset):
                     abs_action=abs_action,
                     rotation_transformer=self.rotation_transformer)
                 self.replay_buffer.add_episode(episode)
-        
+
         self.sampler = SequenceSampler(
-            replay_buffer=self.replay_buffer, 
+            replay_buffer=self.replay_buffer,
             sequence_length=horizon,
-            pad_before=pad_before, 
+            pad_before=pad_before,
             pad_after=pad_after)
-        
+
         self.horizon = horizon
         self.pad_before = pad_before
         self.pad_after = pad_after
@@ -57,12 +60,12 @@ class RobomimicDataset(BaseDataset):
         raw_shape = action.shape
         if raw_shape[-1] == 20:
             # dual arm
-            action = action.reshape(-1,2,10)
+            action = action.reshape(-1, 2, 10)
 
         d_rot = action.shape[-1] - 4
-        pos = action[...,:3]
-        rot = action[...,3:3+d_rot]
-        gripper = action[...,[-1]]
+        pos = action[..., :3]
+        rot = action[..., 3:3 + d_rot]
+        gripper = action[..., [-1]]
         rot = self.rotation_transformer.inverse(rot)
         uaction = np.concatenate([
             pos, rot, gripper
@@ -89,10 +92,10 @@ class RobomimicDataset(BaseDataset):
         }
 
     def sample_to_data(self, sample):
-        state = sample['obs'].astype(np.float32) 
+        state = sample['obs'].astype(np.float32)
         state = self.normalizer['obs']['state'].normalize(state)
-        
-        action = sample['action'].astype(np.float32)  
+
+        action = sample['action'].astype(np.float32)
         action = self.normalizer['action'].normalize(action)
         data = {
             'obs': {
@@ -101,10 +104,10 @@ class RobomimicDataset(BaseDataset):
             'action': action,
         }
         return data
-        
+
     def __str__(self) -> str:
         return f"Keys: {self.replay_buffer.keys()} Steps: {self.replay_buffer.n_steps} Episodes: {self.replay_buffer.n_episodes}"
-    
+
     def __len__(self) -> int:
         return len(self.sampler)
 
@@ -124,20 +127,20 @@ def _data_to_obs(raw_obs, raw_actions, obs_keys, abs_action, rotation_transforme
         is_dual_arm = False
         if raw_actions.shape[-1] == 14:
             # dual arm
-            raw_actions = raw_actions.reshape(-1,2,7)
+            raw_actions = raw_actions.reshape(-1, 2, 7)
             is_dual_arm = True
 
-        pos = raw_actions[...,:3]
-        rot = raw_actions[...,3:6]
-        gripper = raw_actions[...,6:]
+        pos = raw_actions[..., :3]
+        rot = raw_actions[..., 3:6]
+        gripper = raw_actions[..., 6:]
         rot = rotation_transformer.forward(rot)
         raw_actions = np.concatenate([
             pos, rot, gripper
         ], axis=-1).astype(np.float32)
-    
+
         if is_dual_arm:
-            raw_actions = raw_actions.reshape(-1,20)
-    
+            raw_actions = raw_actions.reshape(-1, 20)
+
     data = {
         'obs': obs,
         'action': raw_actions
@@ -147,26 +150,26 @@ def _data_to_obs(raw_obs, raw_actions, obs_keys, abs_action, rotation_transforme
 
 class RobomimicImageDataset(BaseDataset):
     def __init__(self,
-            dataset_dir,
-            shape_meta: dict,
-            n_obs_steps=None,
-            horizon=1,
-            pad_before=0,
-            pad_after=0,
-            abs_action = False,
-            rotation_rep='rotation_6d',
-        ):
+                 dataset_dir,
+                 shape_meta: dict,
+                 n_obs_steps=None,
+                 horizon=1,
+                 pad_before=0,
+                 pad_after=0,
+                 abs_action=False,
+                 rotation_rep='rotation_6d',
+                 ):
         super().__init__()
         self.rotation_transformer = RotationTransformer(
             from_rep='axis_angle', to_rep=rotation_rep)
-        
+
         self.replay_buffer = _convert_robomimic_to_replay(
-            store=zarr.MemoryStore(), 
-            shape_meta=shape_meta, 
-            dataset_path=dataset_dir, 
-            abs_action=abs_action, 
+            store=zarr.MemoryStore(),
+            shape_meta=shape_meta,
+            dataset_path=dataset_dir,
+            abs_action=abs_action,
             rotation_transformer=self.rotation_transformer)
-        
+
         rgb_keys = list()
         lowdim_keys = list()
         obs_shape_meta = shape_meta['obs']
@@ -176,20 +179,20 @@ class RobomimicImageDataset(BaseDataset):
                 rgb_keys.append(key)
             elif type == 'low_dim':
                 lowdim_keys.append(key)
-        
+
         key_first_k = dict()
         if n_obs_steps is not None:
             # only take first k obs from images
             for key in rgb_keys + lowdim_keys:
                 key_first_k[key] = n_obs_steps
         self.sampler = SequenceSampler(
-            replay_buffer=self.replay_buffer, 
+            replay_buffer=self.replay_buffer,
             sequence_length=horizon,
-            pad_before=pad_before, 
+            pad_before=pad_before,
             pad_after=pad_after,
             key_first_k=key_first_k
         )
-        
+
         self.shape_meta = shape_meta
         self.rgb_keys = rgb_keys
         self.lowdim_keys = lowdim_keys
@@ -198,7 +201,7 @@ class RobomimicImageDataset(BaseDataset):
         self.pad_before = pad_before
         self.pad_after = pad_after
         self.n_obs_steps = n_obs_steps
-        
+
         self.normalizer = self.get_normalizer()
 
     def get_normalizer(self):
@@ -208,32 +211,32 @@ class RobomimicImageDataset(BaseDataset):
         for key in self.rgb_keys:
             normalizer['obs'][key] = ImageNormalizer()
         normalizer['action'] = MinMaxNormalizer(self.replay_buffer['action'][:])
-            
+
         return normalizer
 
     def __str__(self) -> str:
         return f"Keys: {self.replay_buffer.keys()} Steps: {self.replay_buffer.n_steps} Episodes: {self.replay_buffer.n_episodes}"
-    
+
     def __len__(self) -> int:
         return len(self.sampler)
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         sample = self.sampler.sample_sequence(idx)
-        
+
         # obs
         # to save RAM, only return first n_obs_steps of OBS
         # since the rest will be discarded anyway.
         # when self.n_obs_steps is None
         # this slice does nothing (takes all)
         T_slice = slice(self.n_obs_steps)
-        
+
         obs_dict = dict()
         for key in self.rgb_keys:
             # move channel last to channel first
             # T,H,W,C
             # convert uint8 image to float32
-            obs_dict[key] = np.moveaxis(sample[key][T_slice],-1,1
-                ).astype(np.float32) / 255.
+            obs_dict[key] = np.moveaxis(sample[key][T_slice], -1, 1
+                                        ).astype(np.float32) / 255.
             # T,C,H,W
             del sample[key]
             obs_dict[key] = self.normalizer['obs'][key].normalize(obs_dict[key])
@@ -244,7 +247,7 @@ class RobomimicImageDataset(BaseDataset):
             obs_dict[key] = self.normalizer['obs'][key].normalize(obs_dict[key])
 
         # action
-        action = sample['action'].astype(np.float32) 
+        action = sample['action'].astype(np.float32)
         action = self.normalizer['action'].normalize(action)
 
         torch_data = {
@@ -252,17 +255,17 @@ class RobomimicImageDataset(BaseDataset):
             'action': torch.from_numpy(action)
         }
         return torch_data
-    
+
     def undo_transform_action(self, action):
         raw_shape = action.shape
         if raw_shape[-1] == 20:
             # dual arm
-            action = action.reshape(-1,2,10)
+            action = action.reshape(-1, 2, 10)
 
         d_rot = action.shape[-1] - 4
-        pos = action[...,:3]
-        rot = action[...,3:3+d_rot]
-        gripper = action[...,[-1]]
+        pos = action[..., :3]
+        rot = action[..., 3:3 + d_rot]
+        gripper = action[..., [-1]]
         rot = self.rotation_transformer.inverse(rot)
         uaction = np.concatenate([
             pos, rot, gripper
@@ -281,25 +284,105 @@ def _convert_actions(raw_actions, abs_action, rotation_transformer):
         is_dual_arm = False
         if raw_actions.shape[-1] == 14:
             # dual arm
-            raw_actions = raw_actions.reshape(-1,2,7)
+            raw_actions = raw_actions.reshape(-1, 2, 7)
             is_dual_arm = True
 
-        pos = raw_actions[...,:3]
-        rot = raw_actions[...,3:6]
-        gripper = raw_actions[...,6:]
+        pos = raw_actions[..., :3]
+        rot = raw_actions[..., 3:6]
+        gripper = raw_actions[..., 6:]
         rot = rotation_transformer.forward(rot)
         raw_actions = np.concatenate([
             pos, rot, gripper
         ], axis=-1).astype(np.float32)
-    
+
         if is_dual_arm:
-            raw_actions = raw_actions.reshape(-1,20)
+            raw_actions = raw_actions.reshape(-1, 20)
         actions = raw_actions
     return actions
 
 
-def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, rotation_transformer, 
-        n_workers=None, max_inflight_tasks=None):
+def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, rotation_transformer,
+                                 n_workers=None, max_inflight_tasks=None):
+    """ Convert Robomimic dataset to ReplayBuffer
+
+    A ReplayBuffer is a `zarr.Group` or Dict[str, dict] that contains the following keys:
+    - data: zarr.Group or Dict[str, dict]
+        Contains the data. All data should be stored as numpy arrays with the same length.
+    - meta: zarr.Group or Dict[str, dict]
+        Contains key "episode_ends", which is a numpy array of shape (n_episodes,) that contains the
+        end index of each episode in the data.
+
+    Args:
+    - store: zarr.Store
+        zarr.MemoryStore()
+    - shape_meta: dict
+        Shape metadata of the dataset. Should contain keys 'obs', 'action'.
+        For example:
+        shape_meta = {
+            "action": {"shape": [10, ]},
+            "obs": {
+                "agentview_image": {"shape": [84, 84, 3], "type": "rgb"},
+                "robot0_eef_pos":  {"shape": [3, ],       "type": "low_dim"},
+            }}
+    - dataset_path: str
+        Path to the Robomimic dataset
+    - abs_action: bool
+        Whether to use position or velocity control
+    - rotation_transformer: RotationTransformer
+        Rotation transformer to convert rotation representation
+    """
+
+    """ Dataset structure of Can-PH, as an example:
+    - data
+        - demo_0
+            - actions  (118, 7)
+            - dones     (118, )
+            - next_obs
+                - agentview_image  (118, 84, 84, 3)
+                - object            (118, 14)
+                - robot0_eef_pos   (118, 3)
+                - robot0_eef_quat
+                - robot0_eef_vel_ang
+                - robot0_eef_vel_lin
+                - robot0_eye_in_hand_image
+                - robot0_gripper_qpos
+                - robot0_gripper_qvel
+                - robot0_joint_pos
+                - robot0_joint_pos_cos
+                - robot0_joint_pos_sin
+                - robot0_joint_vel
+            - obs
+                ...
+            - rewards   (118, )
+            - states    (118, 71)
+        - demo_1
+        ...(x200 demos)
+    - mask
+        - 20_percent
+        - 20_percent_train
+        - 20_percent_valid
+        - 50_percent
+        - 50_percent_train
+        - 50_percent_valid
+        - train (180,)
+        - valid (20,)
+        
+    Suppose that the `shape_meta` is:
+    shape_meta = {
+    "action": {"shape": [10, ]},
+    "obs": {
+        "agentview_image": {
+            "shape": [3, 84, 84], "type": "rgb", },
+        "robot0_eye_in_hand_image": {
+            "shape": [3, 84, 84], "type": "rgb", },
+        "robot0_eef_pos": {
+            "shape": [3, ], "type": "low_dim", },
+        "robot0_eef_quat": {
+            "shape": [4, ], "type": "low_dim", },
+        "robot0_gripper_qpos": {
+            "shape": [2, ], "type": "low_dim", }, }}
+    """
+
     import multiprocessing
     if n_workers is None:
         n_workers = multiprocessing.cpu_count()
@@ -318,12 +401,16 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
             rgb_keys.append(key)
         elif type == 'low_dim':
             lowdim_keys.append(key)
-    
+    # rgb_keys = ['agentview_image', 'robot0_eye_in_hand_image']
+    # lowdim_keys = ['robot0_eef_pos', 'robot0_eef_quat', 'robot0_gripper_qpos']
+
+    # create zarr group
     root = zarr.group(store)
     data_group = root.require_group('data', overwrite=True)
     meta_group = root.require_group('meta', overwrite=True)
 
     with h5py.File(dataset_path) as file:
+
         # count total steps
         demos = file['data']
         episode_ends = list()
@@ -336,8 +423,8 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
             episode_ends.append(episode_end)
         n_steps = episode_ends[-1]
         episode_starts = [0] + episode_ends[:-1]
-        _ = meta_group.array('episode_ends', episode_ends, 
-            dtype=np.int64, compressor=None, overwrite=True)
+        _ = meta_group.array('episode_ends', episode_ends,
+                             dtype=np.int64, compressor=None, overwrite=True)
 
         # save lowdim data
         for key in tqdm(lowdim_keys + ['action'], desc="Loading lowdim data"):
@@ -366,7 +453,7 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                 compressor=None,
                 dtype=this_data.dtype
             )
-        
+
         def img_copy(zarr_arr, zarr_idx, hdf5_arr, hdf5_idx):
             try:
                 zarr_arr[zarr_idx] = hdf5_arr[hdf5_idx]
@@ -375,20 +462,20 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                 return True
             except Exception as e:
                 return False
-        
-        with tqdm(total=n_steps*len(rgb_keys), desc="Loading image data", mininterval=1.0) as pbar:
+
+        with tqdm(total=n_steps * len(rgb_keys), desc="Loading image data", mininterval=1.0) as pbar:
             # one chunk per thread, therefore no synchronization needed
             with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as executor:
                 futures = set()
                 for key in rgb_keys:
                     data_key = 'obs/' + key
                     shape = tuple(shape_meta['obs'][key]['shape'])
-                    c,h,w = shape
+                    c, h, w = shape
                     this_compressor = Jpeg2k(level=50)
                     img_arr = data_group.require_dataset(
                         name=key,
-                        shape=(n_steps,h,w,c),
-                        chunks=(1,h,w,c),
+                        shape=(n_steps, h, w, c),
+                        chunks=(1, h, w, c),
                         compressor=this_compressor,
                         dtype=np.uint8
                     )
@@ -398,8 +485,8 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                         for hdf5_idx in range(hdf5_arr.shape[0]):
                             if len(futures) >= max_inflight_tasks:
                                 # limit number of inflight tasks
-                                completed, futures = concurrent.futures.wait(futures, 
-                                    return_when=concurrent.futures.FIRST_COMPLETED)
+                                completed, futures = concurrent.futures.wait(futures,
+                                                                             return_when=concurrent.futures.FIRST_COMPLETED)
                                 for f in completed:
                                     if not f.result():
                                         raise RuntimeError('Failed to encode image!')
@@ -407,8 +494,8 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
 
                             zarr_idx = episode_starts[episode_idx] + hdf5_idx
                             futures.add(
-                                executor.submit(img_copy, 
-                                    img_arr, zarr_idx, hdf5_arr, hdf5_idx))
+                                executor.submit(img_copy,
+                                                img_arr, zarr_idx, hdf5_arr, hdf5_idx))
                 completed, futures = concurrent.futures.wait(futures)
                 for f in completed:
                     if not f.result():
@@ -417,8 +504,3 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
 
     replay_buffer = ReplayBuffer(root)
     return replay_buffer
-
-
-
-
-

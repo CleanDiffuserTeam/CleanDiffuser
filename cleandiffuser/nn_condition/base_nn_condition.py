@@ -21,8 +21,8 @@ class BaseNNCondition(nn.Module):
     ultimately output a tensor of shape (b, *cond_out_shape).
 
     Input:
-        - condition: {"cond1": (b, *cond1_shape), "cond2": (b, *cond2_shape), ...} or (b, *cond_in_shape)
-        - mask :     (b, *mask_shape) or None, None means no mask
+        - condition: Any
+        - mask : Optional, (b, ) or None, None means no mask
 
     Output:
         - condition: (b, *cond_out_shape)

@@ -8,16 +8,29 @@ from cleandiffuser.nn_condition import IdentityCondition, get_mask
 
 
 class LinearCondition(IdentityCondition):
-    """
-    MLP condition is a simple multi-layer perceptron to process the input condition.
+    """ A sample affine condition
 
-    Input:
-        - condition: (b, ..., in_dim)
-        - mask :     (b, ) or None, None means no mask
-        - dropout:   float, probability of condition dropout
+    Use a linear layer to project the input condition to the desired dimension.
 
-    Output:
-        - condition: (b, ..., out_dim)
+    ------------------------------
+    Args:
+    - in_dim: int
+        The input dimension of the condition
+    - out_dim: int
+        The output dimension of the condition
+    - dropout: float
+        The label dropout rate
+
+    ------------------------------
+    Inputs:
+    - condition: torch.Tensor
+        The input condition tensor with shape (b, ..., in_dim)
+    - mask: Optional[torch.Tensor]:
+        The label dropout mask that is used during training. If None, no mask is applied.
+
+    Outputs:
+    - condition: torch.Tensor
+        The output condition tensor with shape (b, ..., out_dim)
     """
 
     def __init__(self, in_dim: int, out_dim: int, dropout: float = 0.25):
@@ -31,18 +44,37 @@ class LinearCondition(IdentityCondition):
 
 
 class MLPCondition(IdentityCondition):
+    """ A simple MLP condition
+
+    Use a simple MLP to project the input condition to the desired dimension.
+
+    ------------------------------
+    Args:
+    - in_dim: int
+        The input dimension of the condition
+    - out_dim: int
+        The output dimension of the condition
+    - hidden_dims: List[int]
+        The hidden dimensions of the MLP
+    - act: nn.Module
+        The activation function of the MLP
+    - dropout: float
+        The label dropout rate
+
+    ------------------------------
+    Inputs:
+    - condition: torch.Tensor
+        The input condition tensor with shape (b, ..., in_dim)
+    - mask: Optional[torch.Tensor]:
+        The label dropout mask that is used during training. If
+        None, no mask is applied.
+
+    Outputs:
+    - condition: torch.Tensor
+        The output condition tensor with shape (b, ..., out_dim)
     """
-    MLP condition is a simple multi-layer perceptron to process the input condition.
 
-    Input:
-        - condition: (b, *cond_in_shape)
-        - mask :     (b, ) or None, None means no mask
-
-    Output:
-        - condition: (b, *cond_out_shape)
-    """
-
-    def __init__(self, in_dim: int, out_dim: int, hidden_dims: List[int], 
+    def __init__(self, in_dim: int, out_dim: int, hidden_dims: List[int],
                  act=nn.LeakyReLU(), dropout: float = 0.25):
         super().__init__(dropout)
         hidden_dims = [hidden_dims, ] if isinstance(hidden_dims, int) else hidden_dims

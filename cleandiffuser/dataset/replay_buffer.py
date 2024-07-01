@@ -7,15 +7,17 @@ import numcodecs
 import numpy as np
 from functools import cached_property
 
+
 def check_chunks_compatible(chunks: tuple, shape: tuple):
     assert len(shape) == len(chunks)
     for c in chunks:
         assert isinstance(c, numbers.Integral)
         assert c > 0
 
-def rechunk_recompress_array(group, name, 
-        chunks=None, chunk_length=None,
-        compressor=None, tmp_key='_temp'):
+
+def rechunk_recompress_array(group, name,
+                             chunks=None, chunk_length=None,
+                             compressor=None, tmp_key='_temp'):
     old_arr = group[name]
     if chunks is None:
         if chunk_length is not None:
@@ -23,10 +25,10 @@ def rechunk_recompress_array(group, name,
         else:
             chunks = old_arr.chunks
     check_chunks_compatible(chunks, old_arr.shape)
-    
+
     if compressor is None:
         compressor = old_arr.compressor
-    
+
     if (chunks == old_arr.chunks) and (compressor == old_arr.compressor):
         # no change
         return old_arr
@@ -45,9 +47,10 @@ def rechunk_recompress_array(group, name,
     arr = group[name]
     return arr
 
-def get_optimal_chunks(shape, dtype, 
-        target_chunk_bytes=2e6, 
-        max_chunk_length=None):
+
+def get_optimal_chunks(shape, dtype,
+                       target_chunk_bytes=2e6,
+                       max_chunk_length=None):
     """
     Common shapes
     T,D
@@ -60,19 +63,19 @@ def get_optimal_chunks(shape, dtype,
     rshape = list(shape[::-1])
     if max_chunk_length is not None:
         rshape[-1] = int(max_chunk_length)
-    split_idx = len(shape)-1
-    for i in range(len(shape)-1):
+    split_idx = len(shape) - 1
+    for i in range(len(shape) - 1):
         this_chunk_bytes = itemsize * np.prod(rshape[:i])
-        next_chunk_bytes = itemsize * np.prod(rshape[:i+1])
+        next_chunk_bytes = itemsize * np.prod(rshape[:i + 1])
         if this_chunk_bytes <= target_chunk_bytes \
-            and next_chunk_bytes > target_chunk_bytes:
+                and next_chunk_bytes > target_chunk_bytes:
             split_idx = i
 
     rchunks = rshape[:split_idx]
     item_chunk_bytes = itemsize * np.prod(rshape[:split_idx])
     this_max_chunk_length = rshape[split_idx]
     next_chunk_length = min(this_max_chunk_length, math.ceil(
-            target_chunk_bytes / item_chunk_bytes))
+        target_chunk_bytes / item_chunk_bytes))
     rchunks.append(next_chunk_length)
     len_diff = len(shape) - len(rchunks)
     rchunks.extend([1] * len_diff)
@@ -86,19 +89,18 @@ class ReplayBuffer:
     Zarr-based temporal datastructure.
     Assumes first dimension to be time. Only chunk in time dimension.
     """
-    def __init__(self, 
-            root: Union[zarr.Group, 
-            Dict[str,dict]]):
+
+    def __init__(self, root: Union[zarr.Group, Dict[str, dict]]):
         """
         Dummy constructor. Use copy_from* and create_from* class methods instead.
         """
-        assert('data' in root)
-        assert('meta' in root)
-        assert('episode_ends' in root['meta'])
+        assert ('data' in root)
+        assert ('meta' in root)
+        assert ('episode_ends' in root['meta'])
         for key, value in root['data'].items():
-            assert(value.shape[0] == root['meta']['episode_ends'][-1])
+            assert (value.shape[0] == root['meta']['episode_ends'][-1])
         self.root = root
-    
+
     # ============= create constructors ===============
     @classmethod
     def create_empty_zarr(cls, storage=None, root=None):
@@ -110,9 +112,9 @@ class ReplayBuffer:
         meta = root.require_group('meta', overwrite=False)
         if 'episode_ends' not in meta:
             episode_ends = meta.zeros('episode_ends', shape=(0,), dtype=np.int64,
-                compressor=None, overwrite=False)
+                                      compressor=None, overwrite=False)
         return cls(root=root)
-    
+
     @classmethod
     def create_empty_numpy(cls):
         root = {
@@ -122,7 +124,7 @@ class ReplayBuffer:
             }
         }
         return cls(root=root)
-    
+
     @classmethod
     def create_from_group(cls, group, **kwargs):
         if 'data' not in group:
@@ -141,14 +143,14 @@ class ReplayBuffer:
         """
         group = zarr.open(os.path.expanduser(zarr_path), mode)
         return cls.create_from_group(group, **kwargs)
-    
+
     # ============= copy constructors ===============
     @classmethod
-    def copy_from_store(cls, src_store, store=None, keys=None, 
-            chunks: Dict[str,tuple]=dict(), 
-            compressors: Union[dict, str, numcodecs.abc.Codec]=dict(), 
-            if_exists='replace',
-            **kwargs):
+    def copy_from_store(cls, src_store, store=None, keys=None,
+                        chunks: Dict[str, tuple] = dict(),
+                        compressors: Union[dict, str, numcodecs.abc.Codec] = dict(),
+                        if_exists='replace',
+                        **kwargs):
         """
         Load to memory.
         """
@@ -178,7 +180,8 @@ class ReplayBuffer:
             root = zarr.group(store=store)
             # copy without recompression
             n_copied, n_skipped, n_bytes_copied = zarr.copy_store(source=src_store, dest=store,
-                source_path='/meta', dest_path='/meta', if_exists=if_exists)
+                                                                  source_path='/meta', dest_path='/meta',
+                                                                  if_exists=if_exists)
             data_group = root.create_group('data', overwrite=True)
             if keys is None:
                 keys = src_root['data'].keys()
@@ -204,13 +207,13 @@ class ReplayBuffer:
                     )
         buffer = cls(root=root)
         return buffer
-    
+
     @classmethod
-    def copy_from_path(cls, zarr_path, backend=None, store=None, keys=None, 
-            chunks: Dict[str,tuple]=dict(), 
-            compressors: Union[dict, str, numcodecs.abc.Codec]=dict(), 
-            if_exists='replace',
-            **kwargs):
+    def copy_from_path(cls, zarr_path, backend=None, store=None, keys=None,
+                       chunks: Dict[str, tuple] = dict(),
+                       compressors: Union[dict, str, numcodecs.abc.Codec] = dict(),
+                       if_exists='replace',
+                       **kwargs):
         """
         Copy a on-disk zarr to in-memory compressed.
         Recommended
@@ -219,17 +222,17 @@ class ReplayBuffer:
             print('backend argument is deprecated!')
             store = None
         group = zarr.open(os.path.expanduser(zarr_path), 'r')
-        return cls.copy_from_store(src_store=group.store, store=store, 
-            keys=keys, chunks=chunks, compressors=compressors, 
-            if_exists=if_exists, **kwargs)
+        return cls.copy_from_store(src_store=group.store, store=store,
+                                   keys=keys, chunks=chunks, compressors=compressors,
+                                   if_exists=if_exists, **kwargs)
 
     # ============= save methods ===============
-    def save_to_store(self, store, 
-            chunks: Optional[Dict[str,tuple]]=dict(),
-            compressors: Union[str, numcodecs.abc.Codec, dict]=dict(),
-            if_exists='replace', 
-            **kwargs):
-        
+    def save_to_store(self, store,
+                      chunks: Optional[Dict[str, tuple]] = dict(),
+                      compressors: Union[str, numcodecs.abc.Codec, dict] = dict(),
+                      if_exists='replace',
+                      **kwargs):
+
         root = zarr.group(store)
         if self.backend == 'zarr':
             # recompression free copy
@@ -242,10 +245,10 @@ class ReplayBuffer:
             for key, value in self.root['meta'].items():
                 _ = meta_group.array(
                     name=key,
-                    data=value, 
-                    shape=value.shape, 
+                    data=value,
+                    shape=value.shape,
                     chunks=value.shape)
-        
+
         # save data, chunk
         data_group = root.create_group('data', overwrite=True)
         for key, value in self.root['data'].items():
@@ -276,28 +279,28 @@ class ReplayBuffer:
                 )
         return store
 
-    def save_to_path(self, zarr_path,             
-            chunks: Optional[Dict[str,tuple]]=dict(),
-            compressors: Union[str, numcodecs.abc.Codec, dict]=dict(), 
-            if_exists='replace', 
-            **kwargs):
+    def save_to_path(self, zarr_path,
+                     chunks: Optional[Dict[str, tuple]] = dict(),
+                     compressors: Union[str, numcodecs.abc.Codec, dict] = dict(),
+                     if_exists='replace',
+                     **kwargs):
         store = zarr.DirectoryStore(os.path.expanduser(zarr_path))
-        return self.save_to_store(store, chunks=chunks, 
-            compressors=compressors, if_exists=if_exists, **kwargs)
+        return self.save_to_store(store, chunks=chunks,
+                                  compressors=compressors, if_exists=if_exists, **kwargs)
 
     @staticmethod
     def resolve_compressor(compressor='default'):
         if compressor == 'default':
-            compressor = numcodecs.Blosc(cname='lz4', clevel=5, 
-                shuffle=numcodecs.Blosc.NOSHUFFLE)
+            compressor = numcodecs.Blosc(cname='lz4', clevel=5,
+                                         shuffle=numcodecs.Blosc.NOSHUFFLE)
         elif compressor == 'disk':
-            compressor = numcodecs.Blosc('zstd', clevel=5, 
-                shuffle=numcodecs.Blosc.BITSHUFFLE)
+            compressor = numcodecs.Blosc('zstd', clevel=5,
+                                         shuffle=numcodecs.Blosc.BITSHUFFLE)
         return compressor
 
     @classmethod
-    def _resolve_array_compressor(cls, 
-            compressors: Union[dict, str, numcodecs.abc.Codec], key, array):
+    def _resolve_array_compressor(cls,
+                                  compressors: Union[dict, str, numcodecs.abc.Codec], key, array):
         # allows compressor to be explicitly set to None
         cpr = 'nil'
         if isinstance(compressors, dict):
@@ -311,10 +314,10 @@ class ReplayBuffer:
         if cpr == 'nil':
             cpr = cls.resolve_compressor('default')
         return cpr
-    
+
     @classmethod
     def _resolve_array_chunks(cls,
-            chunks: Union[dict, tuple], key, array):
+                              chunks: Union[dict, tuple], key, array):
         cks = None
         if isinstance(chunks, dict):
             if key in chunks:
@@ -331,12 +334,12 @@ class ReplayBuffer:
         # check
         check_chunks_compatible(chunks=cks, shape=array.shape)
         return cks
-    
+
     # ============= properties =================
     @cached_property
     def data(self):
         return self.root['data']
-    
+
     @cached_property
     def meta(self):
         return self.root['meta']
@@ -358,42 +361,43 @@ class ReplayBuffer:
             for key, value in np_data.items():
                 _ = meta_group.array(
                     name=key,
-                    data=value, 
-                    shape=value.shape, 
+                    data=value,
+                    shape=value.shape,
                     chunks=value.shape,
                     overwrite=True)
         else:
             meta_group.update(np_data)
-        
+
         return meta_group
-    
+
     @property
     def episode_ends(self):
         return self.meta['episode_ends']
-    
+
     def get_episode_idxs(self):
         import numba
         numba.jit(nopython=True)
+
         def _get_episode_idxs(episode_ends):
             result = np.zeros((episode_ends[-1],), dtype=np.int64)
             for i in range(len(episode_ends)):
                 start = 0
                 if i > 0:
-                    start = episode_ends[i-1]
+                    start = episode_ends[i - 1]
                 end = episode_ends[i]
                 for idx in range(start, end):
                     result[idx] = i
             return result
+
         return _get_episode_idxs(self.episode_ends)
-        
-    
+
     @property
     def backend(self):
         backend = 'numpy'
         if isinstance(self.root, zarr.Group):
             backend = 'zarr'
         return backend
-    
+
     # =========== dict-like API ==============
     def __repr__(self) -> str:
         if self.backend == 'zarr':
@@ -403,13 +407,13 @@ class ReplayBuffer:
 
     def keys(self):
         return self.data.keys()
-    
+
     def values(self):
         return self.data.values()
-    
+
     def items(self):
         return self.data.items()
-    
+
     def __getitem__(self, key):
         return self.data[key]
 
@@ -422,7 +426,7 @@ class ReplayBuffer:
         if len(self.episode_ends) == 0:
             return 0
         return self.episode_ends[-1]
-    
+
     @property
     def n_episodes(self):
         return len(self.episode_ends)
@@ -440,21 +444,21 @@ class ReplayBuffer:
         lengths = np.diff(ends)
         return lengths
 
-    def add_episode(self, 
-            data: Dict[str, np.ndarray], 
-            chunks: Optional[Dict[str,tuple]]=dict(),
-            compressors: Union[str, numcodecs.abc.Codec, dict]=dict()):
-        assert(len(data) > 0)
+    def add_episode(self,
+                    data: Dict[str, np.ndarray],
+                    chunks: Optional[Dict[str, tuple]] = dict(),
+                    compressors: Union[str, numcodecs.abc.Codec, dict] = dict()):
+        assert (len(data) > 0)
         is_zarr = (self.backend == 'zarr')
 
         curr_len = self.n_steps
         episode_length = None
         for key, value in data.items():
-            assert(len(value.shape) >= 1)
+            assert (len(value.shape) >= 1)
             if episode_length is None:
                 episode_length = len(value)
             else:
-                assert(episode_length == len(value))
+                assert (episode_length == len(value))
         new_len = curr_len + episode_length
 
         for key, value in data.items():
@@ -466,18 +470,18 @@ class ReplayBuffer:
                         chunks=chunks, key=key, array=value)
                     cpr = self._resolve_array_compressor(
                         compressors=compressors, key=key, array=value)
-                    arr = self.data.zeros(name=key, 
-                        shape=new_shape, 
-                        chunks=cks,
-                        dtype=value.dtype,
-                        compressor=cpr)
+                    arr = self.data.zeros(name=key,
+                                          shape=new_shape,
+                                          chunks=cks,
+                                          dtype=value.dtype,
+                                          compressor=cpr)
                 else:
                     # copy data to prevent modify
                     arr = np.zeros(shape=new_shape, dtype=value.dtype)
                     self.data[key] = arr
             else:
                 arr = self.data[key]
-                assert(value.shape[1:] == arr.shape[1:])
+                assert (value.shape[1:] == arr.shape[1:])
                 # same method for both zarr and numpy
                 if is_zarr:
                     arr.resize(new_shape)
@@ -485,7 +489,7 @@ class ReplayBuffer:
                     arr.resize(new_shape, refcheck=False)
             # copy data
             arr[-value.shape[0]:] = value
-        
+
         # append to episode ends
         episode_ends = self.episode_ends
         if is_zarr:
@@ -497,13 +501,13 @@ class ReplayBuffer:
         # rechunk
         if is_zarr:
             if episode_ends.chunks[0] < episode_ends.shape[0]:
-                rechunk_recompress_array(self.meta, 'episode_ends', 
-                    chunk_length=int(episode_ends.shape[0] * 1.5))
-    
+                rechunk_recompress_array(self.meta, 'episode_ends',
+                                         chunk_length=int(episode_ends.shape[0] * 1.5))
+
     def drop_episode(self):
         is_zarr = (self.backend == 'zarr')
         episode_ends = self.episode_ends[:].copy()
-        assert(len(episode_ends) > 0)
+        assert (len(episode_ends) > 0)
         start_idx = 0
         if len(episode_ends) > 1:
             start_idx = episode_ends[-2]
@@ -514,13 +518,13 @@ class ReplayBuffer:
             else:
                 value.resize(new_shape, refcheck=False)
         if is_zarr:
-            self.episode_ends.resize(len(episode_ends)-1)
+            self.episode_ends.resize(len(episode_ends) - 1)
         else:
-            self.episode_ends.resize(len(episode_ends)-1, refcheck=False)
-    
+            self.episode_ends.resize(len(episode_ends) - 1, refcheck=False)
+
     def pop_episode(self):
-        assert(self.n_episodes > 0)
-        episode = self.get_episode(self.n_episodes-1, copy=True)
+        assert (self.n_episodes > 0)
+        episode = self.get_episode(self.n_episodes - 1, copy=True)
         self.drop_episode()
         return episode
 
@@ -531,15 +535,15 @@ class ReplayBuffer:
         idx = list(range(len(self.episode_ends)))[idx]
         start_idx = 0
         if idx > 0:
-            start_idx = self.episode_ends[idx-1]
+            start_idx = self.episode_ends[idx - 1]
         end_idx = self.episode_ends[idx]
         result = self.get_steps_slice(start_idx, end_idx, copy=copy)
         return result
-    
+
     def get_episode_slice(self, idx):
         start_idx = 0
         if idx > 0:
-            start_idx = self.episode_ends[idx-1]
+            start_idx = self.episode_ends[idx - 1]
         end_idx = self.episode_ends[idx]
         return slice(start_idx, end_idx)
 
@@ -553,7 +557,7 @@ class ReplayBuffer:
                 x = x.copy()
             result[key] = x
         return result
-    
+
     # =========== chunking =============
     def get_chunks(self) -> dict:
         assert self.backend == 'zarr'
@@ -561,7 +565,7 @@ class ReplayBuffer:
         for key, value in self.data.items():
             chunks[key] = value.chunks
         return chunks
-    
+
     def set_chunks(self, chunks: dict):
         assert self.backend == 'zarr'
         for key, value in chunks.items():

@@ -1,4 +1,3 @@
-
 from typing import Dict, Callable, List, Union
 import numpy as np
 import torch
@@ -8,9 +7,10 @@ from cleandiffuser.dataset.replay_buffer import ReplayBuffer
 import pytorch3d.transforms as pt
 import functools
 
-#-----------------------------------------------------------------------------#
-#------------------------------ SequenceSampler ------------------------------#
-#-----------------------------------------------------------------------------#
+
+# -----------------------------------------------------------------------------#
+# ------------------------------ SequenceSampler ------------------------------#
+# -----------------------------------------------------------------------------#
 
 # Original implemetation: https://github.com/real-stanford/diffusion_policy
 # Observation Horizon: To|n_obs_steps
@@ -26,30 +26,30 @@ import functools
 
 @numba.jit(nopython=True)
 def create_indices(
-    episode_ends: np.ndarray,
-    sequence_length: int, 
-    pad_before: int=0, pad_after: int=0,
-    debug:bool=True) -> np.ndarray:  
-    pad_before = min(max(pad_before, 0), sequence_length-1)
-    pad_after = min(max(pad_after, 0), sequence_length-1)
+        episode_ends: np.ndarray,
+        sequence_length: int,
+        pad_before: int = 0, pad_after: int = 0,
+        debug: bool = True) -> np.ndarray:
+    pad_before = min(max(pad_before, 0), sequence_length - 1)
+    pad_after = min(max(pad_after, 0), sequence_length - 1)
 
     indices = list()
     for i in range(len(episode_ends)):
         start_idx = 0  # episode start index
         if i > 0:
-            start_idx = episode_ends[i-1]  
+            start_idx = episode_ends[i - 1]
         end_idx = episode_ends[i]  # episode end index
         episode_length = end_idx - start_idx  # episode length
-        
+
         min_start = -pad_before
         max_start = episode_length - sequence_length + pad_after
-        
+
         # range stops one idx before end
-        for idx in range(min_start, max_start+1):
+        for idx in range(min_start, max_start + 1):
             buffer_start_idx = max(idx, 0) + start_idx
-            buffer_end_idx = min(idx+sequence_length, episode_length) + start_idx
-            start_offset = buffer_start_idx - (idx+start_idx)
-            end_offset = (idx+sequence_length+start_idx) - buffer_end_idx
+            buffer_end_idx = min(idx + sequence_length, episode_length) + start_idx
+            start_offset = buffer_start_idx - (idx + start_idx)
+            end_offset = (idx + sequence_length + start_idx) - buffer_end_idx
             sample_start_idx = 0 + start_offset
             sample_end_idx = sequence_length - end_offset
             if debug:
@@ -57,33 +57,34 @@ def create_indices(
                 assert (end_offset >= 0)
                 assert (sample_end_idx - sample_start_idx) == (buffer_end_idx - buffer_start_idx)
             indices.append([
-                buffer_start_idx, buffer_end_idx, 
+                buffer_start_idx, buffer_end_idx,
                 sample_start_idx, sample_end_idx])
     indices = np.array(indices)
     return indices
 
 
 class SequenceSampler:
-    def __init__(self, 
-        replay_buffer: ReplayBuffer, 
-        sequence_length:int,
-        pad_before:int=0,
-        pad_after:int=0,
-        keys=None,
-        key_first_k=dict(),
-        zero_padding: bool = False,
-        ):
+    def __init__(
+            self,
+            replay_buffer: ReplayBuffer,
+            sequence_length: int,
+            pad_before: int = 0,
+            pad_after: int = 0,
+            keys=None,
+            key_first_k=dict(),
+            zero_padding: bool = False,
+    ):
         """
             key_first_k: dict str: int
                 Only take first k data from these keys (to improve perf)
         """
         super().__init__()
-        assert(sequence_length >= 1)
-        
+        assert (sequence_length >= 1)
+
         # all keys
         if keys is None:
             keys = list(replay_buffer.keys())
-        
+
         episode_ends = replay_buffer.episode_ends[:]
 
         # create indices
@@ -92,22 +93,22 @@ class SequenceSampler:
         # sample_start_idx and sample_end_idx define the relative start and end positions within the sample sequence, 
         # which is particularly useful when dealing with padding as it can affect the actual length of the sequence.
         indices = create_indices(
-            episode_ends=episode_ends, 
-            sequence_length=sequence_length, 
-            pad_before=pad_before, 
+            episode_ends=episode_ends,
+            sequence_length=sequence_length,
+            pad_before=pad_before,
             pad_after=pad_after,
         )
 
-        self.indices = indices 
-        self.keys = list(keys) # prevent OmegaConf list performance problem
+        self.indices = indices
+        self.keys = list(keys)  # prevent OmegaConf list performance problem
         self.sequence_length = sequence_length
         self.replay_buffer = replay_buffer
         self.zero_padding = zero_padding
         self.key_first_k = key_first_k
-    
+
     def __len__(self):
         return len(self.indices)
-        
+
     def sample_sequence(self, idx):
         buffer_start_idx, buffer_end_idx, sample_start_idx, sample_end_idx = self.indices[idx]
         result = dict()
@@ -122,9 +123,9 @@ class SequenceSampler:
                 k_data = min(self.key_first_k[key], n_data)
                 # fill value with Nan to catch bugs
                 # the non-loaded region should never be used
-                sample = np.full((n_data,) + input_arr.shape[1:], 
-                    fill_value=np.nan, dtype=input_arr.dtype)
-                sample[:k_data] = input_arr[buffer_start_idx:buffer_start_idx+k_data]
+                sample = np.full((n_data,) + input_arr.shape[1:],
+                                 fill_value=np.nan, dtype=input_arr.dtype)
+                sample[:k_data] = input_arr[buffer_start_idx:buffer_start_idx + k_data]
             data = sample
             if (sample_start_idx > 0) or (sample_end_idx < self.sequence_length):
                 data = np.zeros(
@@ -138,10 +139,11 @@ class SequenceSampler:
                 data[sample_start_idx:sample_end_idx] = sample
             result[key] = data
         return result
-        
-#-----------------------------------------------------------------------------#
-#---------------------------- Rotation Transformer ---------------------------#
-#-----------------------------------------------------------------------------#
+
+
+# -----------------------------------------------------------------------------#
+# ---------------------------- Rotation Transformer ---------------------------#
+# -----------------------------------------------------------------------------#
 
 class RotationTransformer:
     valid_reps = [
@@ -152,11 +154,11 @@ class RotationTransformer:
         'matrix'
     ]
 
-    def __init__(self, 
-            from_rep='axis_angle', 
-            to_rep='rotation_6d', 
-            from_convention=None,
-            to_convention=None):
+    def __init__(self,
+                 from_rep='axis_angle',
+                 to_rep='rotation_6d',
+                 from_convention=None,
+                 to_convention=None):
         """
         Valid representations
 
@@ -179,8 +181,8 @@ class RotationTransformer:
                 getattr(pt, f'matrix_to_{from_rep}')
             ]
             if from_convention is not None:
-                funcs = [functools.partial(func, convention=from_convention) 
-                    for func in funcs]
+                funcs = [functools.partial(func, convention=from_convention)
+                         for func in funcs]
             forward_funcs.append(funcs[0])
             inverse_funcs.append(funcs[1])
 
@@ -190,13 +192,13 @@ class RotationTransformer:
                 getattr(pt, f'{to_rep}_to_matrix')
             ]
             if to_convention is not None:
-                funcs = [functools.partial(func, convention=to_convention) 
-                    for func in funcs]
+                funcs = [functools.partial(func, convention=to_convention)
+                         for func in funcs]
             forward_funcs.append(funcs[0])
             inverse_funcs.append(funcs[1])
-        
+
         inverse_funcs = inverse_funcs[::-1]
-        
+
         self.forward_funcs = forward_funcs
         self.inverse_funcs = inverse_funcs
 
@@ -212,18 +214,19 @@ class RotationTransformer:
         if isinstance(x, np.ndarray):
             y = x_.numpy()
         return y
-        
+
     def forward(self, x: Union[np.ndarray, torch.Tensor]
-        ) -> Union[np.ndarray, torch.Tensor]:
+                ) -> Union[np.ndarray, torch.Tensor]:
         return self._apply_funcs(x, self.forward_funcs)
-    
+
     def inverse(self, x: Union[np.ndarray, torch.Tensor]
-        ) -> Union[np.ndarray, torch.Tensor]:
+                ) -> Union[np.ndarray, torch.Tensor]:
         return self._apply_funcs(x, self.inverse_funcs)
 
-#-----------------------------------------------------------------------------#
-#--------------------------- multi-field normalizer --------------------------#
-#-----------------------------------------------------------------------------#
+
+# -----------------------------------------------------------------------------#
+# --------------------------- multi-field normalizer --------------------------#
+# -----------------------------------------------------------------------------#
 
 def empirical_cdf(sample):
     """ https://stackoverflow.com/a/33346366 """
@@ -242,6 +245,7 @@ class CDFNormalizer1d:
     """
         CDF normalizer for a single dimension
     """
+
     def __init__(self, X):
         assert X.ndim == 1
         self.X = X.astype(np.float32)
@@ -310,22 +314,23 @@ class GaussianNormalizer:
         self.stds[self.stds == 0] = 1.
 
     def normalize(self, x):
-        return (x - self.means[None, ]) / self.stds[None, ]
+        return (x - self.means[None,]) / self.stds[None,]
 
     def unnormalize(self, x):
-        return x * self.stds[None, ] + self.means[None, ]
+        return x * self.stds[None,] + self.means[None,]
 
 
 class ImageNormalizer:
     """
         normalizes image data from range [0, 1] to [-1, 1].
     """
+
     def __init__(self):
         pass
-    
+
     def normalize(self, x):
         return x * 2.0 - 1.0
-        
+
     def unnormalize(self, x):
         return (x + 1.0) / 2.0
 
@@ -334,6 +339,7 @@ class MinMaxNormalizer:
     """
         normalizes data through maximum and minimum expansion.
     """
+
     def __init__(self, X):
         X = X.reshape(-1, X.shape[-1]).astype(np.float32)
         self.min, self.max = np.min(X, axis=0), np.max(X, axis=0)
@@ -346,15 +352,15 @@ class MinMaxNormalizer:
     def normalize(self, x):
         x = x.astype(np.float32)
         # nomalize to [0,1]
-        nx = (x - self.min) /  self.range
+        nx = (x - self.min) / self.range
         # normalize to [-1, 1]
         nx = nx * 2 - 1
         return nx
-    
+
     def unnormalize(self, x):
         x = x.astype(np.float32)
         nx = (x + 1) / 2
-        x = nx *  self.range + self.min
+        x = nx * self.range + self.min
         return x
 
 
@@ -362,24 +368,25 @@ class EmptyNormalizer:
     """
         do nothing and change nothing
     """
+
     def __init__(self):
         pass
-    
+
     def normalize(self, x):
         return x
-        
+
     def unnormalize(self, x):
         return x
-    
- 
-#-----------------------------------------------------------------------------#
-#------------------------------- useful tool ---------------------------------#
-#-----------------------------------------------------------------------------#
+
+
+# -----------------------------------------------------------------------------#
+# ------------------------------- useful tool ---------------------------------#
+# -----------------------------------------------------------------------------#
 
 def dict_apply(
-        x: Dict[str, torch.Tensor], 
+        x: Dict[str, torch.Tensor],
         func: Callable[[torch.Tensor], torch.Tensor]
-        ) -> Dict[str, torch.Tensor]:
+) -> Dict[str, torch.Tensor]:
     result = dict()
     for key, value in x.items():
         if isinstance(value, dict):
@@ -389,6 +396,7 @@ def dict_apply(
         else:
             result[key] = func(value)
     return result
+
 
 def loop_dataloader(dl):
     while True:
