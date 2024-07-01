@@ -72,7 +72,8 @@ def inference(args, envs, dataset, agent, logger):
             obs_seq = obs.astype(np.float32)  # (num_envs, obs_steps, obs_dim)
             # normalize obs
             nobs = dataset.normalizer['obs']['state'].normalize(obs_seq)
-            nobs = torch.from_numpy(nobs).to(args.device, dtype=torch.float32)  # (num_envs, obs_steps, obs_dim)
+            nobs = torch.tensor(nobs, device=args.device, dtype=torch.float32)  # (num_envs, obs_steps, obs_dim)
+
             with torch.no_grad():
                 if args.nn == "pearce_mlp":
                     condition = nobs

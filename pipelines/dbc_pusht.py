@@ -70,7 +70,7 @@ def inference(args, envs, dataset, agent, logger):
                 obs_seq = obs.astype(np.float32)  # (num_envs, obs_steps, obs_dim)
                 # normalize obs
                 nobs = dataset.normalizer['obs']['state'].normalize(obs_seq)
-                nobs = torch.from_numpy(nobs).to(args.device, dtype=torch.float32)  # (num_envs, obs_steps, obs_dim)
+                nobs = torch.tensor(nobs, device=args.device, dtype=torch.float32)  # (num_envs, obs_steps, obs_dim)
             elif args.env_name == 'pusht-keypoints-v0':
                 # Note: keypoint env return 40 dim but need 20 dim
                 obs_seq = obs[:, :args.obs_steps, :].astype(np.float32)  # (num_envs, obs_steps, obs_dim) 
@@ -85,7 +85,7 @@ def inference(args, envs, dataset, agent, logger):
                 # agent_pos
                 nagent_pos = dataset.normalizer['obs']['agent_pos'].normalize(agentpos_obs_seq)  # (num_envs, obs_steps, 2)
                 nobs = np.concatenate((nkeypoint, nagent_pos), axis=-1)  # (num_envs, obs_steps, obs_dim)
-                nobs = torch.from_numpy(nobs).to(args.device, dtype=torch.float32)  # (num_envs, obs_steps, obs_dim)
+                nobs = torch.tensor(nobs, device=args.device, dtype=torch.float32)  # (num_envs, obs_steps, obs_dim)
             with torch.no_grad():
                 if args.nn == "pearce_mlp" or args.nn == "pearce_transformer":
                     condition = nobs

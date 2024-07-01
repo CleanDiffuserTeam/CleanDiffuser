@@ -48,11 +48,11 @@ class SynthERD4RLAntmazeTDDataset(D4RLAntmazeTDDataset):
         normed_next_observations = np.concatenate([
             self.normalizers["state"].normalize(next_observations), extra_next_observations], 0)
 
-        self.obs = torch.from_numpy(normed_observations)
-        self.act = torch.from_numpy(actions)
-        self.rew = torch.from_numpy(rewards)
-        self.tml = torch.from_numpy(terminals)
-        self.next_obs = torch.from_numpy(normed_next_observations)
+        self.obs = torch.tensor(normed_observations)
+        self.act = torch.tensor(actions)
+        self.rew = torch.tensor(rewards)
+        self.tml = torch.tensor(terminals)
+        self.next_obs = torch.tensor(normed_next_observations)
 
         self.size = self.obs.shape[0]
 

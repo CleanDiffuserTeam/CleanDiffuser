@@ -292,7 +292,7 @@ def to_tensor(x):
         x,
         {
             torch.Tensor: lambda x: x,
-            np.ndarray: lambda x: torch.from_numpy(x),
+            np.ndarray: lambda x: torch.tensor(x),
             type(None): lambda x: x,
         }
     )
