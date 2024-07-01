@@ -206,7 +206,7 @@ class RotationTransformer:
     def _apply_funcs(x: Union[np.ndarray, torch.Tensor], funcs: list) -> Union[np.ndarray, torch.Tensor]:
         x_ = x
         if isinstance(x, np.ndarray):
-            x_ = torch.from_numpy(x)
+            x_ = torch.tensor(x)
         x_: torch.Tensor
         for func in funcs:
             x_ = func(x_)

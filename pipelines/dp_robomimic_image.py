@@ -157,7 +157,7 @@ def inference(args, envs, dataset, agent, logger):
                 obs_seq = obs[k].astype(np.float32)  # (num_envs, obs_steps, obs_dim)
                 nobs = dataset.normalizer['obs'][k].normalize(obs_seq)
                 # nobs = obs_seq
-                obs_dict[k] = torch.from_numpy(nobs).to(args.device, dtype=torch.float32)  # (num_envs, obs_steps, obs_dim)
+                obs_dict[k] = nobs = torch.tensor(nobs, device=args.device, dtype=torch.float32)  # (num_envs, obs_steps, obs_dim)
             with torch.no_grad():
                 condition = obs_dict
                 # run sampling (num_envs, horizon, action_dim)

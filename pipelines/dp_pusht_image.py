@@ -72,7 +72,7 @@ def inference(args, envs, dataset, agent, logger):
                 for k in obs.keys():
                     obs_seq = obs[k].astype(np.float32)  # (num_envs, obs_steps, obs_dim)
                     nobs = dataset.normalizer['obs'][k].normalize(obs_seq)
-                    obs_dict[k] = torch.from_numpy(nobs).to(args.device, dtype=torch.float32)  # (num_envs, obs_steps, obs_dim)
+                    obs_dict[k] = nobs = torch.tensor(nobs, device=args.device, dtype=torch.float32)  # (num_envs, obs_steps, obs_dim)
 
             with torch.no_grad():
                 condition = obs_dict

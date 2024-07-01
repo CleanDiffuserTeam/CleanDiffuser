@@ -95,7 +95,7 @@ class D4RLMuJoCoDataset(BaseDataset):
             'act': self.seq_act[path_idx, start:end],
             'val': values}
 
-        torch_data = dict_apply(data, torch.from_numpy)
+        torch_data = dict_apply(data, torch.tensor)
 
         return torch_data
 
@@ -201,11 +201,11 @@ class D4RLMuJoCoTDDataset(BaseDataset):
         normed_observations = self.normalizers["state"].normalize(observations)
         normed_next_observations = self.normalizers["state"].normalize(next_observations)
 
-        self.obs = torch.from_numpy(normed_observations)
-        self.act = torch.from_numpy(actions)
-        self.rew = torch.from_numpy(rewards)[:, None]
-        self.tml = torch.from_numpy(terminals)[:, None]
-        self.next_obs = torch.from_numpy(normed_next_observations)
+        self.obs = torch.tensor(normed_observations)
+        self.act = torch.tensor(actions)
+        self.rew = torch.tensor(rewards)[:, None]
+        self.tml = torch.tensor(terminals)[:, None]
+        self.next_obs = torch.tensor(normed_next_observations)
 
         self.size = self.obs.shape[0]
         self.o_dim, self.a_dim = observations.shape[-1], actions.shape[-1]
@@ -227,3 +227,91 @@ class D4RLMuJoCoTDDataset(BaseDataset):
             'tml': self.tml[idx], }
 
         return data
+
+
+class MultiHorizonD4RLMuJoCoDataset(BaseDataset):
+    def __init__(
+            self,
+            dataset,
+            terminal_penalty=-100,
+            horizons=(10, 20),
+            max_path_length=1000,
+            discount=0.99,
+    ):
+        super().__init__()
+
+        observations, actions, rewards, timeouts, terminals = (
+            dataset["observations"].astype(np.float32),
+            dataset["actions"].astype(np.float32),
+            dataset["rewards"].astype(np.float32),
+            dataset["timeouts"],
+            dataset["terminals"])
+        self.normalizers = {
+            "state": GaussianNormalizer(observations)}
+        normed_observations = self.normalizers["state"].normalize(observations)
+
+        self.horizons = horizons
+        self.o_dim, self.a_dim = observations.shape[-1], actions.shape[-1]
+        self.discount = discount ** np.arange(max_path_length, dtype=np.float32)
+
+        n_paths = np.sum(np.logical_or(terminals, timeouts))
+        self.seq_obs = np.zeros((n_paths, max_path_length, self.o_dim), dtype=np.float32)
+        self.seq_act = np.zeros((n_paths, max_path_length, self.a_dim), dtype=np.float32)
+        self.seq_rew = np.zeros((n_paths, max_path_length, 1), dtype=np.float32)
+        self.indices = [[] for _ in range(len(horizons))]
+
+        path_lengths, ptr = [], 0
+        path_idx = 0
+        for i in range(timeouts.shape[0]):
+            if timeouts[i] or terminals[i]:
+                path_lengths.append(i - ptr + 1)
+
+                if terminals[i] and not timeouts[i]:
+                    rewards[i] = terminal_penalty if terminal_penalty is not None else rewards[i]
+
+                self.seq_obs[path_idx, :i - ptr + 1] = normed_observations[ptr:i + 1]
+                self.seq_act[path_idx, :i - ptr + 1] = actions[ptr:i + 1]
+                self.seq_rew[path_idx, :i - ptr + 1] = rewards[ptr:i + 1][:, None]
+
+                max_starts = [min(path_lengths[-1] - 1, max_path_length - horizon) for horizon in horizons]
+                for k in range(len(horizons)):
+                    self.indices[k] += [(path_idx, start, start + horizons[k]) for start in range(max_starts[k] + 1)]
+
+                ptr = i + 1
+                path_idx += 1
+
+        self.len_each_horizon = [len(indices) for indices in self.indices]
+
+    def get_normalizer(self):
+        return self.normalizers["state"]
+
+    def __len__(self):
+        return max(self.len_each_horizon)
+
+    def __getitem__(self, idx: int):
+
+        indices = [np.random.randint(self.len_each_horizon[i]) for i in range(len(self.len_each_horizon))]
+
+        torch_datas = []
+
+        for i, horizon in enumerate(self.horizons):
+
+            path_idx, start, end = self.indices[i][indices[i]]
+
+            rewards = self.seq_rew[path_idx, start:]
+            values = (rewards * self.discount[:rewards.shape[0], None]).sum(0)
+
+            data = {
+                'obs': {
+                    'state': self.seq_obs[path_idx, start:end]},
+                'act': self.seq_act[path_idx, start:end],
+                'val': values}
+
+            torch_data = dict_apply(data, torch.tensor)
+
+            torch_datas.append({
+                "horizon": horizon,
+                "data": torch_data,
+            })
+
+        return torch_datas

@@ -114,7 +114,7 @@ class RobomimicDataset(BaseDataset):
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         sample = self.sampler.sample_sequence(idx)
         data = self.sample_to_data(sample)
-        torch_data = dict_apply(data, torch.from_numpy)
+        torch_data = dict_apply(data, torch.tensor)
         return torch_data
 
 
@@ -251,8 +251,8 @@ class RobomimicImageDataset(BaseDataset):
         action = self.normalizer['action'].normalize(action)
 
         torch_data = {
-            'obs': dict_apply(obs_dict, torch.from_numpy),
-            'action': torch.from_numpy(action)
+            'obs': dict_apply(obs_dict, torch.tensor),
+            'action': torch.tensor(action)
         }
         return torch_data
 

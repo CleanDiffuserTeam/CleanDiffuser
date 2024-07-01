@@ -88,7 +88,7 @@ class D4RLKitchenDataset(BaseDataset):
             'rew': self.seq_rew[path_idx, start:end],
             'val': values}
 
-        torch_data = dict_apply(data, torch.from_numpy)
+        torch_data = dict_apply(data, torch.tensor)
 
         return torch_data
 
@@ -109,11 +109,11 @@ class D4RLKitchenTDDataset(BaseDataset):
         normed_observations = self.normalizers["state"].normalize(observations)
         normed_next_observations = self.normalizers["state"].normalize(next_observations)
 
-        self.obs = torch.from_numpy(normed_observations)
-        self.act = torch.from_numpy(actions)
-        self.rew = torch.from_numpy(rewards)[:, None]
-        self.tml = torch.from_numpy(terminals)[:, None]
-        self.next_obs = torch.from_numpy(normed_next_observations)
+        self.obs = torch.tensor(normed_observations)
+        self.act = torch.tensor(actions)
+        self.rew = torch.tensor(rewards)[:, None]
+        self.tml = torch.tensor(terminals)[:, None]
+        self.next_obs = torch.tensor(normed_next_observations)
 
         self.size = self.obs.shape[0]
         self.o_dim, self.a_dim = observations.shape[-1], actions.shape[-1]
