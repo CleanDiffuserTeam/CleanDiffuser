@@ -85,7 +85,7 @@ def pipeline(args):
             # ----------- Gradient Step ------------
             log["avg_loss_diffusion"] += agent.update(obs, val)['loss']
             diffusion_lr_scheduler.step()
-            if n_gradient_step <= args.classifier_gradient_steps:
+            if n_gradient_step <= args.invdyn_gradient_steps:
                 log["avg_loss_invdyn"] += invdyn.update(obs[:, :-1], act[:, :-1], obs[:, 1:])['loss']
                 invdyn_lr_scheduler.step()
 

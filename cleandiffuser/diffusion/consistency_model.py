@@ -2,7 +2,6 @@ from typing import Callable, List
 from typing import Optional, Union
 
 import numpy as np
-import scipy
 import torch
 import torch.nn as nn
 
@@ -11,6 +10,21 @@ from cleandiffuser.nn_condition import BaseNNCondition
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
 from cleandiffuser.utils import at_least_ndim
 from .newedm import ContinuousEDM
+
+
+def erf(x):
+    a1 = 0.254829592
+    a2 = -0.284496736
+    a3 = 1.421413741
+    a4 = -1.453152027
+    a5 = 1.061405429
+    p = 0.3275911
+
+    sign = np.sign(x)
+    x = np.abs(x)
+    t = 1.0 / (1.0 + p * x)
+    y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * np.exp(-x * x)
+    return sign * y
 
 
 def compare_properties(obj1, obj2, properties: List[str]):
@@ -61,8 +75,8 @@ class CMCurriculumLogger:
                             / self.Nk * (self.sigma_max ** (1 / self.rho) - self.sigma_min ** (
                             1 / self.rho))) ** self.rho)
 
-            self.p_sigmas = scipy.special.erf((np.log(self.sigmas[1:]) - self.P_mean) / (self.P_std * (2 ** 0.5))) - \
-                            scipy.special.erf((np.log(self.sigmas[:-1]) - self.P_mean) / (self.P_std * (2 ** 0.5)))
+            self.p_sigmas = erf((np.log(self.sigmas[1:]) - self.P_mean) / (self.P_std * (2 ** 0.5))) - \
+                            erf((np.log(self.sigmas[:-1]) - self.P_mean) / (self.P_std * (2 ** 0.5)))
             self.p_sigmas = self.p_sigmas / self.p_sigmas.sum()
 
     def incremental_update_k(self):
@@ -140,6 +154,7 @@ class ContinuousConsistencyModel(DiffusionModel):
     - device: Union[torch.device, str]
         The device to run the model.
     """
+
     def __init__(
             self,
 
@@ -198,7 +213,7 @@ class ContinuousConsistencyModel(DiffusionModel):
 
     def prepare_distillation(self, edm: ContinuousEDM, distillation_N: int = 18):
         checklist = [
-            "sigma_data", "sigma_max", "sigma_min", "rho", "x_max", "x_min", 
+            "sigma_data", "sigma_max", "sigma_min", "rho", "x_max", "x_min",
             "fix_mask", "loss_weight", "device"]
         differences = compare_properties(self, edm, checklist)
         if len(differences) != 0:

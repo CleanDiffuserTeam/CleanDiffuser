@@ -28,7 +28,7 @@ lr: 0.001
 model_path: path/to/model
 num_envs: 10
 eval_episodes: 50
-save_video: true
+save_video: false
 eval_freq: 100000
 # log
 exp_name: ${env_name}_${env_type}_abs_${abs_action}_${nn}_${diffusion}_sample_${sample_steps}_horizon_${horizon}

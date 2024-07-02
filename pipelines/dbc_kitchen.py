@@ -170,10 +170,10 @@ def pipeline(args):
         raise ValueError(f"Invalid nn type {args.nn}")
     
     print(f"======================= Parameter Report of Diffusion Model =======================")
-    report_parameters(nn_diffusion)
+    report_parameters(nn_diffusion, topk=3)
     print(f"==============================================================================")
     print(f"======================= Parameter Report of Condition Model =======================")
-    report_parameters(nn_condition)
+    report_parameters(nn_condition, topk=3)
     print(f"==============================================================================")
 
     if args.diffusion == "ddpm":

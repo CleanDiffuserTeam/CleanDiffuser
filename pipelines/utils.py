@@ -58,7 +58,7 @@ class Logger:
         self._cfg = cfg
 
         wandb.init(
-            config=cfg,
+            config=OmegaConf.to_container(cfg),
             project=cfg.project,
             group=cfg.group,
             name=cfg.exp_name,
