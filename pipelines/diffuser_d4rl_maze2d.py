@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 
 from cleandiffuser.classifier import CumRewClassifier
-from cleandiffuser.dataset.d4rl_antmaze_dataset import D4RLAntmazeDataset
+from cleandiffuser.dataset.d4rl_maze2d_dataset import D4RLMaze2DDataset
 from cleandiffuser.dataset.dataset_utils import loop_dataloader
 from cleandiffuser.diffusion import DiscreteDiffusionSDE
 from cleandiffuser.nn_classifier import HalfJannerUNet1d
@@ -19,7 +19,7 @@ from cleandiffuser.utils import report_parameters
 from utils import set_seed
 
 
-@hydra.main(config_path="../configs/diffuser/antmaze", config_name="antmaze", version_base=None)
+@hydra.main(config_path="../configs/diffuser/maze2d", config_name="maze2d", version_base=None)
 def pipeline(args):
 
     set_seed(args.seed)
@@ -30,7 +30,7 @@ def pipeline(args):
 
     # ---------------------- Create Dataset ----------------------
     env = gym.make(args.task.env_name)
-    dataset = D4RLAntmazeDataset(
+    dataset = D4RLMaze2DDataset(
         env.get_dataset(), horizon=args.task.horizon, discount=args.discount,
         noreaching_penalty=args.noreaching_penalty,)
     dataloader = DataLoader(
@@ -58,6 +58,7 @@ def pipeline(args):
     # ----------------- Masking -------------------
     fix_mask = torch.zeros((args.task.horizon, obs_dim + act_dim))
     fix_mask[0, :obs_dim] = 1.
+    fix_mask[-1, :obs_dim] = 1. # target
     loss_weight = torch.ones((args.task.horizon, obs_dim + act_dim))
     loss_weight[0, obs_dim:] = args.action_loss_weight
 
@@ -125,14 +126,26 @@ def pipeline(args):
 
         agent.eval()
 
-        env_eval = gym.vector.make(args.task.env_name, args.num_envs)
+        # env_eval = gym.vector.make(args.task.env_name, args.num_envs)
+        env_eval = [gym.make(args.task.env_name) for _ in range(args.num_envs)]
         normalizer = dataset.get_normalizer()
         episode_rewards = []
 
         prior = torch.zeros((args.num_envs, args.task.horizon, obs_dim + act_dim), device=args.device)
         for i in range(args.num_episodes):
 
-            obs, ep_reward, cum_done, t = env_eval.reset(), 0., 0., 0
+            # reset the environment
+            fix_target = (0.5, 0.5)
+
+            [env.set_target(fix_target) for env in env_eval]
+            obs, ep_reward, cum_done, t = [env.reset() for env in env_eval], 0., 0., 0
+            target = [[*env.get_target(), 0, 0] for env in env_eval]
+            
+            logs = {'obs': [], 'act': [], 'rew': [], 'logp': [], 'target': target}
+            print('target:', target)
+
+            target = torch.tensor([normalizer.normalize(t) for t in target], device=args.device)
+            
 
             while not np.all(cum_done) and t < 1000 + 1:
                 # normalize obs
@@ -140,6 +153,7 @@ def pipeline(args):
 
                 # sample trajectories
                 prior[:, 0, :obs_dim] = obs
+                prior[:, -1, :obs_dim] = target
                 traj, log = agent.sample(
                     prior.repeat(args.num_candidates, 1, 1),
                     solver=args.solver,
@@ -154,22 +168,49 @@ def pipeline(args):
                       idx, torch.arange(args.num_envs), 0, obs_dim:]
                 act = act.clip(-1., 1.).cpu().numpy()
 
+                # logging
+                
+                traj = traj.view(args.num_candidates, args.num_envs, args.task.horizon, -1).cpu().numpy()
+                traj_obs = traj[:, :, :, :obs_dim].reshape(-1, obs_dim) 
+                obs = normalizer.unnormalize(traj_obs).reshape(args.num_candidates, args.num_envs, args.task.horizon, obs_dim)
+                # obs = traj_obs.reshape(args.num_candidates, args.num_envs, args.task.horizon, obs_dim)
+                acts = traj[:, :, :, obs_dim:]
+                logs['obs'].append(obs)
+                logs['act'].append(acts)
+                logs['rew'].append(ep_reward)
+                logs['logp'].append(logp.cpu().numpy())
+
+                # save log
+                # np.save(save_path + f"save_results_{args.ckpt}.npy", logs)
+
                 # step
-                obs, rew, done, info = env_eval.step(act)
+                # obs, rew, done, info = env_eval.step(act)
+                results = [env.step(action) for env, action in zip(env_eval, act)]
+                obs, rew, done, info = zip(*results)
+                obs = np.array(obs)
+                rew = np.array(rew)
+                done = np.array(done)
+                
 
                 t += 1
                 cum_done = done if cum_done is None else np.logical_or(cum_done, done)
                 ep_reward += rew
                 print(f'[t={t}] xy: {obs[:, :2]}')
-                print(f'[t={t}] cum_rew: {ep_reward}, '
-                      f'logp: {logp[idx, torch.arange(args.num_envs)]}')
+                # print(f'[t={t}] cum_rew: {ep_reward}, '
+                #       f'logp: {logp[idx, torch.arange(args.num_envs)]}')
+
 
             # clip the reward to [0, 1] since the max cumulative reward is 1
             episode_rewards.append(np.clip(ep_reward, 0., 1.))
 
+            # save log
+            np.save(save_path + f"save_results_{args.ckpt}.npy", logs)
+
         episode_rewards = [list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards]
         episode_rewards = np.array(episode_rewards)
         print(np.mean(episode_rewards, -1), np.std(episode_rewards, -1))
+
+        
 
     else:
         raise ValueError(f"Invalid mode: {args.mode}")
