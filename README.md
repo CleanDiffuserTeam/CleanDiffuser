@@ -54,81 +54,67 @@ We strongly recommend reading [papers](https://arxiv.org/abs/2406.09509) and [do
 <!-- GETTING STARTED -->
 ## 🛠️ Getting Started
 
-We recommend installing and experiencing CleanDiffuser through a Conda virtual environment.
-
-First, install the dependencies related to the mujoco-py environment. For more details, see https://github.com/openai/mujoco-py#install-mujoco
-
+#### 1. Create and activate conda environment
 ```bash
-sudo apt-get install libosmesa6-dev libgl1-mesa-glx libglfw3 patchelf
+$ conda create -n cleandiffuser python==3.9
+$ conda activate cleandiffuser
 ```
-
-Download CleanDiffuser and add this folder to your PYTHONPATH. You can also add it to .bashrc for convenience:
+Download CleanDiffuser and add this folder to your `PYTHONPATH`. You can also add it to `.bashrc` for convenience:
 ```bash
 git clone https://github.com/CleanDiffuserTeam/CleanDiffuser.git
 export PYTHONPATH=$PYTHONPATH:/path/to/CleanDiffuser
 ```
 
-Install the Conda virtual environment and PyTorch:
+#### 2. Install PyTorch and PyTorch3d
+We recommend visiting https://pytorch.org/get-started/previous-versions/ to find the appropriate PyTorch version for your CUDA installation. Essentially, we only require `torch>1.0.0,<2.3.0`, as we have found conflicts between PyTorch version 2.3.0 and NumPy. Below is an example using PyTorch version 2.2.2 with CUDA 11.8.
 ```bash
-conda create -n cleandiffuser python==3.9
-conda activate cleandiffuser
-# pytorch
-pip install torch==1.12.1+cu116 torchvision==0.13.1+cu116 --extra-index-url https://download.pytorch.org/whl/cu116
-# pytorch3d
-conda install -c fvcore -c iopath -c conda-forge fvcore iopath
-pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py39_cu113_pyt1121/download.html
+$ conda install pytorch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 pytorch-cuda=12.1 -c pytorch -c nvidia
+$ conda install pytorch3d -c pytorch3d
 ```
 
-> **Note:** 
-> 
-> Due to compatibility issues, we have separate installation for the *Tutorial*, *RL* and *IL* environments, and **we recommend running them with different virtual environments**. (The *Tutorial* and *RL* installation processes can be compatible.)
+#### 3. Pure CleanDiffuser installation
+For users who do not need to run `pipelines` and wish to directly use CleanDiffuser for algorithm development, they can simply run `pip install 'numpy<1.23.0' einops`. That's it.
 
-### Installation for Tutorials
+#### 4. Additional installations
+For users who need to run `pipelines` and reproduce the results of the paper, they will need to install `requirements.txt` as well as the simulators.
+
+First, install the dependencies related to the mujoco-py environment. For more details, see https://github.com/openai/mujoco-py#install-mujoco
 
 ```bash
-pip install git+https://github.com/Farama-Foundation/d4rl@master#egg=d4rl
-pip install -r requirements/req_tutorials.txt
+sudo apt-get install libosmesa6-dev libgl1-mesa-glx libglfw3 libglew-dev patchelf
 ```
-
+```bash
+# Install requirements
+$ pip install -r requirements.txt
+# Install D4RL from source (recommended)
+$ cd <PATH_TO_MJRL_INSTALL_DIR>
+$ git clone https://github.com/aravindr93/mjrl.git
+$ cd mjrl
+$ pip install -e .
+$ cd <PATH_TO_D4RL_INSTALL_DIR>
+$ git clone https://github.com/Farama-Foundation/D4RL.git
+$ cd D4RL
+$ pip install -e .
+# Install Robomimic from source (recommended)
+$ cd <PATH_TO_ROBOMIMIC_INSTALL_DIR>
+$ git clone https://github.com/ARISE-Initiative/robomimic.git
+$ cd robomimic
+$ pip install -e .
+$ cd <PATH_TO_ROBOSUITE_INSTALL_DIR>
+$ git clone git clone https://github.com/ARISE-Initiative/robosuite.git
+$ cd robosuite
+$ pip install -e .
+```
 Try it now!   
 ```bash
-python tutorials/1_a_minimal_DBC_implementation.py
+# Tutorial
+$ python tutorials/1_a_minimal_DBC_implementation.py
+# Reinforcement Learning
+$ python pipelines/diffuser_d4rl_mujoco.py
+# Imitation Learning (need to download the dataset, see below)
+$ python pipelines/dp_pusht.py
 ```
-
-### Installation for RL Environments (D4RL)
-```bash
-pip install git+https://github.com/Farama-Foundation/d4rl@master#egg=d4rl
-pip install -r requirements/req_rl.txt
-```
-
-Try it now!   
-```bash
-python pipelines/diffuser_d4rl_mujoco.py
-```
-
-### Installation for IL Environments (Pusht, Relay Kitchen and Robomimic)
-
-Install dependencies:  
-```bash
-pip install -r requirements/req_il.txt
-pip install setuptools==65.5.0 pip==21  # gym 0.21 installation is broken with more recent versions
-pip install gym==0.21.0
-```
-
-Download the corresponding dataset (take `pusht` as an example):  
-```bash
-mkdir dev && cd dev
-wget https://diffusion-policy.cs.columbia.edu/data/training/pusht.zip  # download pusht dataset
-unzip pusht.zip && rm -f pusht.zip && cd ..
-```
-
-Try it now!  
-```bash
-python pipelines/dp_pusht.py
-```
-
-If you need to reproduce more Imitation Learning environments (`pusht`, `kitchen`, `robomimic`), you need to download the datasets additionally. We recommend downloading the corresponding compressed files from [Datasets](https://diffusion-policy.cs.columbia.edu/data/training/). We provide the default dataset path as `dev/`:
-
+If you need to reproduce Imitation Learning environments (`pusht`, `kitchen`, `robomimic`), you need to download the datasets additionally. We recommend downloading the corresponding compressed files from [Datasets](https://diffusion-policy.cs.columbia.edu/data/training/). We provide the default dataset path as `dev/`:
 ```bash
 dev/
 .
@@ -157,6 +143,9 @@ python tutorials/2_classifier-free_guidance.py
 python tutorials/3_classifier_guidance.py
 # Customize diffusion network backbone
 python tutorials/4_customize_your_diffusion_network_backbone.py
+
+# Special. Consistency Policies
+python tutorials/sp_consistency_policy.py 
 ```
 
 If you wish to reproduce the results of the paper perfectly, we recommend using the full implementation in `pipelines`.
