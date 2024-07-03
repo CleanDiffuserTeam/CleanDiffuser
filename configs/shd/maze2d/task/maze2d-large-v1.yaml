@@ -1,6 +1,0 @@
-env_name: "maze2d-large-v1"
-dim_mult: [1, 2, 2, 2]
-w_cg: 0.001
-horizon: 64
-hl_horizon: 8
-ll_horizon: 8
