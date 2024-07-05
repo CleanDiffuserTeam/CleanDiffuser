@@ -1,0 +1,31 @@
+[project]
+name = "clearn-diffuser"
+version = "0.0.1"
+description = "CleanDiffuser: An Easy-to-use Modularized Library for Diffusion Models in Decision Making"
+authors = [
+    { name = "CleanDiffuserTeam" },
+    { name = "imataka7", email = "imataka7@gmail.com" },
+]
+dependencies = ["torch>=2"]
+readme = "README.md"
+requires-python = ">= 3.8"
+keywords = ["reinforcement learning", "pytorch", "diffuser"]
+license = "MIT"
+
+[project.urls]
+Homepage = "https://github.com/imataka7/clearn-diffuser"
+Repository = "https://github.com/imataka7/clearn-diffuser"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = []
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cleandiffuser"]
