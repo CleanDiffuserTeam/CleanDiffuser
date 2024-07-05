@@ -105,6 +105,15 @@ $ git clone git clone https://github.com/ARISE-Initiative/robosuite.git
 $ cd robosuite
 $ pip install -e .
 ```
+
+> **Note:** 
+> 
+> The latest version of dependencies running the `robomimic image` still has compatibility issues, and we are actively working on a fix. The temporary solution is to downgrade the `gym` version to `0.21.0`.    
+```bash
+pip install setuptools==65.5.0 pip==21  # gym 0.21 installation is broken with more recent versions  
+pip install gym==0.21.0
+```
+
 Try it now!   
 ```bash
 # Tutorial
