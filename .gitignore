@@ -25,7 +25,6 @@ mlogger_test.json
 test.py
 test.sh
 
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
