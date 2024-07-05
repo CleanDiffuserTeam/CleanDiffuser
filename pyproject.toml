@@ -1,6 +1,6 @@
 [project]
 name = "clean-diffuser"
-version = "0.0.1"
+version = "0.0.2"
 description = "CleanDiffuser: An Easy-to-use Modularized Library for Diffusion Models in Decision Making"
 authors = [
     { name = "CleanDiffuserTeam" },
