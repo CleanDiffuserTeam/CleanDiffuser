@@ -202,6 +202,9 @@ class DiscreteRectifiedFlow(DiffusionModel):
             w_cg: float = 0.0,
             # ----------- Diffusion-X sampling ----------
             diffusion_x_sampling_steps: int = 0,
+            # ----------- Warm-Starting -----------
+            warm_start_reference: Optional[torch.Tensor] = None,
+            warm_start_forward_level: float = 0.3,
             # ------------------ others ------------------ #
             requires_grad: bool = False,
             preserve_history: bool = False,
@@ -240,6 +243,11 @@ class DiscreteRectifiedFlow(DiffusionModel):
             
         - diffusion_x_sampling_steps: int
             The number of diffusion steps for diffusion-x sampling.
+
+        - warm_start_reference: Optional[torch.Tensor]
+            Reference data for warm-starting sampling. `None` indicates no warm-starting.
+        - warm_start_forward_level: float
+            The forward noise level to perturb the reference data. Should be in the range of `[0., 1.]`, where `1` indicates pure noise.
         
         - requires_grad: bool
             Whether to preserve gradients.
@@ -254,10 +262,17 @@ class DiscreteRectifiedFlow(DiffusionModel):
         """
         assert w_cg == 0.0 and condition_cg is None, "Rectified Flow does not support classifier-guidance."
 
-        if x1 is None:
-            x1 = torch.randn_like(prior) * temperature
+        prior = prior.to(self.device)
+        if isinstance(warm_start_reference, torch.Tensor):
+            diffusion_steps = int(warm_start_forward_level * self.diffusion_steps)
+            t_c = at_least_ndim(self.t_diffusion[diffusion_steps], prior.dim())
+            x1 = torch.randn_like(prior) * t_c + warm_start_reference * (1 - t_c)
         else:
-            assert prior.shape == x1.shape, "prior and x1 must have the same shape"
+            diffusion_steps = self.diffusion_steps
+            if x1 is None:
+                x1 = torch.randn_like(prior) * temperature
+            else:
+                assert prior.shape == x1.shape, "prior and x1 must have the same shape"
 
         # ===================== Initialization =====================
         log = {
@@ -277,13 +292,16 @@ class DiscreteRectifiedFlow(DiffusionModel):
         if isinstance(sample_step_schedule, str):
             if sample_step_schedule in SUPPORTED_SAMPLING_STEP_SCHEDULE.keys():
                 sample_step_schedule = SUPPORTED_SAMPLING_STEP_SCHEDULE[sample_step_schedule](
-                    self.diffusion_steps, sample_steps)
+                    diffusion_steps, sample_steps)
             else:
                 raise ValueError(f"Sampling step schedule {sample_step_schedule} is not supported.")
         elif callable(sample_step_schedule):
-            sample_step_schedule = sample_step_schedule(self.diffusion_steps, sample_steps)
+            sample_step_schedule = sample_step_schedule(diffusion_steps, sample_steps)
         else:
             raise ValueError("sample_step_schedule must be a callable or a string")
+
+        print(diffusion_steps)
+        print(sample_step_schedule)
 
         # ===================== Denoising Loop ========================
         loop_steps = [1] * diffusion_x_sampling_steps + list(range(1, sample_steps + 1))
@@ -486,6 +504,9 @@ class ContinuousRectifiedFlow(DiffusionModel):
             w_cg: float = 0.0,
             # ----------- Diffusion-X sampling ----------
             diffusion_x_sampling_steps: int = 0,
+            # ----------- Warm-Starting -----------
+            warm_start_reference: Optional[torch.Tensor] = None,
+            warm_start_forward_level: float = 0.3,
             # ------------------ others ------------------ #
             requires_grad: bool = False,
             preserve_history: bool = False,
@@ -538,10 +559,15 @@ class ContinuousRectifiedFlow(DiffusionModel):
         """
         assert w_cg == 0.0 and condition_cg is None, "Rectified Flow does not support classifier-guidance."
 
-        if x1 is None:
-            x1 = torch.randn_like(prior) * temperature
+        prior = prior.to(self.device)
+        if isinstance(warm_start_reference, torch.Tensor):
+            t_c = torch.ones_like(prior) * warm_start_forward_level
+            x1 = torch.randn_like(prior) * t_c + warm_start_reference * (1 - t_c)
         else:
-            assert prior.shape == x1.shape, "prior and x1 must have the same shape"
+            if x1 is None:
+                x1 = torch.randn_like(prior) * temperature
+            else:
+                assert prior.shape == x1.shape, "prior and x1 must have the same shape"
 
         # ===================== Initialization =====================
         log = {
@@ -558,14 +584,18 @@ class ContinuousRectifiedFlow(DiffusionModel):
             condition_vec_cfg = model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
 
         # ===================== Sampling Schedule ====================
+        if isinstance(warm_start_reference, torch.Tensor) and warm_start_forward_level > 0.:
+            final_t = warm_start_forward_level
+        else:
+            final_t = 1.
         if isinstance(sample_step_schedule, str):
             if sample_step_schedule in SUPPORTED_SAMPLING_STEP_SCHEDULE.keys():
                 sample_step_schedule = SUPPORTED_SAMPLING_STEP_SCHEDULE[sample_step_schedule](
-                    [0., 1.], sample_steps)
+                    [0., final_t], sample_steps)
             else:
                 raise ValueError(f"Sampling step schedule {sample_step_schedule} is not supported.")
         elif callable(sample_step_schedule):
-            sample_step_schedule = sample_step_schedule([0., 1.], sample_steps)
+            sample_step_schedule = sample_step_schedule([0., final_t], sample_steps)
         else:
             raise ValueError("sample_step_schedule must be a callable or a string")
 

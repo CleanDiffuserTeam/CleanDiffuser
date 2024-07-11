@@ -165,3 +165,124 @@ class D4RLAntmazeTDDataset(BaseDataset):
             'tml': self.tml[idx], }
 
         return data
+
+
+class MultiHorizonD4RLAntmazeDataset(BaseDataset):
+    def __init__(
+            self,
+            dataset,
+            horizons=(10, 20),
+            max_path_length=1001,
+            noreaching_penalty=-100,
+            discount=0.99,
+    ):
+        super().__init__()
+
+        observations, actions, rewards, timeouts, terminals = (
+            dataset["observations"].astype(np.float32),
+            dataset["actions"].astype(np.float32),
+            dataset["rewards"].astype(np.float32),
+            dataset["timeouts"],
+            dataset["terminals"])
+        rewards -= 1
+        dones = np.logical_or(timeouts, terminals)
+        self.normalizers = {
+            "state": GaussianNormalizer(observations)}
+        normed_observations = self.normalizers["state"].normalize(observations)
+
+        self.horizons = horizons
+        self.o_dim, self.a_dim = observations.shape[-1], actions.shape[-1]
+        self.discount = discount ** np.arange(max_path_length, dtype=np.float32)
+
+        self.indices = [[] for _ in range(len(horizons))]
+        self.seq_obs, self.seq_act, self.seq_rew = [], [], []
+
+        self.path_lengths, ptr = [], 0
+        path_idx = 0
+        for i in range(timeouts.shape[0]):
+            
+            if i != 0 and ((dones[i - 1] and not dones[i]) or timeouts[i - 1]):
+                
+                path_length = i - ptr
+                self.path_lengths.append(path_length)
+                
+                # 1. agent walks out of the goal
+                if path_length < max_path_length:
+
+                    _seq_obs = np.zeros((max_path_length, self.o_dim), dtype=np.float32)
+                    _seq_act = np.zeros((max_path_length, self.a_dim), dtype=np.float32)
+                    _seq_rew = np.zeros((max_path_length, 1), dtype=np.float32)
+
+                    _seq_obs[:i - ptr] = normed_observations[ptr:i]
+                    _seq_act[:i - ptr] = actions[ptr:i]
+                    _seq_rew[:i - ptr] = rewards[ptr:i][:, None]
+
+                    # repeat padding
+                    _seq_obs[i - ptr:] = normed_observations[i]  # repeat last state
+                    _seq_act[i - ptr:] = 0  # repeat zero action
+                    _seq_rew[i - ptr:] = 0  # repeat zero reward
+
+                    self.seq_obs.append(_seq_obs)
+                    self.seq_act.append(_seq_act)
+                    self.seq_rew.append(_seq_rew)
+
+                # 2. agent never reaches the goal during the episode
+                elif path_length == max_path_length:
+
+                    self.seq_obs.append(normed_observations[ptr:i])
+                    self.seq_act.append(actions[ptr:i])
+                    self.seq_rew.append(rewards[ptr:i][:, None])
+
+                    # panelty for not reaching the goal
+                    self.seq_rew[-1][-1] = noreaching_penalty
+
+                else:
+                    raise ValueError(f"path_length: {path_length} > max_path_length: {max_path_length}")
+
+                max_starts = [min(self.path_lengths[-1] - 1, max_path_length - horizon) for horizon in horizons]
+                for k in range(len(horizons)):
+                    self.indices[k] += [(path_idx, start, start + horizons[k]) for start in range(max_starts[k] + 1)]
+
+                ptr = i
+                path_idx += 1
+
+        self.seq_obs = np.array(self.seq_obs)
+        self.seq_act = np.array(self.seq_act)
+        self.seq_rew = np.array(self.seq_rew)
+        
+        self.len_each_horizon = [len(indices) for indices in self.indices]
+
+    def get_normalizer(self):
+        return self.normalizers["state"]
+
+    def __len__(self):
+        return max(self.len_each_horizon)
+
+    def __getitem__(self, idx: int):
+
+        indices = [np.random.randint(self.len_each_horizon[i]) for i in range(len(self.len_each_horizon))]
+
+        torch_datas = []
+
+        for i, horizon in enumerate(self.horizons):
+
+            path_idx, start, end = self.indices[i][indices[i]]
+
+            rewards = self.seq_rew[path_idx, start:]
+            values = (rewards * self.discount[:rewards.shape[0], None]).sum(0)
+
+            data = {
+                'obs': {
+                    'state': self.seq_obs[path_idx, start:end]},
+                'act': self.seq_act[path_idx, start:end],
+                'rew': self.seq_rew[path_idx, start:end],
+                'val': values}
+
+            torch_data = dict_apply(data, torch.tensor)
+
+            torch_datas.append({
+                "horizon": horizon,
+                "data": torch_data,
+            })
+
+        return torch_datas
