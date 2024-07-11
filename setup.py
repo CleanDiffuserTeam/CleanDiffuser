@@ -10,7 +10,7 @@ PKG_NAME = "cleandiffuser"
 
 def get_version():
     """Gets the version."""
-    path = CWD / "src" / PKG_NAME / "__init__.py"
+    path = CWD / PKG_NAME / "__init__.py"
     content = path.read_text()
 
     for line in content.splitlines():
