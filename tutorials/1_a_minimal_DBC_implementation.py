@@ -23,7 +23,7 @@ For sampling, we intend to use DDPM.
 if __name__ == "__main__":
     
     device = "cuda:0"
-    mode = "rendering"
+    mode = "training"
     
     # --------------- Setting Up the Environment ---------------
     

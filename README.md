@@ -101,7 +101,7 @@ $ git clone https://github.com/ARISE-Initiative/robomimic.git
 $ cd robomimic
 $ pip install -e .
 $ cd <PATH_TO_ROBOSUITE_INSTALL_DIR>
-$ git clone git clone https://github.com/ARISE-Initiative/robosuite.git
+$ git clone https://github.com/ARISE-Initiative/robosuite.git
 $ cd robosuite
 $ pip install -e .
 ```
