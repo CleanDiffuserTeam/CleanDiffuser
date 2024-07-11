@@ -1,31 +1,34 @@
 [project]
-name = "clean-diffuser"
-version = "0.0.2"
+name = "CleanDiffuser"
+dynamic = ["version"]
 description = "CleanDiffuser: An Easy-to-use Modularized Library for Diffusion Models in Decision Making"
-authors = [
-    { name = "CleanDiffuserTeam" },
-    { name = "imataka7", email = "imataka7@gmail.com" },
-]
-dependencies = ["torch>=2"]
+authors = [{ name = "CleanDiffuserTeam" }]
+dependencies = ["numpy<1.23.0", "einops", "torch>=2"]
 readme = "README.md"
 requires-python = ">= 3.8"
 keywords = ["reinforcement learning", "pytorch", "diffuser"]
-license = "MIT"
+license = "Apache-2.0"
 
 [project.urls]
-Homepage = "https://github.com/imataka7/clean-diffuser"
-Repository = "https://github.com/imataka7/clean-diffuser"
+Homepage = "https://cleandiffuserteam.github.io/CleanDiffuserDocs/"
+Repository = "https://github.com/CleanDiffuserTeam/CleanDiffuser"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0.0", "setuptools_scm", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [tool.rye]
 managed = true
-dev-dependencies = []
+dev-dependencies = [
+    "setuptools>=69.5.1",
+    "setuptools_scm>=8.1.0",
+    "wheel>=0.43.0",
+]
 
-[tool.hatch.metadata]
-allow-direct-references = true
+[tool.setuptools_scm]
+write_to = "cleandiffuser/_version.py"
+version_scheme = "post-release"
+local_scheme = "dirty-tag"
 
 [tool.hatch.build.targets.wheel]
 packages = ["cleandiffuser"]
