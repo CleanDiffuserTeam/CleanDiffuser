@@ -115,9 +115,60 @@ def uniform_sampling_step_schedule_continuous(trange=None, sampling_steps: int =
     return torch.linspace(trange[0], trange[1], sampling_steps + 1, dtype=torch.float32)
 
 
+def quad_sampling_step_schedule(T: int = 1000, sampling_steps: int = 10, n: int = 2):
+    schedule = (T - 1) * (torch.linspace(0, 1, sampling_steps + 1, dtype=torch.float32) ** n)
+    return schedule.to(torch.long)
+
+
+def quad_sampling_step_schedule_continuous(trange=None, sampling_steps: int = 10, n: int = 1.5):
+    if trange is None:
+        trange = [1e-3, 1.]
+    schedule = ((trange[1] - trange[0]) *
+                (torch.linspace(0, 1, sampling_steps + 1, dtype=torch.float32) ** n) + trange[0])
+    return schedule
+
+
+def cat_cos_sampling_step_schedule(T: int = 1000, sampling_steps: int = 10, n: int = 2.):
+    idx = torch.linspace(0, 1, sampling_steps + 1, dtype=torch.float32)
+    idx = 0.5 * (2 * (idx > 0.5) - 1) * torch.sin(np.pi * torch.abs(idx - 0.5)) ** (1 / n) + 0.5
+    schedule = (T - 1) * idx
+    return schedule.to(torch.long)
+
+
+def cat_cos_sampling_step_schedule_continuous(trange=None, sampling_steps: int = 10, n: int = 2.):
+    if trange is None:
+        trange = [1e-3, 1.]
+    idx = torch.linspace(0, 1, sampling_steps + 1, dtype=torch.float32)
+    idx = 0.5 * (2 * (idx > 0.5) - 1) * torch.sin(np.pi * torch.abs(idx - 0.5)) ** (1 / n) + 0.5
+    schedule = (trange[1] - trange[0]) * idx + trange[0]
+    return schedule
+
+
+def quad_cos_sampling_step_schedule(T: int = 1000, sampling_steps: int = 10, n: int = 2.):
+    idx = torch.linspace(0, 1, sampling_steps + 1, dtype=torch.float32)
+    idx = ((torch.sin(np.pi * (idx - 0.5)) + 1) / 2) ** n
+    schedule = (T - 1) * idx
+    return schedule.to(torch.long)
+
+
+def quad_cos_sampling_step_schedule_continuous(trange=None, sampling_steps: int = 10, n: int = 2.):
+    if trange is None:
+        trange = [1e-3, 1.]
+    idx = torch.linspace(0, 1, sampling_steps + 1, dtype=torch.float32)
+    idx = ((torch.sin(np.pi * (idx - 0.5)) + 1) / 2) ** n
+    schedule = (trange[1] - trange[0]) * idx + trange[0]
+    return schedule
+
+
 SUPPORTED_SAMPLING_STEP_SCHEDULE = {
     "uniform": uniform_sampling_step_schedule,
     "uniform_continuous": uniform_sampling_step_schedule_continuous,
+    "quad": quad_sampling_step_schedule,
+    "quad_continuous": quad_sampling_step_schedule_continuous,
+    "cat_cos": cat_cos_sampling_step_schedule,
+    "cat_cos_continuous": cat_cos_sampling_step_schedule_continuous,
+    "quad_cos": quad_cos_sampling_step_schedule,
+    "quad_cos_continuous": quad_cos_sampling_step_schedule_continuous,
 }
 
 

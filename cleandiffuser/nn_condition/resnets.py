@@ -283,8 +283,8 @@ class ResNet18MultiViewImageCondition(BaseNNCondition):
         assert condition_dim == 5 or condition_dim == 6, \
             "Input condition must be 5D or 6D tensor, got shape {}".format(condition.shape)
 
+        b = condition.shape[0]
         if condition.dim() == 6:
-            b = condition.shape[0]
             condition = einops.rearrange(condition, 'b v n c h w -> (b n) v c h w')
 
         mask = get_mask(
