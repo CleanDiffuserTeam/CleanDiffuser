@@ -84,7 +84,7 @@ class Logger:
     def log(self, d, category):
         assert category in ['train', 'inference']
         assert 'step' in d
-        print(f"[{d['step']}]", " / ".join(f"{k} {v:.2f}" for k, v in d.items()))
+        print(f"[{d['step']}]", " / ".join(f"{k} {v:.3f}" for k, v in d.items()))
         with (self._log_dir / "metrics.jsonl").open("a") as f:
             f.write(json.dumps({"step": d['step'], **d}) + "\n")
         _d = dict()
