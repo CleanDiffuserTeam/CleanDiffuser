@@ -30,5 +30,6 @@ write_to = "cleandiffuser/_version.py"
 version_scheme = "post-release"
 local_scheme = "dirty-tag"
 
-[tool.hatch.build.targets.wheel]
-packages = ["cleandiffuser"]
+[tool.setuptools.packages.find]
+# where = ["src"]
+include = ["cleandiffuser"]
