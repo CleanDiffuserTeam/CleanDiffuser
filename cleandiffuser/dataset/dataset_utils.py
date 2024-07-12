@@ -4,7 +4,7 @@ import torch
 import scipy.interpolate as interpolate
 import numba
 from cleandiffuser.dataset.replay_buffer import ReplayBuffer
-import pytorch3d.transforms as pt
+import cleandiffuser.dataset.rotation_conversions as rc
 import functools
 
 
@@ -177,8 +177,8 @@ class RotationTransformer:
 
         if from_rep != 'matrix':
             funcs = [
-                getattr(pt, f'{from_rep}_to_matrix'),
-                getattr(pt, f'matrix_to_{from_rep}')
+                getattr(rc, f'{from_rep}_to_matrix'),
+                getattr(rc, f'matrix_to_{from_rep}')
             ]
             if from_convention is not None:
                 funcs = [functools.partial(func, convention=from_convention)
@@ -188,8 +188,8 @@ class RotationTransformer:
 
         if to_rep != 'matrix':
             funcs = [
-                getattr(pt, f'matrix_to_{to_rep}'),
-                getattr(pt, f'{to_rep}_to_matrix')
+                getattr(rc, f'matrix_to_{to_rep}'),
+                getattr(rc, f'{to_rep}_to_matrix')
             ]
             if to_convention is not None:
                 funcs = [functools.partial(func, convention=to_convention)

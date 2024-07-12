@@ -69,7 +69,6 @@ export PYTHONPATH=$PYTHONPATH:/path/to/CleanDiffuser
 We recommend visiting https://pytorch.org/get-started/previous-versions/ to find the appropriate PyTorch version for your CUDA installation. Essentially, we only require `torch>1.0.0,<2.3.0`, as we have found conflicts between PyTorch version 2.3.0 and NumPy. Below is an example using PyTorch version 2.2.2 with CUDA 11.8.
 ```bash
 $ conda install pytorch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 pytorch-cuda=12.1 -c pytorch -c nvidia
-$ conda install pytorch3d -c pytorch3d
 ```
 
 #### 3. Pure CleanDiffuser installation
