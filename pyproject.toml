@@ -7,7 +7,7 @@ dependencies = ["numpy<1.23.0", "einops", "torch>=2"]
 readme = "README.md"
 requires-python = ">= 3.8"
 keywords = ["reinforcement learning", "pytorch", "diffuser"]
-license = "Apache-2.0"
+# license = "Apache-2.0"
 
 [project.urls]
 Homepage = "https://cleandiffuserteam.github.io/CleanDiffuserDocs/"
