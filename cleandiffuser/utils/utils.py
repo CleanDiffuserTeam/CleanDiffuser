@@ -1,7 +1,7 @@
 import math
 import os
 import random
-from typing import Union
+from typing import Union, Dict, Callable
 
 import numpy as np
 import torch
