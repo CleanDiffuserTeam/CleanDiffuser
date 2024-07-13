@@ -5,12 +5,37 @@ from cleandiffuser.utils import Mlp
 
 
 class MlpInvDynamic:
+    """ Simple MLP-based inverse dynamics model. The model is a 3-layer MLP with ReLU activation.
+
+    Args:
+        o_dim: int,
+            Dimension of observation space.
+        a_dim: int,
+            Dimension of action space.
+        hidden_dim: int,
+            Dimension of hidden layers. Default: 512.
+        out_activation: nn.Module,
+            Activation function for output layer. Default: nn.Tanh().
+        optim_params: dict,
+            Optimizer parameters. Default: {}.
+        device: str,
+            Device for the model. Default: "cpu".
+
+    Examples:
+        >>> invdyn = MlpInvDynamic(3, 2)
+        >>> invdyn.train()
+        >>> batch = ...
+        >>> obs, act, obs_next = batch
+        >>> loss = invdyn.update(obs, act, obs_next)
+        >>> invdyn.eval()
+        >>> pred_act = invdyn.predict(obs, obs_next)
+    """
     def __init__(
             self,
             o_dim: int,
             a_dim: int,
             hidden_dim: int = 512,
-            out_activation: nn.Module = nn.Identity(),
+            out_activation: nn.Module = nn.Tanh(),
             optim_params: dict = {},
             device: str = "cpu",
     ):
@@ -64,6 +89,36 @@ class MlpInvDynamic:
 
 
 class FancyMlpInvDynamic:
+    """ Fancy MLP-based inverse dynamics model. The model is a 3-layer MLP with GELU activation. It also includes
+    optional LayerNorm and Dropout. We suggest using 0.1 Dropout and LayerNorm for better performance.
+
+    Args:
+        o_dim: int,
+            Dimension of observation space.
+        a_dim: int,
+            Dimension of action space.
+        hidden_dim: int,
+            Dimension of hidden layers. Default: 256.
+        out_activation: nn.Module,
+            Activation function for output layer. Default: nn.Tanh().
+        add_norm: bool,
+            Whether to add LayerNorm. Default: False.
+        add_dropout: bool,
+            Whether to add Dropout. Default: False.
+        optim_params: dict,
+            Optimizer parameters. Default: {}.
+        device: str,
+            Device for the model. Default: "cpu".
+
+    Examples:
+        >>> invdyn = FancyMlpInvDynamic(3, 2, add_norm=True, add_dropout=True)
+        >>> invdyn.train()
+        >>> batch = ...
+        >>> obs, act, obs_next = batch
+        >>> loss = invdyn.update(obs, act, obs_next)
+        >>> invdyn.eval()
+        >>> pred_act = invdyn.predict(obs, obs_next)
+    """
     def __init__(
             self, o_dim: int, a_dim: int, hidden_dim: int = 256,
             out_activation: nn.Module = nn.Tanh(),

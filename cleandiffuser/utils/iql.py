@@ -38,7 +38,24 @@ class V(nn.Module):
 
 
 class IQL(nn.Module):
-    def __init__(self, obs_dim, act_dim, tau: float = 0.7, discount: float = 0.99, hidden_dim: int = 256):
+    """ Simple Implicit Q-Learning (IQL) pytorch implementation.
+
+    Args:
+        obs_dim: int, observation space dimension.
+        act_dim: int, action space dimension.
+        tau: float, quantile level. Default is 0.7.
+        discount: float, discount factor. Default is 0.99.
+        hidden_dim: int, hidden dimension. Default is 256.
+
+    Example:
+        >>> iql = IQL(...)
+        >>> batch = ...
+        >>> obs, act, rew, obs_next, done = batch
+        >>> loss_v = iql.update_V(obs, act)
+        >>> loss_q = iql.update_Q(obs, act, rew, obs_next, done)
+        >>> iql.update_target()
+    """
+    def __init__(self, obs_dim: int, act_dim: int, tau: float = 0.7, discount: float = 0.99, hidden_dim: int = 256):
         super().__init__()
         self.iql_tau, self.discount = tau, discount
         self.Q = TwinQ(obs_dim, act_dim, hidden_dim)

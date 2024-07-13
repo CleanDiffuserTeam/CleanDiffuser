@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
-from cleandiffuser.utils import GroupNorm1d, SinusoidalEmbedding
 
 
 class DQLMlp(BaseNNDiffusion):

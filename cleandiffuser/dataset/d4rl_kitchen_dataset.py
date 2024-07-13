@@ -1,22 +1,55 @@
+from typing import Dict
+
 import numpy as np
 import torch
 
 from cleandiffuser.dataset.base_dataset import BaseDataset
-from cleandiffuser.dataset.dataset_utils import GaussianNormalizer, dict_apply
+from cleandiffuser.utils import GaussianNormalizer, dict_apply
 
 
 class D4RLKitchenDataset(BaseDataset):
-    """
-    In D4RL Kitchen, `terminal` means a demonstration is finished, and we need penalty.
-    Padding to repeat the last state-action-reward until the end of the sequence.
-    """
+    """ **D4RL-Kitchen Sequential Dataset**
 
+    torch.utils.data.Dataset wrapper for D4RL-Kitchen dataset.
+    Chunk the dataset into sequences of length `horizon` with obs-repeat/act-zero/reward-repeat padding.
+    Use GaussianNormalizer to normalize the observations as default.
+    Each batch contains
+    - batch["obs"]["state"], observations of shape (batch_size, horizon, o_dim)
+    - batch["act"], actions of shape (batch_size, horizon, a_dim)
+    - batch["rew"], rewards of shape (batch_size, horizon, 1)
+    - batch["val"], Monte Carlo return of shape (batch_size, 1)
+
+    Args:
+        dataset: Dict[str, np.ndarray],
+            D4RL-Kitchen dataset. Obtained by calling `env.get_dataset()`.
+        horizon: int,
+            Length of each sequence. Default is 1.
+        max_path_length: int,
+            Maximum length of the episodes. Default is 280.
+        discount: float,
+            Discount factor. Default is 0.99.
+
+    Examples:
+        >>> env = gym.make("kitchen-mixed-v0")
+        >>> dataset = D4RLKitchenDataset(env.get_dataset(), horizon=32)
+        >>> dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+        >>> batch = next(iter(dataloader))
+        >>> obs = batch["obs"]["state"]  # (32, 32, 60)
+        >>> act = batch["act"]           # (32, 32, 9)
+        >>> rew = batch["rew"]           # (32, 32, 1)
+        >>> val = batch["val"]           # (32, 1)
+
+        >>> normalizer = dataset.get_normalizer()
+        >>> obs = env.reset()[None, :]
+        >>> normed_obs = normalizer.normalize(obs)
+        >>> unnormed_obs = normalizer.unnormalize(normed_obs)
+    """
     def __init__(
             self,
-            dataset,
-            horizon=1,
-            max_path_length=280,
-            discount=0.99,
+            dataset: Dict[str, np.ndarray],
+            horizon: int = 1,
+            max_path_length: int = 280,
+            discount: float = 0.99,
     ):
         super().__init__()
 
@@ -95,7 +128,39 @@ class D4RLKitchenDataset(BaseDataset):
 
 
 class D4RLKitchenTDDataset(BaseDataset):
-    def __init__(self, dataset):
+    """ **D4RL-Kitchen Transition Dataset**
+
+    torch.utils.data.Dataset wrapper for D4RL-Kitchen dataset.
+    Chunk the dataset into transitions.
+    Use GaussianNormalizer to normalize the observations as default.
+    Each batch contains
+    - batch["obs"]["state"], observation of shape (batch_size, o_dim)
+    - batch["next_obs"]["state"], next observation of shape (batch_size, o_dim)
+    - batch["act"], action of shape (batch_size, a_dim)
+    - batch["rew"], reward of shape (batch_size, 1)
+    - batch["tml"], terminal of shape (batch_size, 1)
+
+    Args:
+        dataset: Dict[str, np.ndarray],
+            D4RL-MuJoCo TD dataset. Obtained by calling `d4rl.qlearning_dataset(env)`.
+
+    Examples:
+        >>> env = gym.make("kitchen-mixed-v0")
+        >>> dataset = D4RLKitchenTDDataset(d4rl.qlearning_dataset(env))
+        >>> dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+        >>> batch = next(iter(dataloader))
+        >>> obs = batch["obs"]["state"]  # (32, 60)
+        >>> act = batch["act"]           # (32, 9)
+        >>> rew = batch["rew"]           # (32, 1)
+        >>> tml = batch["tml"]           # (32, 1)
+        >>> next_obs = batch["next_obs"]["state"]  # (32, 60)
+
+        >>> normalizer = dataset.get_normalizer()
+        >>> obs = env.reset()[None, :]
+        >>> normed_obs = normalizer.normalize(obs)
+        >>> unnormed_obs = normalizer.unnormalize(normed_obs)
+    """
+    def __init__(self, dataset: Dict[str, np.ndarray]):
         super().__init__()
 
         observations, actions, next_observations, rewards, terminals = (

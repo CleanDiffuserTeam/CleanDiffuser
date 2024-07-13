@@ -1,18 +1,58 @@
+from typing import Dict
+
 import numpy as np
 import torch
 
 from cleandiffuser.dataset.base_dataset import BaseDataset
-from cleandiffuser.dataset.dataset_utils import GaussianNormalizer, dict_apply
+from cleandiffuser.utils import GaussianNormalizer, dict_apply
 
 
 class D4RLAntmazeDataset(BaseDataset):
+    """ **D4RL-Antmaze Sequential Dataset**
+
+        torch.utils.data.Dataset wrapper for D4RL-Antmaze dataset.
+        Chunk the dataset into sequences of length `horizon` with obs-repeat/act-zero/reward-zero padding.
+        Use GaussianNormalizer to normalize the observations as default.
+        Each batch contains
+        - batch["obs"]["state"], observations of shape (batch_size, horizon, o_dim)
+        - batch["act"], actions of shape (batch_size, horizon, a_dim)
+        - batch["rew"], rewards of shape (batch_size, horizon, 1)
+        - batch["val"], Monte Carlo return of shape (batch_size, 1)
+
+        Args:
+            dataset: Dict[str, np.ndarray],
+                D4RL-Antmaze dataset. Obtained by calling `env.get_dataset()`.
+            horizon: int,
+                Length of each sequence. Default is 1.
+            max_path_length: int,
+                Maximum length of the episodes. Default is 1001.
+            noreaching_penalty: float,
+                Penalty for not reaching the goal. Default is -100.
+            discount: float,
+                Discount factor. Default is 0.99.
+
+        Examples:
+            >>> env = gym.make("antmaze-medium-play-v2")
+            >>> dataset = D4RLAntmazeDataset(env.get_dataset(), horizon=32)
+            >>> dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+            >>> batch = next(iter(dataloader))
+            >>> obs = batch["obs"]["state"]  # (32, 32, 29)
+            >>> act = batch["act"]           # (32, 32, 8)
+            >>> rew = batch["rew"]           # (32, 32, 1)
+            >>> val = batch["val"]           # (32, 1)
+
+            >>> normalizer = dataset.get_normalizer()
+            >>> obs = env.reset()[None, :]
+            >>> normed_obs = normalizer.normalize(obs)
+            >>> unnormed_obs = normalizer.unnormalize(normed_obs)
+        """
     def __init__(
             self,
-            dataset,
-            horizon=1,
-            max_path_length=1001,
-            noreaching_penalty=-100,
-            discount=0.99,
+            dataset: Dict[str, np.ndarray],
+            horizon: int = 1,
+            max_path_length: int = 1001,
+            noreaching_penalty: float = -100.,
+            discount: float = 0.99,
     ):
         super().__init__()
 
@@ -112,7 +152,41 @@ class D4RLAntmazeDataset(BaseDataset):
 
 
 class D4RLAntmazeTDDataset(BaseDataset):
-    def __init__(self, dataset, reward_tune="iql"):
+    """ **D4RL-Antmaze Transition Dataset**
+
+    torch.utils.data.Dataset wrapper for D4RL-Antmaze dataset.
+    Chunk the dataset into transitions.
+    Use GaussianNormalizer to normalize the observations as default.
+    Each batch contains
+    - batch["obs"]["state"], observation of shape (batch_size, o_dim)
+    - batch["next_obs"]["state"], next observation of shape (batch_size, o_dim)
+    - batch["act"], action of shape (batch_size, a_dim)
+    - batch["rew"], reward of shape (batch_size, 1)
+    - batch["tml"], terminal of shape (batch_size, 1)
+
+    Args:
+        dataset: Dict[str, np.ndarray],
+            D4RL-MuJoCo TD dataset. Obtained by calling `d4rl.qlearning_dataset(env)`.
+        reward_tune: str,
+            Reward tuning method. Can be "iql", "cql", "antmaze", or "none". Default is "iql".
+
+    Examples:
+        >>> env = gym.make("antmaze-medium-play-v2")
+        >>> dataset = D4RLAntmazeTDDataset(d4rl.qlearning_dataset(env))
+        >>> dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+        >>> batch = next(iter(dataloader))
+        >>> obs = batch["obs"]["state"]  # (32, 29)
+        >>> act = batch["act"]           # (32, 8)
+        >>> rew = batch["rew"]           # (32, 1)
+        >>> tml = batch["tml"]           # (32, 1)
+        >>> next_obs = batch["next_obs"]["state"]  # (32, 29)
+
+        >>> normalizer = dataset.get_normalizer()
+        >>> obs = env.reset()[None, :]
+        >>> normed_obs = normalizer.normalize(obs)
+        >>> unnormed_obs = normalizer.unnormalize(normed_obs)
+    """
+    def __init__(self, dataset: Dict[str, np.ndarray], reward_tune: str = "iql"):
         super().__init__()
 
         observations, actions, next_observations, rewards, terminals = (

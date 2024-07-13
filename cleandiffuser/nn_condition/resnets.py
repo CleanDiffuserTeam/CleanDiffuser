@@ -139,7 +139,7 @@ class ResNet18(nn.Module):
 
     @property
     def cnn_output_shape(self):
-        example = torch.zeros((1, self.in_channel, self.image_sz, self.image_sz), \
+        example = torch.zeros((1, self.in_channel, self.image_sz, self.image_sz),
                               device=self.device, dtype=self.dtype)
         return self.cnn(example).shape
 
@@ -156,37 +156,34 @@ class ResNet18ImageCondition(BaseNNCondition):
     Compared to the original implementation, we replace `BatchNorm2d` with `GroupNorm`, 
     and use a SpatialSoftmax instead of an average pooling layer.
 
-    ---------------------------
     Args:
-    - image_sz: int
-        Size of the input image. The image is assumed to be square.
-    - in_channel: int
-        Number of input channels. 3 for RGB images.
-    - emb_dim: int
-        Dimension of the output embedding.
+        image_sz: int,
+            Size of the input image. The image is assumed to be square.
+        in_channel: int,
+            Number of input channels. 3 for RGB images.
+        emb_dim: int,
+            Dimension of the output embedding.
         
-    - act_fn: callable
-        Activation function to use in the network. Default is ReLU.
-    - use_group_norm: bool
-        Whether to use GroupNorm instead of BatchNorm. Default is True.
-    - group_channels: int
-        Number of channels per group in GroupNorm. Default is 16.
-    - use_spatial_softmax: bool
-        Whether to use SpatialSoftmax instead of average pooling. Default is True.
+        act_fn: callable,
+            Activation function to use in the network. Default is ReLU.
+        use_group_norm: bool,
+            Whether to use GroupNorm instead of BatchNorm. Default is True.
+        group_channels: int,
+            Number of channels per group in GroupNorm. Default is 16.
+        use_spatial_softmax: bool,
+            Whether to use SpatialSoftmax instead of average pooling. Default is True.
     
-    - dropout: float
-        Condition Dropout rate. Default is 0.0.
+        dropout: float,
+            Condition Dropout rate. Default is 0.0.
 
-    -----------------------------
-    Inputs:
-    - condition: torch.Tensor
-        The input image tensor. The shape should be (b, n, c, h, w) or (b, c, h, w)
-    - mask: Optional[torch.Tensor]:
-        The label dropout mask that is used during training. If None, no mask is applied.
-
-    Output:
-    - torch.Tensor:
-        The output representation tensor of shape (b, n, emb_dim).
+    Examples:
+        >>> nn_condition = ResNet18ImageCondition(image_sz=64, in_channel=3, emb_dim=256)
+        >>> condition = torch.randn(32, 3, 64, 64)
+        >>> nn_condition(condition).shape
+        torch.Size([32, 256])
+        >>> condition = torch.randn(32, 4, 3, 64, 64)
+        >>> nn_condition(condition).shape
+        torch.Size([32, 4, 256])
     """
     def __init__(
             self, image_sz: int, in_channel: int, emb_dim: int, act_fn=lambda: nn.ReLU(),
@@ -201,11 +198,12 @@ class ResNet18ImageCondition(BaseNNCondition):
 
     def forward(self, condition: torch.Tensor, mask: torch.Tensor = None):
 
-        assert condition.dim() == 4 or condition.dim() == 5, \
+        condition_dim = condition.dim()
+        assert condition_dim == 4 or condition_dim == 5, \
             "Input condition must be 4D or 5D tensor, got shape {}".format(condition.shape)
 
         b = condition.shape[0]
-        if condition.dim() == 5:
+        if condition_dim == 5:
             condition = einops.rearrange(condition, 'b n c h w -> (b n) c h w')
 
         mask = get_mask(
@@ -213,7 +211,7 @@ class ResNet18ImageCondition(BaseNNCondition):
 
         emb = self.resnet18(condition)
 
-        if condition.dim() == 5:
+        if condition_dim == 5:
             emb = einops.rearrange(emb, '(b n) d -> b n d', b=b) * mask[:, None, None]
 
         return emb
@@ -228,39 +226,36 @@ class ResNet18MultiViewImageCondition(BaseNNCondition):
     and use a SpatialSoftmax instead of an average pooling layer.
     The Multi-view version uses different ResNet18 networks for each view.
 
-    --------------------------------
     Args:
-    - image_sz: int
-        Size of the input image. The image is assumed to be square.
-    - in_channel: int
-        Number of input channels. 3 for RGB images.
-    - emb_dim: int
-        Dimension of the output embedding.
-    - n_views: int
-        Number of views.
+        image_sz: int,
+            Size of the input image. The image is assumed to be square.
+        in_channel: int,
+            Number of input channels. 3 for RGB images.
+        emb_dim: int,
+            Dimension of the output embedding.
+        n_views: int,
+            Number of views.
         
-    - act_fn: callable
-        Activation function to use in the network. Default is ReLU.
-    - use_group_norm: bool
-        Whether to use GroupNorm instead of BatchNorm. Default is True.
-    - group_channels: int
-        Number of channels per group in GroupNorm. Default is 16.
-    - use_spatial_softmax: bool
-        Whether to use SpatialSoftmax instead of average pooling. Default is True.
+        act_fn: callable,
+            Activation function to use in the network. Default is ReLU.
+        use_group_norm: bool,
+            Whether to use GroupNorm instead of BatchNorm. Default is True.
+        group_channels: int,
+            Number of channels per group in GroupNorm. Default is 16.
+        use_spatial_softmax: bool,
+            Whether to use SpatialSoftmax instead of average pooling. Default is True.
     
-    - dropout: float
-        Condition Dropout rate. Default is 0.0.
+        dropout: float,
+            Condition Dropout rate. Default is 0.0.
 
-    -----------------------------
-    Inputs:
-    - condition: torch.Tensor
-        The input image tensor. The shape should be (b, v, n, c, h, w) or (b, v, c, h, w)
-    - mask: Optional[torch.Tensor]:
-        The label dropout mask that is used during training. If None, no mask is applied.
-
-    Output:
-    - torch.Tensor:
-        The output representation tensor of shape (b, v, n, emb_dim).
+    Examples:
+        >>> nn_condition = ResNet18MultiViewImageCondition(image_sz=64, in_channel=3, emb_dim=256, n_views=2)
+        >>> condition = torch.randn(32, 2, 3, 64, 64)
+        >>> nn_condition(condition).shape
+        torch.Size([32, 2, 256])
+        >>> condition = torch.randn(32, 2, 4, 3, 64, 64)
+        >>> nn_condition(condition).shape
+        torch.Size([32, 2, 4, 256])
     """
     def __init__(
             self, image_sz: int, in_channel: int, emb_dim: int, n_views: int, act_fn=lambda: nn.ReLU(),

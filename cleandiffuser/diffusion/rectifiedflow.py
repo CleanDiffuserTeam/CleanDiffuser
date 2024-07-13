@@ -300,9 +300,6 @@ class DiscreteRectifiedFlow(DiffusionModel):
         else:
             raise ValueError("sample_step_schedule must be a callable or a string")
 
-        print(diffusion_steps)
-        print(sample_step_schedule)
-
         # ===================== Denoising Loop ========================
         loop_steps = [1] * diffusion_x_sampling_steps + list(range(1, sample_steps + 1))
         for i in reversed(loop_steps):

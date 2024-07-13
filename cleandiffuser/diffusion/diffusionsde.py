@@ -816,7 +816,7 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
         log = {
             "sample_history": np.empty((n_samples, sample_steps + 1, *prior.shape)) if preserve_history else None, }
 
-        model = self.model if not use_ema else self.model_ema9999
+        model = self.model if not use_ema else self.model_ema
 
         prior = prior.to(self.device)
         if isinstance(warm_start_reference, torch.Tensor) and warm_start_forward_level > 0.:

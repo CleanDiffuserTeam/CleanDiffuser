@@ -5,8 +5,7 @@ import torch
 import torch.nn as nn
 
 from cleandiffuser.nn_condition import BaseNNCondition
-from cleandiffuser.utils import SinusoidalEmbedding
-from cleandiffuser.utils.building_blocks import Transformer
+from cleandiffuser.utils import SinusoidalEmbedding, Transformer
 
 
 class SmallStem(nn.Module):
@@ -56,58 +55,51 @@ class EarlyConvViTMultiViewImageCondition(BaseNNCondition):
     the token dimension, which are then processed by a transformer. The output of the
     learnable 'readout' token is returned as the final representation.
 
-    ------------------------------
     Args:
-    - image_sz: Tuple[int]:
-        The size of the input image for each view. Assumes square images.
-    - in_channels: Tuple[int]:
-        The number of input channels for each view.
-    - lowdim_sz: Optional[int]:
-        The size of the low-dimensional condition. If None, no low-dimensional condition is used.
-    - To: int:
-        The number of frames for each view.
+        image_sz: Tuple[int],
+            The size of the input image for each view. Assumes square images.
+        in_channels: Tuple[int],
+            The number of input channels for each view.
+        lowdim_sz: Optional[int],
+            The size of the low-dimensional condition. If None, no low-dimensional condition is used.
+        To: int,
+            The number of frames for each view.
 
-    # Transformer parameters
-    - d_model: int:
-        The dimension of the transformer token.
-    - nhead: int:
-        The number of heads in the transformer.
-    - num_layers: int:
-        The number of transformer layers.
-    - attn_dropout: float:
-        The dropout rate for the attention layer.
-    - ffn_dropout: float:
-        The dropout rate for the feedforward layer.
+        # Transformer arguments
+        d_model: int:
+            The dimension of the transformer token.
+        nhead: int:
+            The number of heads in the transformer.
+        num_layers: int:
+            The number of transformer layers.
+        attn_dropout: float:
+            The dropout rate for the attention layer.
+        ffn_dropout: float:
+            The dropout rate for the feedforward layer.
 
-    # CNN parameters
-    - patch_size: Tuple[int]:
-        The size of the patch for each view.
-    - channels_per_group: Tuple[int]:
-        The number of channels per group in the CNN.
-    - kernel_sizes: Tuple[Tuple[int]]:
-        The kernel sizes for each CNN layer.
-    - strides: Tuple[Tuple[int]]:
-        The strides for each CNN layer.
-    - features: Tuple[Tuple[int]]:
-        The number of features for each CNN layer.
-    - padding: Tuple[Tuple[int]]:
-        The padding for each CNN layer.
+        # CNN arguments
+        patch_size: Tuple[int]:
+            The size of the patch for each view.
+        channels_per_group: Tuple[int]:
+            The number of channels per group in the CNN.
+        kernel_sizes: Tuple[Tuple[int]]:
+            The kernel sizes for each CNN layer.
+        strides: Tuple[Tuple[int]]:
+            The strides for each CNN layer.
+        features: Tuple[Tuple[int]]:
+            The number of features for each CNN layer.
+        padding: Tuple[Tuple[int]]:
+            The padding for each CNN layer.
 
-    --------------------------------
-    Inputs:
-    - condition: Dict[str, torch.Tensor]:
-        The input condition dictionary. Requires the following
-        keys:
-        - 'image': torch.Tensor:
-            The input image tensor of shape (Batch, View, To, C, H, W).
-        - 'lowdim': torch.Tensor:
-            The low-dimensional condition tensor of shape (Batch, To, D).
-    - mask: Optional[torch.Tensor]:
-        The label dropout mask that is used during training. If None, no mask is applied.
-
-    Outputs:
-    - torch.Tensor:
-        The output representation tensor of shape (Batch, d_model).
+    Examples:
+        >>> d_model = 384
+        >>> batch, view, To, C, H, W, D = 4, 2, 1, 3, 64, 64, 9
+        >>> nn_condition = EarlyConvViTMultiViewImageCondition(d_model=d_model, ...)
+        >>> condition = {
+        ...     "image": torch.randn((batch, view, To, C, H, W)),
+        ...     "lowdim": torch.randn((batch, To, D)),}
+        >>> nn_condition(condition).shape
+        torch.Size([batch, d_model])
     """
     def __init__(
             self,

@@ -1,7 +1,8 @@
 from typing import Dict
-import torch
+
 import torch.nn
-import numpy as np
+from torch.utils.data import Dataset
+
 
 # Adapted from the datasets on: https://github.com/real-stanford/diffusion_policy
 
@@ -20,7 +21,7 @@ import numpy as np
 # | |a|a|a|a|a|
 
 
-class BaseDataset(torch.utils.data.Dataset):
+class BaseDataset(Dataset):
     def get_normalizer(self, **kwargs):
         raise NotImplementedError()
     

@@ -75,8 +75,8 @@ class CMCurriculumLogger:
                             / self.Nk * (self.sigma_max ** (1 / self.rho) - self.sigma_min ** (
                             1 / self.rho))) ** self.rho)
 
-            self.p_sigmas = erf((np.log(self.sigmas[1:]) - self.P_mean) / (self.P_std * (2 ** 0.5))) - \
-                            erf((np.log(self.sigmas[:-1]) - self.P_mean) / (self.P_std * (2 ** 0.5)))
+            self.p_sigmas = (erf((np.log(self.sigmas[1:]) - self.P_mean) / (self.P_std * (2 ** 0.5))) -
+                             erf((np.log(self.sigmas[:-1]) - self.P_mean) / (self.P_std * (2 ** 0.5))))
             self.p_sigmas = self.p_sigmas / self.p_sigmas.sum()
 
     def incremental_update_k(self):
@@ -88,7 +88,7 @@ class CMCurriculumLogger:
 
 
 class ContinuousConsistencyModel(DiffusionModel):
-    """Continuous-time Consistency Model
+    """**Continuous-time Consistency Model**
     
     The Consistency Model defines a consistency function. 
     A consistency function has the property of self-consistency: 
@@ -101,58 +101,58 @@ class ContinuousConsistencyModel(DiffusionModel):
     The sampling steps are required to be greater than 0.
 
     Args:
-    - nn_diffusion: BaseNNDiffusion
-        The neural network backbone for the Diffusion model.
-    - nn_condition: Optional[BaseNNCondition]
-        The neural network backbone for the condition embedding.
+        nn_diffusion: BaseNNDiffusion,
+            The neural network backbone for the Diffusion model.
+        nn_condition: Optional[BaseNNCondition],
+            The neural network backbone for the condition embedding.
         
-    - fix_mask: Union[list, np.ndarray, torch.Tensor]
-        Fix some portion of the input data, and only allow the diffusion model to complete the rest part.
-        The mask should be in the shape of `x_shape`.
-    - loss_weight: Union[list, np.ndarray, torch.Tensor]
-        Add loss weight. The weight should be in the shape of `x_shape`.
+        fix_mask: Union[list, np.ndarray, torch.Tensor],
+            Fix some portion of the input data, and only allow the diffusion model to complete the rest part.
+            The mask should be in the shape of `x_shape`.
+        loss_weight: Union[list, np.ndarray, torch.Tensor],
+            Add loss weight. The weight should be in the shape of `x_shape`.
         
-    - classifier: Optional[BaseClassifier]
-        The Consistency Model does not support classifier guidance; please set this option to `None`.
+        classifier: Optional[BaseClassifier],
+            The Consistency Model does not support classifier guidance; please set this option to `None`.
         
-    - grad_clip_norm: Optional[float]
-        Gradient clipping norm.
-    - ema_rate: float
-        Exponential moving average rate.
-    - optim_params: Optional[dict]
-        Optimizer parameters.
+        grad_clip_norm: Optional[float],
+            Gradient clipping norm.
+        ema_rate: float,
+            Exponential moving average rate.
+        optim_params: Optional[dict],
+            Optimizer parameters.
         
-    - s0: int
-        The minimum number of noise levels. Default: 10.
-    - s1: int
-        The maximum number of noise levels. Default: 1280.
-    - data_dim: int
-        The dimension of the data, which affects the `pseudo_huber_constant`. 
-        As suggested in `improved Consistency Models`, `pseudo_huber_constant` = 0.00054 * np.sqrt(data_dim). 
-        If `data_dim` is `None`, then `pseudo_huber_constant` = 0.01 will be used.
-    - P_mean: float
-        Hyperparameter for noise sampling during training. Default: -1.1.
-    - P_std: float
-        Hyperparameter for noise sampling during training. Default: 2.0.
-    - sigma_min: float
-        The minimum standard deviation of the noise. Default: 0.002.
-    - sigma_max: float
-        The maximum standard deviation of the noise. Default: 80.
-    - sigma_data: float
-        The standard deviation of the data. Default: 0.5.
-    - rho: float
-        The power of the noise schedule. Default: 7.
-    - curriculum_cycle: int
-        The cycle of the curriculum process. 
-        It is best to set `curriculum_cycle` to the number of model training iterations. Default: 100_000.
+        s0: int,
+            The minimum number of noise levels. Default: 10.
+        s1: int,
+            The maximum number of noise levels. Default: 1280.
+        data_dim: int,
+            The dimension of the data, which affects the `pseudo_huber_constant`.
+            As suggested in `improved Consistency Models`, `pseudo_huber_constant` = 0.00054 * np.sqrt(data_dim).
+            If `data_dim` is `None`, then `pseudo_huber_constant` = 0.01 will be used.
+        P_mean: float,
+            Hyperparameter for noise sampling during training. Default: -1.1.
+        P_std: float,
+            Hyperparameter for noise sampling during training. Default: 2.0.
+        sigma_min: float,
+            The minimum standard deviation of the noise. Default: 0.002.
+        sigma_max: float,
+            The maximum standard deviation of the noise. Default: 80.
+        sigma_data: float,
+            The standard deviation of the data. Default: 0.5.
+        rho: float,
+            The power of the noise schedule. Default: 7.
+        curriculum_cycle: int,
+            The cycle of the curriculum process.
+            It is best to set `curriculum_cycle` to the number of model training iterations. Default: 100_000.
     
-    - x_max: Optional[torch.Tensor]
-        The maximum value for the input data. `None` indicates no constraint.
-    - x_min: Optional[torch.Tensor]
-        The minimum value for the input data. `None` indicates no constraint.
+        x_max: Optional[torch.Tensor],
+            The maximum value for the input data. `None` indicates no constraint.
+        x_min: Optional[torch.Tensor],
+            The minimum value for the input data. `None` indicates no constraint.
         
-    - device: Union[torch.device, str]
-        The device to run the model.
+        device: Union[torch.device, str],
+            The device to run the model.
     """
 
     def __init__(
@@ -254,8 +254,8 @@ class ContinuousConsistencyModel(DiffusionModel):
         c_skip, c_out, c_in, c_noise = self.c_skip(t), self.c_out(t), self.c_in(t), self.c_noise(t)
         if model is None:
             model = self.model
-        c_skip, c_in, c_out = at_least_ndim(c_skip, x.dim()), at_least_ndim(c_in, x.dim()), at_least_ndim(c_out,
-                                                                                                          x.dim())
+        c_skip, c_in, c_out = (
+            at_least_ndim(c_skip, x.dim()), at_least_ndim(c_in, x.dim()), at_least_ndim(c_out, x.dim()))
         pred_x = c_skip * x + c_out * model["diffusion"](c_in * x, c_noise, condition)
         if self.clip_pred:
             pred_x = pred_x.clip(self.x_min, self.x_max)
@@ -284,8 +284,8 @@ class ContinuousConsistencyModel(DiffusionModel):
             condition_vec_ema = self.model_ema["condition"](condition) if condition is not None else None
             pred_x_n = self.f(x_n, t_n, condition_vec_ema, self.model_ema)
 
-        loss = ((pred_x_n - pred_x_m) ** 2) * (1 - self.fix_mask) * \
-               self.loss_weight * at_least_ndim((1 / (t_m - t_n)), pred_x_n.dim())
+        loss = (((pred_x_n - pred_x_m) ** 2) * (1 - self.fix_mask) *
+                self.loss_weight * at_least_ndim((1 / (t_m - t_n)), pred_x_n.dim()))
 
         return loss.mean(), None
 
@@ -317,20 +317,28 @@ class ContinuousConsistencyModel(DiffusionModel):
         return (unweighted_loss * cm_loss_weight).mean(), unweighted_loss.mean().item()
 
     def update(self, x0, condition=None, update_ema=True, loss_type="training", **kwargs):
-        """One-step gradient update.
-        Inputs:
-        - x0: torch.Tensor
-            Samples from the target distribution.
-        - condition: Optional
-            Condition of x0. `None` indicates no condition.
-        - update_ema: bool
-            Whether to update the exponential moving average model.
-        - loss_type: str
-            The type of loss. `training` or `distillation`.
+        """ One-step gradient update.
 
-        Outputs:
-        - log: dict
-            The log dictionary.
+        Args:
+            x0: torch.Tensor,
+                Samples from the target distribution.
+            condition: Optional,
+                Condition of x0. `None` indicates no condition.
+            update_ema: bool,
+                Whether to update the exponential moving average model.
+            loss_type: str,
+                The type of loss. `training` or `distillation`.
+
+        Returns:
+            log: dict,
+                The log dictionary.
+
+        Examples:
+            >>> model = ContinuousConsistencyModel(...)
+            >>> x0 = torch.randn(*x_shape)
+            >>> condition = torch.randn(*condition_shape)
+            >>> log = model.update(x0, condition, loss_type="training")  # training
+            >>> log = model.update(x0, condition, loss_type="distillation")  # distillation
         """
         if loss_type == "training":
             loss, unweighted_loss = self.training_loss(x0, condition)

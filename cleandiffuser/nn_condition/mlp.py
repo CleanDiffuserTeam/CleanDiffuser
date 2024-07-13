@@ -12,27 +12,23 @@ class LinearCondition(IdentityCondition):
 
     Use a linear layer to project the input condition to the desired dimension.
 
-    ------------------------------
     Args:
-    - in_dim: int
-        The input dimension of the condition
-    - out_dim: int
-        The output dimension of the condition
-    - dropout: float
-        The label dropout rate
+        in_dim: int,
+            The input dimension of the condition
+        out_dim: int,
+            The output dimension of the condition
+        dropout: float,
+            The label dropout rate, Default: 0.25
 
-    ------------------------------
-    Inputs:
-    - condition: torch.Tensor
-        The input condition tensor with shape (b, ..., in_dim)
-    - mask: Optional[torch.Tensor]:
-        The label dropout mask that is used during training. If None, no mask is applied.
-
-    Outputs:
-    - condition: torch.Tensor
-        The output condition tensor with shape (b, ..., out_dim)
+    Examples:
+        >>> nn_condition = LinearCondition(in_dim=5, out_dim=10)
+        >>> condition = torch.randn(2, 5)
+        >>> nn_condition(condition).shape
+        torch.Size([2, 10])
+        >>> condition = torch.randn(2, 20, 5)
+        >>> nn_condition(condition).shape
+        torch.Size([2, 20, 10])
     """
-
     def __init__(self, in_dim: int, out_dim: int, dropout: float = 0.25):
         super().__init__(dropout)
         self.affine = nn.Linear(in_dim, out_dim)
@@ -48,32 +44,27 @@ class MLPCondition(IdentityCondition):
 
     Use a simple MLP to project the input condition to the desired dimension.
 
-    ------------------------------
     Args:
-    - in_dim: int
-        The input dimension of the condition
-    - out_dim: int
-        The output dimension of the condition
-    - hidden_dims: List[int]
-        The hidden dimensions of the MLP
-    - act: nn.Module
-        The activation function of the MLP
-    - dropout: float
-        The label dropout rate
+        in_dim: int,
+            The input dimension of the condition
+        out_dim: int,
+            The output dimension of the condition
+        hidden_dims: List[int],
+            The hidden dimensions of the MLP
+        act: nn.Module,
+            The activation function of the MLP
+        dropout: float,
+            The label dropout rate
 
-    ------------------------------
-    Inputs:
-    - condition: torch.Tensor
-        The input condition tensor with shape (b, ..., in_dim)
-    - mask: Optional[torch.Tensor]:
-        The label dropout mask that is used during training. If
-        None, no mask is applied.
-
-    Outputs:
-    - condition: torch.Tensor
-        The output condition tensor with shape (b, ..., out_dim)
+    Examples:
+        >>> nn_condition = MLPCondition(in_dim=5, out_dim=10)
+        >>> condition = torch.randn(2, 5)
+        >>> nn_condition(condition).shape
+        torch.Size([2, 10])
+        >>> condition = torch.randn(2, 20, 5)
+        >>> nn_condition(condition).shape
+        torch.Size([2, 20, 10])
     """
-
     def __init__(self, in_dim: int, out_dim: int, hidden_dims: List[int],
                  act=nn.LeakyReLU(), dropout: float = 0.25):
         super().__init__(dropout)

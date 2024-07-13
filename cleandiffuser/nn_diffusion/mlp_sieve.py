@@ -7,7 +7,6 @@ from cleandiffuser.utils import at_least_ndim, GroupNorm1d
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
 
 
-
 class FCBlock(nn.Module):
     def __init__(self, in_dim: int, out_dim: int):
         super().__init__()

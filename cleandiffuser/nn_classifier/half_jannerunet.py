@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
@@ -9,6 +9,38 @@ from cleandiffuser.nn_diffusion.jannerunet import ResidualBlock, Downsample1d
 
 
 class HalfJannerUNet1d(BaseNNDiffusion):
+    """ Half JannerUNet1d for diffusion classifier. Adapted from https://github.com/jannerm/diffuser.
+
+    Args:
+        horizon: int,
+            Length of the input sequence.
+        in_dim: int,
+            Number of input dimensions.
+        out_dim: int,
+            Number of output dimensions. Default is 1.
+        kernel_size: int,
+            Size of the convolution kernel. Default is 3.
+        model_dim: int,
+            Initial CNN model dimension. Default is 32.
+        emb_dim: int,
+            Number of dimensions in the embedding. Default is 32.
+        dim_mult: Tuple[int],
+            UNet dimension multiplier. Default is (1, 2, 2, 2).
+        timestep_emb_type: str,
+            Type of the timestep embedding. Default is "positional".
+        norm_type: str,
+            Type of the normalization layer. Default is "groupnorm".
+
+    Examples:
+        >>> nn_classifier = HalfJannerUNet1d(horizon=32, in_dim=10, out_dim=1, emb_dim=64)
+        >>> x = torch.randn(2, 32, 10)
+        >>> t = torch.randint(1000, (2,))
+        >>> condition = torch.randn(2, 64)
+        >>> nn_classifier(x, t).shape
+        torch.Size([2, 1])
+        >>> nn_classifier(x, t, condition).shape
+        torch.Size([2, 1])
+    """
     def __init__(
             self,
             horizon: int,
@@ -17,7 +49,7 @@ class HalfJannerUNet1d(BaseNNDiffusion):
             kernel_size: int = 3,
             model_dim: int = 32,
             emb_dim: int = 32,
-            dim_mult: List[int] = [1, 2, 2, 2],
+            dim_mult: Tuple[int] = (1, 2, 2, 2),
             timestep_emb_type: str = "positional",
             norm_type: str = "groupnorm",
     ):

@@ -7,6 +7,36 @@ from cleandiffuser.nn_diffusion.dit import DiT1d, FinalLayer1d
 
 
 class HalfDiT1d(DiT1d):
+    """ Half DiT1d for diffusion classifier.
+
+    Args:
+        in_dim: int,
+            Dimension of the input sequence.
+        out_dim: int,
+            Dimension of the output tensor.
+        emb_dim: int,
+            Dimension of the condition and time embedding.
+        d_model: int,
+            Dimension of the transformer. Default: 384.
+        n_heads: int,
+            Number of heads in the transformer. Default: 6.
+        depth: int,
+            Number of transformer layers. Default: 12.
+        dropout: float,
+            Dropout rate. Default: 0.0.
+        timestep_emb_type: str,
+            Type of the timestep embedding. Default: "positional".
+
+    Examples:
+        >>> nn_classifier = HalfDiT1d(in_dim=10, out_dim=1, emb_dim=64)
+        >>> x = torch.randn(2, 32, 10)
+        >>> t = torch.randint(1000, (2,))
+        >>> condition = torch.randn(2, 64)
+        >>> nn_classifier(x, t).shape
+        torch.Size([2, 1])
+        >>> nn_classifier(x, t, condition).shape
+        torch.Size([2, 1])
+    """
     def __init__(self,
                  in_dim: int,
                  out_dim: int,
