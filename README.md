@@ -59,37 +59,27 @@ We strongly recommend reading [papers](https://arxiv.org/abs/2406.09509) and [do
 $ conda create -n cleandiffuser python==3.9
 $ conda activate cleandiffuser
 ```
-Download CleanDiffuser and add this folder to your `PYTHONPATH`. You can also add it to `.bashrc` for convenience:
+#### 2. Install PyTorch
+Install `torch>1.0.0,<2.3.0` that is compatible with your CUDA version. For example, `PyTorch 2.2.2` with `CUDA 12.1`:
 ```bash
-git clone https://github.com/CleanDiffuserTeam/CleanDiffuser.git
-export PYTHONPATH=$PYTHONPATH:/path/to/CleanDiffuser
+$ conda install pytorch==2.2.2 torchvision==0.17.2 pytorch-cuda=12.1 -c pytorch -c nvidia
 ```
-
-#### 2. Install PyTorch and PyTorch3d
-We recommend visiting https://pytorch.org/get-started/previous-versions/ to find the appropriate PyTorch version for your CUDA installation. Essentially, we only require `torch>1.0.0,<2.3.0`, as we have found conflicts between PyTorch version 2.3.0 and NumPy. Below is an example using PyTorch version 2.2.2 with CUDA 11.8.
+#### 3. Install CleanDiffuser from source
 ```bash
-$ conda install pytorch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 pytorch-cuda=12.1 -c pytorch -c nvidia
+$ git clone https://github.com/CleanDiffuserTeam/CleanDiffuser.git
+$ cd CleanDiffuser
+$ pip install -e .
 ```
-
-#### 3. Pure CleanDiffuser installation
-For users who do not need to run `pipelines` and wish to directly use CleanDiffuser for algorithm development, they can simply run `pip install 'numpy<1.23.0' einops`. That's it.
-
 #### 4. Additional installations
-For users who need to run `pipelines` and reproduce the results of the paper, they will need to install `requirements.txt` as well as the simulators.
+For users who need to run `pipelines` and reproduce the results of the paper, they will need to install RL simulators.
 
 First, install the dependencies related to the mujoco-py environment. For more details, see https://github.com/openai/mujoco-py#install-mujoco
 
 ```bash
-sudo apt-get install libosmesa6-dev libgl1-mesa-glx libglfw3 libglew-dev patchelf
+$ sudo apt-get install libosmesa6-dev libgl1-mesa-glx libglfw3 libglew-dev patchelf
 ```
 ```bash
-# Install requirements
-$ pip install -r requirements.txt
 # Install D4RL from source (recommended)
-$ cd <PATH_TO_MJRL_INSTALL_DIR>
-$ git clone https://github.com/aravindr93/mjrl.git
-$ cd mjrl
-$ pip install -e .
 $ cd <PATH_TO_D4RL_INSTALL_DIR>
 $ git clone https://github.com/Farama-Foundation/D4RL.git
 $ cd D4RL
@@ -105,13 +95,7 @@ $ cd robosuite
 $ pip install -e .
 ```
 
-> **Note:** 
-> 
-> The latest version of dependencies running the `robomimic image` still has compatibility issues, and we are actively working on a fix. The temporary solution is to downgrade the `gym` version to `0.21.0`.    
-```bash
-pip install setuptools==65.5.0 pip==21  # gym 0.21 installation is broken with more recent versions  
-pip install gym==0.21.0
-```
+> **Note:** The latest version of dependencies running the `robomimic image` still has compatibility issues, and we are actively working on a fix. The temporary solution is to downgrade the `gym` version to `0.21.0`: pip install setuptools==65.5.0 pip==21, pip install gym==0.21.0
 
 Try it now!   
 ```bash
@@ -136,9 +120,7 @@ dev/
 
 We will make every effort to provide detailed `tutorials` for beginners in the field of **Diffusion Models in Decision Making**, which is also beneficial for learning the core components of CleanDiffuser and expanding them into new algorithms. **Our vision is not only to offer a benchmark for the community but more importantly, to enable everyone to implement and innovate diffusion algorithms more easily based on CleanDiffuser.**  
 
-> **Note:** 
-> 
-> In the `tutorials`, we generally only explain and demonstrate individual mechanisms or components, rather than a complete algorithm, and therefore ignore the extra tricks and take just a few minutes of training time. This may cause performance drop, which is normal!
+> **Note:** In the `tutorials`, we generally only explain and demonstrate individual mechanisms or components, rather than a complete algorithm, and therefore ignore the extra tricks and take just a few minutes of training time. This may cause performance drop, which is normal!
 
 We have now provided the following tutorials and are continuously updating more:
 

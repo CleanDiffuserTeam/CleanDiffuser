@@ -1,0 +1,61 @@
+[project]
+name = "CleanDiffuser"
+dynamic = ["version"]
+description = "CleanDiffuser: An Easy-to-use Modularized Library for Diffusion Models in Decision Making"
+authors = [{ name = "CleanDiffuserTeam" }]
+readme = "README.md"
+requires-python = ">= 3.8"
+keywords = ["reinforcement learning", "pytorch", "diffusion models"]
+dependencies = [
+    "numpy<1.23.0",
+    "einops",
+    "zarr>=2.16.1",
+    "av>=12.2.0",
+    "dill>=0.3.8",
+    "mujoco_py>=2.0",
+    "gym>=0.13,<0.24",
+    "dm_control>=1.0.3",
+    "cython==3.0.0a10",
+    "numba<0.60.0",
+    "matplotlib<=3.7.5",
+    "six",
+    "hydra-core",
+    "zarr<2.17",
+    "wandb",
+    "dill",
+    "av",
+    "pygame",
+    "pymunk",
+    "shapely<2.0.0",
+    "scikit-image<0.23.0",
+    "opencv-python",
+    "imagecodecs",
+    "torch>1.0.0,<2.3.0",
+    "torchvision",]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[project.urls]
+Homepage = "https://cleandiffuserteam.github.io/CleanDiffuserDocs/"
+Repository = "https://github.com/CleanDiffuserTeam/CleanDiffuser"
+
+[build-system]
+requires = ["setuptools>=61.0.0", "setuptools_scm", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.rye]
+managed = true
+dev-dependencies = [
+    "setuptools>=69.5.1",
+    "setuptools_scm>=8.1.0",
+    "wheel>=0.43.0",
+]
+
+[tool.setuptools_scm]
+write_to = "cleandiffuser/_version.py"
+version_scheme = "post-release"
+local_scheme = "dirty-tag"
+
+[tool.setuptools.packages.find]
+include = ["cleandiffuser"]
