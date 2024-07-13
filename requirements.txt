@@ -18,3 +18,5 @@ shapely<2.0.0
 scikit-image<0.23.0
 opencv-python
 imagecodecs
+torch>1.0.0,<2.3.0
+torchvision
