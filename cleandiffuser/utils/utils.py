@@ -59,7 +59,7 @@ def at_least_ndim(x: Union[np.ndarray, torch.Tensor, int, float], ndim: int, pad
         raise ValueError(f"Unsupported type {type(x)}")
 
 
-def to_tensor(x, device="cpu"):
+def to_tensor(x, device=None):
     if isinstance(x, torch.Tensor):
         return x.to(device)
     elif isinstance(x, (np.ndarray, list, tuple, int, float)):

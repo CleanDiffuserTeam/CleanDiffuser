@@ -138,7 +138,7 @@ class ReplayBuffer:
     @classmethod
     def create_from_path(cls, zarr_path, mode='r', **kwargs):
         """
-        Open a on-disk zarr directly (for dataset larger than memory).
+        Open an on-disk zarr directly (for dataset larger than memory).
         Slower.
         """
         group = zarr.open(os.path.expanduser(zarr_path), mode)

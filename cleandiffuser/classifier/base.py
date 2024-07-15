@@ -31,7 +31,7 @@ class BaseClassifier:
 
     def eval(self):
         self.model.eval()
-        self.model.eval()
+        self.model_ema.eval()
 
     def train(self):
         self.model.train()

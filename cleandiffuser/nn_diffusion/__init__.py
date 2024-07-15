@@ -9,3 +9,4 @@ from .mlp_sieve import MLPSieve
 from .pearcemlp import PearceMlp
 from .pearcetransformer import PearceTransformer
 from .unet import UNet1d
+from .sfbc_unet import SfBCUNet
