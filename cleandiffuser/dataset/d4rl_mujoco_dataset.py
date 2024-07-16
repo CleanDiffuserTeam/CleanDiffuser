@@ -285,9 +285,7 @@ class MultiHorizonD4RLMuJoCoDataset(BaseDataset):
     def __getitem__(self, idx: int):
 
         indices = [
-            int(self.len_each_horizon[0] * (idx / self.len_each_horizon[-1])),
-            int(self.len_each_horizon[1] * (idx / self.len_each_horizon[-1])),
-            int(self.len_each_horizon[2] * (idx / self.len_each_horizon[-1]))]
+            int(self.len_each_horizon[i] * (idx / self.len_each_horizon[-1])) for i in range(self.horizons)]
 
         torch_datas = []
 

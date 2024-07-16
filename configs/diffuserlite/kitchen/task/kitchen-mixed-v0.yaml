@@ -1,0 +1,3 @@
+env_name: "kitchen-mixed-v0"
+
+diffusion_ckpt: 200000

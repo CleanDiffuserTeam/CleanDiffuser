@@ -334,7 +334,8 @@ class MultiHorizonD4RLAntmazeDataset(BaseDataset):
 
     def __getitem__(self, idx: int):
 
-        indices = [np.random.randint(self.len_each_horizon[i]) for i in range(len(self.len_each_horizon))]
+        indices = [
+            int(self.len_each_horizon[i] * (idx / self.len_each_horizon[-1])) for i in range(self.horizons)]
 
         torch_datas = []
 
