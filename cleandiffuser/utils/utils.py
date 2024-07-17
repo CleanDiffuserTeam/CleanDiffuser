@@ -43,16 +43,22 @@ def at_least_ndim(x: Union[np.ndarray, torch.Tensor, int, float], ndim: int, pad
         >>> at_least_ndim(x, 3)
         1
     """
-    if isinstance(x, np.ndarray) and ndim > x.ndim:
-        if pad == 0:
-            return np.reshape(x, x.shape + (1,) * (ndim - x.ndim))
+    if isinstance(x, np.ndarray):
+        if ndim > x.ndim:
+            if pad == 0:
+                return np.reshape(x, x.shape + (1,) * (ndim - x.ndim))
+            else:
+                return np.reshape(x, (1,) * (ndim - x.ndim) + x.shape)
         else:
-            return np.reshape(x, (1,) * (ndim - x.ndim) + x.shape)
-    elif isinstance(x, torch.Tensor) and ndim > x.ndim:
-        if pad == 0:
-            return torch.reshape(x, x.shape + (1,) * (ndim - x.ndim))
+            return x
+    elif isinstance(x, torch.Tensor):
+        if ndim > x.ndim:
+            if pad == 0:
+                return torch.reshape(x, x.shape + (1,) * (ndim - x.ndim))
+            else:
+                return torch.reshape(x, (1,) * (ndim - x.ndim) + x.shape)
         else:
-            return torch.reshape(x, (1,) * (ndim - x.ndim) + x.shape)
+            return x
     elif isinstance(x, (int, float)):
         return x
     else:
