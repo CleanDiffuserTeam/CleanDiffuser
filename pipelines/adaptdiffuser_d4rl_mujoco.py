@@ -118,7 +118,7 @@ def pipeline(args):
 
         agent.eval()
 
-        traj_buffer = torch.empty((50000, args.horizon, obs_dim + act_dim), device=args.device)
+        traj_buffer = torch.empty((50000, args.task.horizon, obs_dim + act_dim), device=args.device)
         sample_bs, preserve_bs, ptr = 20000, 1000, 0
 
         gen_dl = DataLoader(
@@ -127,10 +127,10 @@ def pipeline(args):
         for batch in loop_dataloader(gen_dl):
 
             # generate high-quality synthetic trajectories
-            prior = torch.zeros((sample_bs, args.horizon, obs_dim + act_dim), device=args.device)
+            prior = torch.zeros((sample_bs, args.task.horizon, obs_dim + act_dim), device=args.device)
             prior[:, 0, :obs_dim] = batch["obs"]["state"][:, 0].to(args.device)
             traj, log = agent.sample(
-                prior, n_samples=sample_bs, sample_steps=args.sample_steps, solver=args.solver,
+                prior, n_samples=sample_bs, sample_steps=args.sampling_steps, solver=args.solver,
                 use_ema=args.use_ema, w_cg=args.task.w_cg, temperature=args.temperature)
             logp = log["log_p"]
 
