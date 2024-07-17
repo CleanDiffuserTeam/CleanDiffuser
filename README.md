@@ -47,8 +47,9 @@ We strongly recommend reading [papers](https://arxiv.org/abs/2406.09509) and [do
 <!-- NEWS -->
 ## 🔥 News and Change Log
 
-- [**2024-06-24**] 🥰 We have added Consistency Models into CleanDifuser. With one model, you can do both Consistency Distillation and Consistency Training! Check out an example in `tutorials/sp_consistency_policy.py` ! (Note: Our consistency training implementation refers to the improvedverslon, see https://arxi.org/abs/2310.14189.)
-- [**2024-06-20**] 🛠️ We have prepared dependency requirements for **Tutorial**, **RL**, and **IL** environments to avoid compatibility issues.
+- [**2024-07-16**] 🔥 We have open-sourced the exciting Diffusion Planning algorithm, [DiffuserLite](https://arxiv.org/pdf/2401.15443)! DiffuserLite achieves a decision frequency of **122Hz**, which is **112.7 times** of previous Diffusion Planning frameworks.
+- [**2024-07-03**] 💫 We provided a CleanDiffuser-based replication of ACT ([action chunking with transformers](https://arxiv.org/abs/2304.13705)) in the [act branch](https://github.com/CleanDiffuserTeam/CleanDiffuser/tree/act).
+- [**2024-06-24**] 🥰 We have added Consistency Models into CleanDifuser. With one model, you can do both Consistency Distillation and Consistency Training! Check out an example in `tutorials/sp_consistency_policy.py` ! (Note: Our consistency training implementation refers to the improved version, see https://arxi.org/abs/2310.14189.)
 - [**2024-06-17**] 🔥 We released arxiv version of [**CleanDiffuser: An Easy-to-use Modularized Library for Diffusion Models in Decision Making**](https://arxiv.org/abs/2406.09509). 
 
 <!-- GETTING STARTED -->
@@ -194,6 +195,7 @@ python pipelines/diffuser_d4rl_mujoco.py mode=inference ckpt=latest
 | *EDM*                       | Eular                          |✅[Elucidating the Design Space of Diffusion-Based Generative Models](https://arxiv.org/abs/2206.00364)|
 |                             | 2nd Order Heun                 |                                |
 | *Recitified Flow*           | Euler                          |✅[Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow](https://arxiv.org/abs/2209.03003)|
+| *Consistency Models*        |                                |✅[Consistency Models](https://arxiv.org/abs/2303.01469)|
 |                             |                                |                                |
 | **Network Architectures**   |                                |                                |
 |                             | Pearce_MLP                     |✅[Imitating Human Behaviour with Diffusion Models](https://arxiv.org/abs/2301.10677)|                                |
@@ -213,6 +215,7 @@ python pipelines/diffuser_d4rl_mujoco.py mode=inference ckpt=latest
 | *Planners*                  | Diffuser                       |✅[Planning with Diffusion for Flexible Behavior Synthesis](https://arxiv.org/abs/2205.09991)|
 |                             | Decision Diffuser              |✅[Is Conditional Generative Modeling all you need for Decision-Making?](https://arxiv.org/abs/2211.15657)|
 |                             | AdaptDiffuser                  |✅[AdaptDiffuser: Diffusion Models as Adaptive Self-evolving Planners](https://arxiv.org/abs/2302.01877)|
+|                             | DiffuserLite (*New!*)🔥        |✅[DiffuserLite: Towards Real-time Diffusion Planning](https://arxiv.org/abs/2401.15443)|
 | *Policies*                  | DQL                            |✅[Diffusion Policies as an Expressive Policy Class for Offline Reinforcement Learning](https://arxiv.org/abs/2208.06193)| 
 |                             | EDP                            |✅[Efficient Diffusion Policies for Offline Reinforcement Learning](https://arxiv.org/abs/2305.20081)| 
 |                             | IDQL                           |✅[IDQL: Implicit Q-Learning as an Actor-Critic Method with Diffusion Policies](https://arxiv.org/abs/2304.10573)|
@@ -220,12 +223,6 @@ python pipelines/diffuser_d4rl_mujoco.py mode=inference ckpt=latest
 |                             | DiffusionBC                    |✅[Imitating Human Behaviour with Diffusion Models](https://arxiv.org/abs/2301.10677)|                                
 | *Data Synthesizers*         | SynthER                        |✅[Synthetic Experience Replay](https://arxiv.org/abs/2303.06614)|                                
 |                             |                                |                                |
-
-<!-- ROADMAP
-## 🧭 Roadmap
-
-- [ ] Updating the reproduced [ACT](https://arxiv.org/abs/2304.13705) and [BC-RNN](https://arxiv.org/abs/2108.03298) for comparison
-- [ ] Unifying some old APIs into a new unified version -->
 
 <!-- CONTRIBUTING -->
 ## 🙏 Contributing
