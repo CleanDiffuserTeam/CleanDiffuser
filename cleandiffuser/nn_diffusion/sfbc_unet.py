@@ -22,7 +22,7 @@ class ResidualBlock(nn.Module):
 class SfBCUNet(BaseNNDiffusion):
     def __init__(
             self,
-            x_dim: int,
+            act_dim: int,
             emb_dim: int = 64,
             hidden_dims: List[int] = (512, 256, 128),
             timestep_emb_type: str = "untrainable_fourier",
@@ -37,7 +37,7 @@ class SfBCUNet(BaseNNDiffusion):
         self.down_blocks = nn.ModuleList()
         self.up_blocks = nn.ModuleList()
 
-        in_dim = x_dim
+        in_dim = act_dim
         for i in range(n_layers):
             self.down_blocks.append(ResidualBlock(in_dim, hidden_dims[i], emb_dim))
             in_dim = hidden_dims[i]
@@ -48,7 +48,7 @@ class SfBCUNet(BaseNNDiffusion):
             self.up_blocks.append(ResidualBlock(in_dim + hidden_dims[-1 - i], hidden_dims[-2 - i], emb_dim))
             in_dim = hidden_dims[-2 - i]
 
-        self.out_layer = nn.Linear(in_dim, x_dim)
+        self.out_layer = nn.Linear(in_dim, act_dim)
 
     def forward(self,
                 x: torch.Tensor, noise: torch.Tensor,

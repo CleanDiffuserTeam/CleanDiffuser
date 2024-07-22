@@ -273,11 +273,11 @@ class UntrainablePositionalEmbedding(nn.Module):
 
     def forward(self, x):
         freqs = torch.arange(
-            start=0, end=self.dim // 2, dtype=torch.float32, device=x.device
-        )
+            start=0, end=self.dim // 2, dtype=torch.float32, device=x.device)
         freqs = freqs / (self.dim // 2 - (1 if self.endpoint else 0))
         freqs = (1 / self.max_positions) ** freqs
-        x = x.ger(freqs.to(x.dtype))
+        x = torch.einsum('...i,j->...ij', x, freqs.to(x.dtype))
+        # x = x.ger(freqs.to(x.dtype))
         x = torch.cat([x.cos(), x.sin()], dim=1)
         return x
 
@@ -294,7 +294,8 @@ class SinusoidalEmbedding(nn.Module):
         half_dim = self.dim // 2
         emb = math.log(10000) / (half_dim - 1)
         emb = torch.exp(torch.arange(half_dim, device=device) * -emb)
-        emb = x[:, None] * emb[None, :]
+        emb = torch.einsum('...i,j->...ij', x, emb.to(x.dtype))
+        # emb = x[:, None] * emb[None, :]
         emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
         return emb
 
@@ -310,7 +311,8 @@ class FourierEmbedding(nn.Module):
         )
 
     def forward(self, x: torch.Tensor):
-        emb = x.ger((2 * np.pi * self.freqs).to(x.dtype))
+        emb = torch.einsum('...i,j->...ij', x, (2 * np.pi * self.freqs).to(x.dtype))
+        # emb = x.ger((2 * np.pi * self.freqs).to(x.dtype))
         emb = torch.cat([emb.cos(), emb.sin()], -1)
         return self.mlp(emb)
 
@@ -321,7 +323,8 @@ class UntrainableFourierEmbedding(nn.Module):
         self.freqs = nn.Parameter(torch.randn(dim // 2) * scale, requires_grad=False)
 
     def forward(self, x: torch.Tensor):
-        emb = x.ger((2 * np.pi * self.freqs).to(x.dtype))
+        emb = torch.einsum('...i,j->...ij', x, (2 * np.pi * self.freqs).to(x.dtype))
+        # emb = x.ger((2 * np.pi * self.freqs).to(x.dtype))
         emb = torch.cat([emb.cos(), emb.sin()], -1)
         return emb
 

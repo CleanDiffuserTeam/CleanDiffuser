@@ -1,7 +1,9 @@
+from typing import Optional
+
 import torch
 import torch.nn as nn
 
-from cleandiffuser.utils import PositionalEmbedding, FourierEmbedding
+from cleandiffuser.utils import SUPPORTED_TIMESTEP_EMBEDDING
 
 
 class BaseNNClassifier(nn.Module):
@@ -17,14 +19,20 @@ class BaseNNClassifier(nn.Module):
         - timestep_emb_type: str
             Type of embedding for the time variable t. Options are: "positional" or "fourier".
     """
-    def __init__(self, emb_dim: int, timestep_emb_type: str = "positional"):
-        assert timestep_emb_type in ["positional", "fourier"]
-        super().__init__()
-        self.map_noise = PositionalEmbedding(emb_dim, endpoint=True) if timestep_emb_type == "positional" \
-            else FourierEmbedding(emb_dim)
 
-    def forward(self, x: torch.Tensor, t: torch.Tensor, y: torch.Tensor):
-        """
+    def __init__(
+            self, emb_dim: int,
+            timestep_emb_type: str = "positional",
+            timestep_emb_params: Optional[dict] = None
+    ):
+        assert timestep_emb_type in SUPPORTED_TIMESTEP_EMBEDDING.keys()
+        super().__init__()
+        timestep_emb_params = timestep_emb_params or {}
+        self.map_noise = SUPPORTED_TIMESTEP_EMBEDDING[timestep_emb_type](emb_dim, **timestep_emb_params)
+
+
+def forward(self, x: torch.Tensor, t: torch.Tensor, y: torch.Tensor):
+    """
         Input:
             x:  (b, *x_shape)
             t:  (b, )
@@ -33,5 +41,4 @@ class BaseNNClassifier(nn.Module):
         Output:
             logp: (b, 1)
         """
-        raise NotImplementedError
-
+    raise NotImplementedError

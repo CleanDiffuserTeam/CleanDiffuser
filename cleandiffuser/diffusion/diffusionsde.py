@@ -933,7 +933,7 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
                 log["sample_history"][:, sample_steps - i + 1] = xt.cpu().numpy()
 
         # ================= Post-processing =================
-        if self.classifier is not None:
+        if self.classifier is not None and w_cg != 0.:
             with torch.no_grad():
                 t = torch.zeros((n_samples,), dtype=torch.long, device=self.device)
                 logp = self.classifier.logp(xt, t, condition_vec_cg)

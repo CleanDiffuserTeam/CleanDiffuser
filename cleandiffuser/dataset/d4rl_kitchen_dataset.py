@@ -65,16 +65,19 @@ class D4RLKitchenDataset(BaseDataset):
 
         self.horizon = horizon
         self.o_dim, self.a_dim = observations.shape[-1], actions.shape[-1]
-        self.discount = discount ** np.arange(max_path_length, dtype=np.float32)
 
         self.indices = []
         self.seq_obs, self.seq_act, self.seq_rew = [], [], []
+        self.tml_and_not_timeout = []
 
         self.path_lengths, ptr = [], 0
         path_idx = 0
         for i in range(timeouts.shape[0]):
             if timeouts[i] or terminals[i] or i == timeouts.shape[0] - 1:
                 self.path_lengths.append(i - ptr + 1)
+
+                if terminals[i] and not timeouts[i]:
+                    self.tml_and_not_timeout.append([path_idx, i - ptr])
 
                 _seq_obs = np.zeros((max_path_length, self.o_dim), dtype=np.float32)
                 _seq_act = np.zeros((max_path_length, self.a_dim), dtype=np.float32)
@@ -103,6 +106,11 @@ class D4RLKitchenDataset(BaseDataset):
         self.seq_act = np.array(self.seq_act)
         self.seq_rew = np.array(self.seq_rew)
 
+        self.seq_val = np.copy(self.seq_rew)
+        for i in range(max_path_length - 1):
+            self.seq_val[:, - 2 - i] = self.seq_rew[:, -2 - i] + discount * self.seq_val[:, -1 - i]
+        self.tml_and_not_timeout = np.array(self.tml_and_not_timeout, dtype=np.int64)
+
     def get_normalizer(self):
         return self.normalizers["state"]
 
@@ -112,15 +120,13 @@ class D4RLKitchenDataset(BaseDataset):
     def __getitem__(self, idx: int):
         path_idx, start, end = self.indices[idx]
 
-        rewards = self.seq_rew[path_idx, start:]
-        values = (rewards * self.discount[:rewards.shape[0], None]).sum(0)
-
         data = {
             'obs': {
                 'state': self.seq_obs[path_idx, start:end]},
             'act': self.seq_act[path_idx, start:end],
             'rew': self.seq_rew[path_idx, start:end],
-            'val': values}
+            'val': self.seq_val[path_idx, start],
+        }
 
         torch_data = dict_apply(data, torch.tensor)
 
