@@ -17,7 +17,7 @@ class MLPNNClassifier(BaseNNClassifier):
             in_dim=x_dim + emb_dim, hidden_dims=hidden_dims, out_dim=out_dim,
             activation=activation, out_activation=out_activation)
 
-    def forward(self, x: torch.Tensor, t: torch.Tensor, y: torch.Tensor):
+    def forward(self, x: torch.Tensor, t: torch.Tensor, y: torch.Tensor = None):
         out = self.mlp(torch.cat([x, self.map_noise(t)], dim=-1))
         return out
 

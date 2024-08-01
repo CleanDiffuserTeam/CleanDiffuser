@@ -258,6 +258,7 @@ class MultiHorizonD4RLMuJoCoDataset(BaseDataset):
         self.seq_obs = np.zeros((n_paths, max_path_length, self.o_dim), dtype=np.float32)
         self.seq_act = np.zeros((n_paths, max_path_length, self.a_dim), dtype=np.float32)
         self.seq_rew = np.zeros((n_paths, max_path_length, 1), dtype=np.float32)
+        self.seq_val = np.zeros((n_paths, max_path_length, 1), dtype=np.float32)
         self.indices = [[] for _ in range(len(horizons))]
 
         path_lengths, ptr = [], 0
@@ -280,6 +281,10 @@ class MultiHorizonD4RLMuJoCoDataset(BaseDataset):
                 ptr = i + 1
                 path_idx += 1
 
+        self.seq_val[:, -1] = self.seq_rew[:, -1]
+        for i in range(max_path_length - 1):
+            self.seq_val[:, - 2 - i] = self.seq_rew[:, -2 - i] + discount * self.seq_val[:, -1 - i]
+        self.path_lengths = np.array(path_lengths)
         self.len_each_horizon = [len(indices) for indices in self.indices]
 
     def get_normalizer(self):
@@ -299,14 +304,11 @@ class MultiHorizonD4RLMuJoCoDataset(BaseDataset):
 
             path_idx, start, end = self.indices[i][indices[i]]
 
-            rewards = self.seq_rew[path_idx, start:]
-            values = (rewards * self.discount[:rewards.shape[0], None]).sum(0)
-
             data = {
                 'obs': {
                     'state': self.seq_obs[path_idx, start:end]},
                 'act': self.seq_act[path_idx, start:end],
-                'val': values}
+                'val': self.seq_val[path_idx, start]}
 
             torch_data = dict_apply(data, torch.tensor)
 

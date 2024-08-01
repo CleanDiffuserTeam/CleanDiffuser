@@ -281,7 +281,7 @@ class MultiHorizonD4RLKitchenDataset(BaseDataset):
     def __getitem__(self, idx: int):
 
         indices = [
-            int(self.len_each_horizon[i] * (idx / self.len_each_horizon[-1])) for i in range(self.horizons)]
+            int(self.len_each_horizon[i] * (idx / self.len_each_horizon[-1])) for i in range(len(self.horizons))]
 
         torch_datas = []
 

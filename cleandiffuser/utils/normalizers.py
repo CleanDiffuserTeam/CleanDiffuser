@@ -107,17 +107,21 @@ class MinMaxNormalizer(EmptyNormalizer):
 
         self.max = np.max(X, axis=axes) if X_max is None else X_max
         self.min = np.min(X, axis=axes) if X_min is None else X_min
+        self.mask = np.ones_like(self.max)
         self.range = self.max - self.min
+        self.mask[self.max == self.min] = 0.
         self.range[self.range == 0] = 1.
 
     def normalize(self, x: np.ndarray):
         ndim = x.ndim
         x = (x - at_least_ndim(self.min, ndim, 1)) / at_least_ndim(self.range, ndim, 1)
         x = x * 2 - 1
+        x = x * at_least_ndim(self.mask, ndim, 1)
         return x
 
     def unnormalize(self, x: np.ndarray):
         ndim = x.ndim
         x = (x + 1) / 2
+        x = x * at_least_ndim(self.mask, ndim, 1)
         x = x * at_least_ndim(self.range, ndim, 1) + at_least_ndim(self.min, ndim, 1)
         return x
