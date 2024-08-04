@@ -24,8 +24,6 @@
 ·
 <a href="https://cleandiffuserteam.github.io/CleanDiffuserDocs/">Documentation</a>
 ·
-<!-- <a href="README_ZH.md">中文版</a>
-· -->
 </p>
 
 **CleanDiffuser** is an easy-to-use modularized Diffusion Model library tailored for decision-making, which comprehensively integrates different types of diffusion algorithmic branches. CleanDiffuser offers a variety of advanced *diffusion models*, *network structures*, diverse *conditions*, and *algorithm pipelines* in a simple and user-friendly manner. Inheriting the design philosophy of [CleanRL](https://github.com/vwxyzjn/cleanrl) and [Diffusers](https://github.com/huggingface/diffusers), CleanDiffuser emphasizes **usability, simplicity, and customizability**. We hope that CleanDiffuser will serve as a foundational tool library, providing long-term support for Diffusion Model research in the decision-making community, facilitating the application of research for scientists and practitioners alike. The highlight features of CleanDiffuser are:
@@ -49,7 +47,7 @@ We strongly recommend reading [papers](https://arxiv.org/abs/2406.09509) and [do
 
 <!-- - [**2024-07-16**] 🔥 We have open-sourced the exciting Diffusion Planning algorithm, [DiffuserLite](https://arxiv.org/pdf/2401.15443)! DiffuserLite achieves a decision frequency of **122Hz**, which is **112.7 times** of previous Diffusion Planning frameworks. -->
 - [**2024-07-03**] 💫 We provided a CleanDiffuser-based replication of ACT ([action chunking with transformers](https://arxiv.org/abs/2304.13705)) in the [act branch](https://github.com/CleanDiffuserTeam/CleanDiffuser/tree/act).
-- [**2024-06-24**] 🥰 We have added Consistency Models into CleanDifuser. With one model, you can do both Consistency Distillation and Consistency Training! Check out an example in `tutorials/sp_consistency_policy.py` ! (Note: Our consistency training implementation refers to the improved version, see https://arxi.org/abs/2310.14189.)
+- [**2024-06-24**] 🥰 We have added Consistency Models into CleanDifuser. With one model, you can do both Consistency Distillation and Consistency Training! Check out an example in `tutorials/sp_consistency_policy.py` ! (Note: Our consistency training implementation refers to the improved version, see https://arxiv.org/abs/2310.14189.)
 - [**2024-06-17**] 🔥 We released arxiv version of [**CleanDiffuser: An Easy-to-use Modularized Library for Diffusion Models in Decision Making**](https://arxiv.org/abs/2406.09509). 
 
 <!-- GETTING STARTED -->
