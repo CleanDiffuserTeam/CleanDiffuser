@@ -889,7 +889,7 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
         loop_steps = [1] * diffusion_x_sampling_steps + list(range(1, sample_steps + 1))
         for i in reversed(loop_steps):
 
-            t = torch.full((n_samples,), sample_step_schedule[i], dtype=torch.float32, device=self.device)
+            t = torch.full((n_samples,), sample_step_schedule[i], device=self.device)
 
             # guided sampling
             pred, logp = self.guided_sampling(

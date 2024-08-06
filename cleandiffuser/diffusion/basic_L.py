@@ -49,9 +49,9 @@ class DiffusionModel(L.LightningModule):
         self.classifier = classifier
 
         self.fix_mask = nn.Parameter(
-            fix_mask or torch.Tensor([0.]), requires_grad=False)
+            fix_mask if fix_mask is not None else torch.Tensor([0.]), requires_grad=False)
         self.loss_weight = nn.Parameter(
-            loss_weight or torch.Tensor([1.]), requires_grad=False)
+            loss_weight if loss_weight is not None else torch.Tensor([1.]), requires_grad=False)
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.model.parameters(), **self._optim_params)
