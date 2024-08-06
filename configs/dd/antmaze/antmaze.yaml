@@ -6,6 +6,8 @@ pipeline_name: dd_d4rl_antmaze
 mode: train
 seed: 0
 device: cuda:0
+output_to_file: False
+save_name: test
 
 # Environment
 noreaching_penalty: -100
