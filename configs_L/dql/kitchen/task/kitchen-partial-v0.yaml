@@ -1,0 +1,4 @@
+env_name: "kitchen-partial-v0"
+
+weight_temperature: 3.
+eta: 0.005

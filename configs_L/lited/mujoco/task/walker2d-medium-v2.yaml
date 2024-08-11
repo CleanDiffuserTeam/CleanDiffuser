@@ -1,0 +1,7 @@
+env_name: "walker2d-medium-v2"
+
+target_return_R1: 0.9
+w_cfg_R1: 8.0
+
+target_return_R2: 0.9
+w_cfg_R2: 2.0

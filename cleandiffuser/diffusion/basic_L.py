@@ -33,10 +33,8 @@ class DiffusionModel(L.LightningModule):
 
             # ------------------ Params ---------------- #
             ema_rate: float = 0.995,
-            optim_params: Optional[dict] = None,
     ):
         super().__init__()
-        self._optim_params = optim_params or {"lr": 2e-4, "weight_decay": 1e-5}
         self.ema_rate = ema_rate
 
         # nn_condition is None means that the model is not conditioned on any input.
@@ -54,7 +52,7 @@ class DiffusionModel(L.LightningModule):
             loss_weight if loss_weight is not None else torch.Tensor([1.]), requires_grad=False)
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.model.parameters(), **self._optim_params)
+        return torch.optim.Adam(self.model.parameters(), lr=3e-4)
 
     def ema_update(self):
         with torch.no_grad():

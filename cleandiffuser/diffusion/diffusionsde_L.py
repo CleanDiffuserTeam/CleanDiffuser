@@ -51,7 +51,6 @@ class BaseDiffusionSDE(DiffusionModel):
 
             # ------------------ Training Params ---------------- #
             ema_rate: float = 0.995,
-            optim_params: Optional[dict] = None,
 
             # ------------------- Diffusion Params ------------------- #
             epsilon: float = 1e-3,
@@ -60,7 +59,7 @@ class BaseDiffusionSDE(DiffusionModel):
             predict_noise: bool = True,
     ):
         super().__init__(
-            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate, optim_params)
+            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate)
 
         self.predict_noise = predict_noise
         self.epsilon = epsilon
@@ -311,7 +310,6 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
 
             # ------------------ Training Params ---------------- #
             ema_rate: float = 0.995,
-            optim_params: Optional[dict] = None,
 
             # ------------------- Diffusion Params ------------------- #
             epsilon: float = 1e-3,
@@ -325,8 +323,11 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
             noise_schedule_params: Optional[dict] = None,
     ):
         super().__init__(
-            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate, optim_params,
+            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate,
             epsilon, x_max, x_min, predict_noise)
+
+        self.save_hyperparameters(ignore=[
+            "nn_diffusion", "nn_condition", "classifier"])
 
         self.diffusion_steps = diffusion_steps
 
@@ -683,7 +684,6 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
 
             # ------------------ Training Params ---------------- #
             ema_rate: float = 0.995,
-            optim_params: Optional[dict] = None,
 
             # ------------------- Diffusion Params ------------------- #
             epsilon: float = 1e-3,
@@ -695,8 +695,11 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
             noise_schedule_params: Optional[dict] = None,
     ):
         super().__init__(
-            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate, optim_params,
+            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate,
             epsilon, x_max, x_min, predict_noise)
+
+        self.save_hyperparameters(ignore=[
+            "nn_diffusion", "nn_condition", "classifier"])
 
         # ==================== Continuous Time-step Range ====================
         self.t_diffusion = [epsilon, 1.]

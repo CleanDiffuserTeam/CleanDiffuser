@@ -1,0 +1,7 @@
+env_name: "halfcheetah-medium-replay-v2"
+
+target_return_R1: 1.0
+w_cfg_R1: 2.0
+
+target_return_R2: 1.0
+w_cfg_R2: 1.5

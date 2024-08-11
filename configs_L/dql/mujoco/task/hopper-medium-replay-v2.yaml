@@ -1,0 +1,4 @@
+env_name: "hopper-medium-replay-v2"
+
+weight_temperature: 100.
+eta: 1.

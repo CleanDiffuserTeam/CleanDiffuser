@@ -1,0 +1,5 @@
+env_name: "hopper-medium-replay-v2"
+dim_mult: [1, 2, 2, 2]
+w_cg: 0.2
+horizon: 32
+metric_value: 3100

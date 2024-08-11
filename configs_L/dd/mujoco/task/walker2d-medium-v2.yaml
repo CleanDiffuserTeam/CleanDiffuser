@@ -1,0 +1,4 @@
+env_name: "walker2d-medium-v2"
+target_return: 0.75
+w_cfg: 6.0
+horizon: 32

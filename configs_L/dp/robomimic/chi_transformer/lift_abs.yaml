@@ -1,0 +1,49 @@
+pipeline_name: dp_robomimic
+# env
+env_name: lift
+env_type: ph
+abs_action: true
+dataset_path: dev/robomimic/datasets/${env_name}/${env_type}/low_dim_abs.hdf5
+mode: train
+max_episode_steps: 400
+obs_keys: ['object', 'robot0_eef_pos', 'robot0_eef_quat', 'robot0_gripper_qpos']
+obs_dim: 19
+action_dim: 10
+obs_steps: 2
+action_steps: 8
+# train
+device: cuda:0
+seed: 0
+gradient_steps: 1000000
+batch_size: 256
+horizon: 10
+nn: chi_transformer
+diffusion: ddpm
+sample_steps: 50
+temperature: 1.0
+# optimizer
+lr: 0.0001
+# eval
+model_path: path/to/model
+num_envs: 10
+eval_episodes: 50
+save_video: true
+eval_freq: 100000
+# log
+exp_name: ${env_name}_${env_type}_abs_${abs_action}_${nn}_${diffusion}_sample_${sample_steps}_horizon_${horizon}
+save_path: logs
+project: CleanDiffuser
+group: dp_robomimic
+wandb_mode: offline
+log_freq: 1000
+save_freq: 100000
+work_dir: ${save_path}/${pipeline_name}/${mode}/${env_name}/${exp_name}_${now:%Y%m%d_%H%M%S}/${seed}
+# hydra
+hydra:
+  run:
+    dir: ${work_dir}
+  job:
+    chdir: false
+
+
+

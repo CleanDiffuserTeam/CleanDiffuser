@@ -1,0 +1,4 @@
+env_name: "halfcheetah-medium-replay-v2"
+
+weight_temperature: 150.
+eta: 1.

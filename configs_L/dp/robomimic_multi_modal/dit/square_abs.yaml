@@ -1,0 +1,86 @@
+pipeline_name: dp_robomimic_multi_modal
+# env
+env_name: square
+env_type: ph
+abs_action: true
+dataset_path: dev/robomimic/datasets/${env_name}/${env_type}/image_abs.hdf5
+mode: train
+max_episode_steps: 500
+render_obs_key: 'agentview_image'
+shape_meta:
+  action:
+    shape:
+    - 10
+  obs:
+    agentview_image:
+      shape:
+      - 3
+      - 84
+      - 84
+      type: rgb
+    robot0_eef_pos:
+      shape:
+      - 3
+      type: low_dim
+    robot0_eef_quat:
+      shape:
+      - 4
+      type: low_dim
+    robot0_eye_in_hand_image:
+      shape:
+      - 3
+      - 84
+      - 84
+      type: rgb
+    robot0_gripper_qpos:
+      shape:
+      - 2
+      type: low_dim
+action_dim: 10
+obs_steps: 2
+action_steps: 8
+# obs_encoder
+rgb_model: resnet18
+resize_shape: null
+crop_shape:
+  - 76
+  - 76
+random_crop: true
+use_group_norm: true
+use_seq: true
+# train
+device: cuda:0
+seed: 0
+gradient_steps: 1000000
+batch_size: 64
+horizon: 10
+nn: dit
+diffusion: ddpm
+sample_steps: 50
+temperature: 1.0
+# optimizer
+lr: 0.0001
+# eval
+model_path: path/to/model
+num_envs: 10
+eval_episodes: 50
+save_video: true
+eval_freq: 100000
+# log
+exp_name: ${env_name}_${env_type}_abs_${abs_action}_${nn}_${diffusion}_sample_${sample_steps}_horizon_${horizon}
+save_path: logs
+project: CleanDiffuser
+group: dp_robomimic_multi_modal
+wandb_mode: offline
+log_freq: 1000
+save_freq: 100000
+work_dir: ${save_path}/${pipeline_name}/${mode}/${env_name}/${exp_name}_${now:%Y%m%d_%H%M%S}/${seed}
+# hydra
+hydra:
+  run:
+    dir: ${work_dir}
+  job:
+    chdir: false
+
+
+
