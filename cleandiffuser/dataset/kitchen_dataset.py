@@ -139,9 +139,7 @@ class KitchenDatasetV2(BaseDataset):
 
     def get_normalizer(self):
         return {
-            "obs": {
-                "state": self.state_normalizer
-            },
+            "state": self.state_normalizer,
             "action": self.action_normalizer}
 
     def __str__(self) -> str:
