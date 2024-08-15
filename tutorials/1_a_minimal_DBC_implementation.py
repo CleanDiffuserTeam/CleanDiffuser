@@ -9,6 +9,9 @@ from cleandiffuser.diffusion.diffusionsde import DiscreteDiffusionSDE
 from cleandiffuser.nn_condition import PearceObsCondition
 from cleandiffuser.nn_diffusion import PearceMlp
 
+from cleandiffuser.env import kitchen
+from cleandiffuser.dataset.kitchen_dataset import KitchenDataset
+
 """
 In this tutorial, we'll explore how to implement a basic Diffusion Behavior Clone (DBC) using CleanDiffuser. 
 DBC is an imitation learning algorithm that aims to replicate behaviors from an offline dataset. 
