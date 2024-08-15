@@ -150,9 +150,9 @@ class D4RLMuJoCoDataset(BaseDataset):
 
 
 class D4RLMuJoCoTDDataset(BaseDataset):
-    """ **D4RL-MuJoCo Transition Dataset**
+    """ D4RL-MuJoCo Transition Dataset.
 
-    torch.utils.data.Dataset wrapper for D4RL-MuJoCo dataset.
+    torch.utils.data.Dataset for D4RL-MuJoCo dataset.
     Chunk the dataset into transitions.
     Use GaussianNormalizer to normalize the observations as default.
     Each batch contains
@@ -163,9 +163,9 @@ class D4RLMuJoCoTDDataset(BaseDataset):
     - batch["tml"], terminal of shape (batch_size, 1)
 
     Args:
-        dataset: Dict[str, np.ndarray],
+        dataset (Dict[str, np.ndarray]):
             D4RL-MuJoCo TD dataset. Obtained by calling `d4rl.qlearning_dataset(env)`.
-        normalize_reward: bool,
+        normalize_reward (bool):
             Normalize the reward. Default is False.
 
     Examples:
@@ -208,7 +208,7 @@ class D4RLMuJoCoTDDataset(BaseDataset):
         self.next_obs = torch.tensor(normed_next_observations, dtype=torch.float32)
 
         self.size = self.obs.shape[0]
-        self.o_dim, self.a_dim = observations.shape[-1], actions.shape[-1]
+        self.obs_dim, self.act_dim = observations.shape[-1], actions.shape[-1]
 
     def get_normalizer(self):
         return self.normalizers["state"]

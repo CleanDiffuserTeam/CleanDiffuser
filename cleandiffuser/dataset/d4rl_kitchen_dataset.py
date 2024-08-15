@@ -136,7 +136,7 @@ class D4RLKitchenDataset(BaseDataset):
 class D4RLKitchenTDDataset(BaseDataset):
     """ **D4RL-Kitchen Transition Dataset**
 
-    torch.utils.data.Dataset wrapper for D4RL-Kitchen dataset.
+    torch.utils.data.Dataset for D4RL-Kitchen dataset.
     Chunk the dataset into transitions.
     Use GaussianNormalizer to normalize the observations as default.
     Each batch contains
@@ -147,7 +147,7 @@ class D4RLKitchenTDDataset(BaseDataset):
     - batch["tml"], terminal of shape (batch_size, 1)
 
     Args:
-        dataset: Dict[str, np.ndarray],
+        dataset (Dict[str, np.ndarray]):
             D4RL-MuJoCo TD dataset. Obtained by calling `d4rl.qlearning_dataset(env)`.
 
     Examples:

@@ -49,19 +49,50 @@ class IQL(L.LightningModule):
         hidden_dim: int, hidden dimension. Default is 256.
 
     Example:
-        >>> iql = IQL(...)
-        >>> batch = ...
-        >>> obs, act, rew, obs_next, done = batch
-        >>> loss_v = iql.update_V(obs, act)
-        >>> loss_q = iql.update_Q(obs, act, rew, obs_next, done)
-        >>> iql.update_target()
+        >>> iql = IQL(obs_dim, act_dim)
+        >>> q = iql.Q(obs, act)
+        >>> v = iql.V(obs)
     """
     def __init__(self, obs_dim: int, act_dim: int, tau: float = 0.7, discount: float = 0.99, hidden_dim: int = 256):
         super().__init__()
+        self.save_hyperparameters()
         self.iql_tau, self.discount = tau, discount
         self.Q = TwinQ(obs_dim, act_dim, hidden_dim)
         self.Q_targ = deepcopy(self.Q).requires_grad_(False).eval()
         self.V = V(obs_dim, hidden_dim)
+        
+    def q(self, obs: torch.Tensor, act: torch.Tensor, use_ema: bool = False, requires_grad: bool = False):
+        """ IQL Q function.
+        
+        Args:
+            obs (torch.Tensor): Observation tensor in shape (..., obs_dim).
+            act (torch.Tensor): Action tensor in shape (..., act_dim).
+            use_ema (bool): Use the target network. Default is False.
+            requires_grad (bool): Enable gradient computation. Default is False.
+        
+        Returns:
+            q (torch.Tensor): Q tensor in shape (..., 1).
+        """
+        with torch.set_grad_enabled(requires_grad):
+            if use_ema:
+                q = self.Q_targ(obs, act)
+            else:
+                q = self.Q(obs, act)
+        return q
+
+    def v(self, obs: torch.Tensor, requires_grad: bool = False):
+        """ IQL Value function.
+        
+        Args:
+            obs (torch.Tensor): Observation tensor in shape (..., obs_dim).
+            requires_grad (bool): Enable gradient computation. Default is False.
+        
+        Returns:
+            v (torch.Tensor): Value tensor in shape (..., 1).
+        """
+        with torch.set_grad_enabled(requires_grad):
+            v = self.V(obs)
+        return v
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=3e-4)
@@ -78,7 +109,7 @@ class IQL(L.LightningModule):
         self.Q_targ.eval()
         q = self.Q_targ(obs, act)
         v = self.V(obs)
-        loss_v = (torch.abs(self.iql_tau - ((q - v) < 0).float()) * (q - v) ** 2).mean()
+        loss_v = (torch.abs(self.iql_tau - ((q - v) < 0).to(q.dtype)) * (q - v) ** 2).mean()
         self.log("loss_v", loss_v, prog_bar=True)
         self.log("pred_v", v.mean().detach(), prog_bar=True)
 
