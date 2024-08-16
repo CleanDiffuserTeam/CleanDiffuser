@@ -160,7 +160,7 @@ class D4RLAntmazeDataset(BaseDataset):
 class D4RLAntmazeTDDataset(BaseDataset):
     """ **D4RL-Antmaze Transition Dataset**
 
-    torch.utils.data.Dataset wrapper for D4RL-Antmaze dataset.
+    torch.utils.data.Dataset for D4RL-Antmaze dataset.
     Chunk the dataset into transitions.
     Use GaussianNormalizer to normalize the observations as default.
     Each batch contains
@@ -171,9 +171,9 @@ class D4RLAntmazeTDDataset(BaseDataset):
     - batch["tml"], terminal of shape (batch_size, 1)
 
     Args:
-        dataset: Dict[str, np.ndarray],
+        dataset (Dict[str, np.ndarray]):
             D4RL-MuJoCo TD dataset. Obtained by calling `d4rl.qlearning_dataset(env)`.
-        reward_tune: str,
+        reward_tune (str):
             Reward tuning method. Can be "iql", "cql", "antmaze", or "none". Default is "iql".
 
     Examples:
@@ -225,7 +225,7 @@ class D4RLAntmazeTDDataset(BaseDataset):
         self.next_obs = torch.tensor(normed_next_observations)
 
         self.size = self.obs.shape[0]
-        self.o_dim, self.a_dim = observations.shape[-1], actions.shape[-1]
+        self.obs_dim, self.act_dim = observations.shape[-1], actions.shape[-1]
 
     def get_normalizer(self):
         return self.normalizers["state"]

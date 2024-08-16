@@ -188,7 +188,7 @@ class D4RLKitchenTDDataset(BaseDataset):
         self.next_obs = torch.tensor(normed_next_observations)
 
         self.size = self.obs.shape[0]
-        self.o_dim, self.a_dim = observations.shape[-1], actions.shape[-1]
+        self.obs_dim, self.act_dim = observations.shape[-1], actions.shape[-1]
 
     def get_normalizer(self):
         return self.normalizers["state"]
