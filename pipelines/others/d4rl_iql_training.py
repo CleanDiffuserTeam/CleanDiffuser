@@ -57,24 +57,25 @@ if __name__ == "__main__":
     
     iql = IQL(obs_dim, act_dim, tau, discount, hidden_dim)
     
+    iql, _ = IQL.from_pretrained(env_name=env_name)
     
-    checkpoint_callback = ModelCheckpoint(
-        dirpath=f"./logs/iql/{env_name}/",
-        filename=filename
-    )
+    # # checkpoint_callback = ModelCheckpoint(
+    # #     dirpath=f"./logs/iql/{env_name}/",
+    # #     filename=filename
+    # # )
 
     # import pickle as pkl
-    # with open(f"./logs/iql/{env_name}/lightning_logs/version_0/normalizer_params.pkl", "wb") as f:
+    # with open(f"./logs/iql/{env_name}/normalizer_params.pkl", "wb") as f:
     #     pkl.dump({
     #         "mean": dataset.normalizers["state"].mean,
     #         "std": dataset.normalizers["state"].std,}, f)
     
-    dataloader = DataLoader(dataset, batch_size=256, shuffle=True, num_workers=4, persistent_workers=True)
+    # dataloader = DataLoader(dataset, batch_size=256, shuffle=True, num_workers=4, persistent_workers=True)
     
-    trainer = L.Trainer(
-        max_steps=1000000, deterministic=True, 
-        accelerator="gpu", devices=[device_id,], default_root_dir=f"./logs/iql/{env_name}/",
-        log_every_n_steps=1000, callbacks=[checkpoint_callback])
+    # trainer = L.Trainer(
+    #     max_steps=1000000, deterministic=True, 
+    #     accelerator="gpu", devices=[device_id,], default_root_dir=f"./logs/iql/{env_name}/",
+    #     log_every_n_steps=1000, callbacks=[checkpoint_callback])
     
-    trainer.fit(iql, loop_dataloader(dataloader))
+    # trainer.fit(iql, loop_dataloader(dataloader))
     

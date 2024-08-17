@@ -25,11 +25,15 @@ class GaussianNormalizer(EmptyNormalizer):
     For those dimensions with zero variance, the normalized value will be zero.
 
     Args:
-        X: np.ndarray,
+        X (np.ndarray):
             dataset with shape (..., *x_shape)
-        start_dim: int,
+        start_dim (int):
             the dimension to start normalization from, Default: -1
-
+        x_mean (Optional[np.ndarray]):
+            Mean value for X. If None, it will be calculated from X. Default: None
+        x_std (Optional[np.ndarray]):
+            Standard deviation value for X. If None, it will be calculated from X. Default: None
+        
     Examples:
         >>> x_dataset = np.random.randn(100000, 3, 10)
 
@@ -44,16 +48,24 @@ class GaussianNormalizer(EmptyNormalizer):
         >>> unnorm_x = normalizer.unnormalize(norm_x)
     """
 
-    def __init__(self, X: np.ndarray, start_dim: int = -1):
-        total_dims = X.ndim
-        if start_dim < 0:
-            start_dim = total_dims + start_dim
-
-        axes = tuple(range(start_dim))
-
-        self.mean = np.mean(X, axis=axes)
-        self.std = np.std(X, axis=axes)
-        self.std[self.std == 0] = 1.
+    def __init__(
+        self, 
+        X: np.ndarray, 
+        start_dim: int = -1,
+        x_mean: Optional[np.ndarray] = None,
+        x_std: Optional[np.ndarray] = None
+    ):
+        if x_mean is not None and x_std is not None:
+            self.mean = x_mean
+            self.std = x_std
+        else:
+            total_dims = X.ndim
+            if start_dim < 0:
+                start_dim = total_dims + start_dim
+            axes = tuple(range(start_dim))
+            self.mean = np.mean(X, axis=axes)
+            self.std = np.std(X, axis=axes)
+            self.std[self.std == 0] = 1.
 
     def normalize(self, x: np.ndarray):
         ndim = x.ndim
