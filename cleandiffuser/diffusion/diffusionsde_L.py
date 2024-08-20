@@ -102,16 +102,16 @@ class BaseDiffusionSDE(DiffusionModel):
         """ One-step update.
 
         Args:
-            x0: torch.Tensor,
+            x0 (torch.Tensor):
                 Samples from the target distribution. shape: (batch_size, *x_shape)
-            condition: Optional[Union[torch.Tensor, TensorDict]]
+            condition (Optional[Union[torch.Tensor, TensorDict]]):
                 Condition of x0. `None` indicates no condition. It can be a tensor or a dictionary of tensors.
                 The update function will automatically handle the condition dropout as defined in NNCondition.
-            update_ema: bool:
+            update_ema (bool):
                 Whether to update the EMA model.
 
         Returns:
-            log: dict,
+            log (dict),
                 The log dictionary.
         """
         loss = self.loss(x0, condition)
