@@ -184,3 +184,4 @@ toy.py
 toy2.py
 lightning_logs/
 run.sh
+ignores/
