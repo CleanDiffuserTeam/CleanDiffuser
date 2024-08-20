@@ -1,0 +1,41 @@
+defaults:
+  - _self_
+  - task: halfcheetah-medium-expert-v2
+
+pipeline_name: qgpo_d4rl_mujoco
+# bc_training -> supported_action_collecting -> q_training -> cep_training -> inference
+mode: bc_training
+seed: 0
+device: cuda:0
+
+# QGPO
+K: 16
+betaQ: 1.0
+beta: 10
+
+# Environment
+discount: 0.99
+
+# Actor
+ema_rate: 0.9999
+
+# Critic
+hidden_dim: 256
+
+# Training
+bc_gradient_steps: 1000000
+q_gradient_steps: 500000
+cep_gradient_steps: 1000000
+log_interval: 1000
+save_interval: 100000
+
+# Inference
+sampling_steps: 5
+num_envs: 50
+num_episodes: 3
+
+# hydra
+hydra:
+  job:
+    chdir: false
+
