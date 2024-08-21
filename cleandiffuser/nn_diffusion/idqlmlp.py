@@ -62,9 +62,10 @@ class IDQLMlp(BaseNNDiffusion):
         return self.affine_out(x)
 
 
-class NewIDQLMlp(BaseNNDiffusion):
+class IDQLMlp(BaseNNDiffusion):
     def __init__(
             self,
+            x_dim: int,
             obs_dim: int,
             act_dim: int,
             emb_dim: int = 64,
