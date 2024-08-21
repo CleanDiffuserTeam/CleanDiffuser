@@ -1,3 +1,4 @@
+import warnings
 from typing import Optional, Union
 
 import numpy as np
@@ -7,10 +8,9 @@ import torch.nn as nn
 from cleandiffuser.classifier import BaseClassifier
 from cleandiffuser.nn_condition import BaseNNCondition
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
-from cleandiffuser.utils import (
-    at_least_ndim)
+from cleandiffuser.utils import at_least_ndim
+
 from .basic_L import DiffusionModel
-import warnings
 
 
 class ContinuousEDM(DiffusionModel):
