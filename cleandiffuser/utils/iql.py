@@ -207,7 +207,7 @@ class IQL(L.LightningModule):
             "antmaze-large-play-v2",
             "antmaze-large-diverse-v2",
         ]:
-            path += f"d4rl_kitchen/{env_name}/"  
+            path += f"d4rl_antmaze/{env_name}/"  
             with open(path + "normalizer_params.pkl", "rb") as f:
                 normalizer_params = pkl.load(f)
             normalizer = GaussianNormalizer(

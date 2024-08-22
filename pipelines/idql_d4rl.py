@@ -1,8 +1,10 @@
 from pathlib import Path
 
 import d4rl
+import einops
 import gym
 import hydra
+import numpy as np
 import pytorch_lightning as L
 import torch
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -49,7 +51,8 @@ def pipeline(args):
     L.seed_everything(args.seed, workers=True)
 
     env_name = args.task.env_name
-    save_path = Path(__file__).parents[1] / f"results/{args.pipeline_name}/{env_name}/"
+    save_path = Path(__file__).parents[1] / \
+        f"results/{args.pipeline_name}/{env_name}/"
 
     # --- Create Dataset ---
     env = gym.make(env_name)
@@ -109,12 +112,90 @@ def pipeline(args):
 
     elif args.mode == "inference":
 
+        num_envs = args.num_envs
+        num_episodes = args.num_episodes
+        num_candidates = args.num_candidates
+
+        if args.iql_from_pretrain:
+            iql, _ = IQL.from_pretrained(
+                env_name, normalize_reward=args.normalize_reward, reward_tune="iql")
+        else:
+            iql = IQL.load_from_checkpoint(
+                checkpoint_path=save_path / "iql-step=300000.ckpt",
+                obs_dim=obs_dim, act_dim=act_dim, tau=args.task.iql_tau,
+                hidden_dim=256, discount=0.99)
+        iql.to(f"cuda:{args.device_id}").eval()
+
         actor = ContinuousDiffusionSDE.load_from_checkpoint(
-            checkpoint_path=save_path /
-            "lightning_logs/version_1/checkpoints/epoch=0-step=7805.ckpt",
+            checkpoint_path=save_path / "diffusion_bc-step=500000.ckpt",
             nn_diffusion=nn_diffusion, nn_condition=nn_condition, ema_rate=0.9999,
             x_max=+1.0*torch.ones((act_dim, )),
             x_min=-1.0*torch.ones((act_dim, )))
+        actor.to(f"cuda:{args.device_id}").eval()
+
+        env_eval = gym.vector.make(env_name, num_envs=num_envs)
+        normalizer = dataset.get_normalizer()
+        episode_rewards = []
+
+        prior = torch.zeros((num_envs * num_candidates, act_dim))
+        for i in range(num_episodes):
+
+            obs, ep_reward, all_done, t = env_eval.reset(), 0., False, 0
+
+            while not np.all(all_done) and t < 1000:
+
+                obs = torch.tensor(normalizer.normalize(
+                    obs), dtype=torch.float32, device=f"cuda:{args.device_id}")
+                obs = einops.repeat(obs, "b d -> (b k) d", k=num_candidates)
+
+                act, log = actor.sample(
+                    prior, solver=args.solver, n_samples=num_envs * num_candidates,
+                    sample_steps=args.sampling_steps,
+                    condition_cfg=obs, w_cfg=1.0,
+                    sample_step_schedule="quad_continuous")
+
+                with torch.no_grad():
+                    q = iql.q(obs, act)
+                    v = iql.v(obs)
+                    act = einops.rearrange(
+                        act, "(b k) d -> b k d", k=num_candidates)
+                    adv = einops.rearrange(
+                        (q - v), "(b k) 1 -> b k 1", k=num_candidates)
+                    w = torch.softmax(
+                        adv * args.task.weight_temperature, dim=1)
+
+                    idx = torch.multinomial(
+                        w.squeeze(-1), num_samples=1).squeeze(-1)
+                    act = act[torch.arange(num_envs), idx].cpu().numpy()
+
+                obs, rew, done, _ = env_eval.step(act)
+
+                t += 1
+                done = np.logical_and(done, t < 1000)
+                all_done = np.logical_or(all_done, done)
+                if "kitchen" in env_name:
+                    ep_reward = np.clip(ep_reward + rew, 0., 4.)
+                    print(f'[t={t}] finished tasks: {np.around(ep_reward)}')
+                elif "antmaze" in env_name:
+                    ep_reward = np.clip(ep_reward + rew, 0., 1.)
+                    print(f'[t={t}] xy: {np.around(obs[:, :2], 2)}')
+                    print(f'[t={t}] reached goal: {np.around(ep_reward)}')
+                else:
+                    ep_reward += (rew * (1 - all_done))
+                    print(
+                        f'[t={t}] rew: {np.around((rew * (1 - all_done)), 2)}')
+
+                if np.all(all_done):
+                    break
+
+            episode_rewards.append(ep_reward)
+
+        episode_rewards = [
+            list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards]
+        episode_rewards = np.array(episode_rewards).mean(-1) * 100.
+        print(episode_rewards.mean(), episode_rewards.std())
+
+        env_eval.close()
 
 
 if __name__ == "__main__":

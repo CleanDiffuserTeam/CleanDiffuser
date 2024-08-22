@@ -10,28 +10,19 @@ seed: 0
 # Environment
 normalize_reward: True
 
-# Actor
-solver: ddpm
-diffusion_steps: 5
-sampling_steps: 5
-
-# Critic
-critic_hidden_dim: 256
-critic_learning_rate: 0.0003
-
 # Training
 bc_training_steps: 1000000
 iql_training_steps: 1000000
-batch_size: 256
 save_interval: 100000
 
 # Inference
 ckpt: latest
+solver: ddpm
+iql_from_pretrain: True
+sampling_steps: 5
 num_envs: 50
-num_episodes: 3
+num_episodes: 1
 num_candidates: 256
-temperature: 0.5
-use_ema: True
 
 # hydra
 hydra:
