@@ -1,4 +1,0 @@
-env_name: "hopper-medium-expert-v2"
-
-weight_temperature: 8.
-eta: 1.

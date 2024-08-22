@@ -1,4 +1,0 @@
-env_name: "hopper-medium-v2"
-target_return: 0.7
-w_cfg: 4.4
-horizon: 32

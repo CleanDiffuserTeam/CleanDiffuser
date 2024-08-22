@@ -2,14 +2,10 @@ defaults:
   - _self_
   - task: halfcheetah-medium-expert-v2
 
-pipeline_name: dd_d4rl_mujoco
-mode: train
+pipeline_name: dd
+mode: training
 seed: 0
 device: cuda:0
-
-# Environment
-terminal_penalty: -100
-discount: 0.997
 
 # DD
 solver: ddim

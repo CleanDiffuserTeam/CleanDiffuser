@@ -1,4 +1,0 @@
-env_name: "hopper-medium-expert-v2"
-dim_mult: [1, 2, 2, 2]
-w_cg: 0.00001
-horizon: 32

@@ -1,19 +1,65 @@
-from typing import Optional
-from typing import Union
+import warnings
+from typing import Optional, Union
 
 import numpy as np
 import torch
 import torch.nn as nn
 
-from cleandiffuser.utils import at_least_ndim
 from cleandiffuser.classifier import BaseClassifier
 from cleandiffuser.nn_condition import BaseNNCondition
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
+from cleandiffuser.utils import at_least_ndim
+
 from .basic import DiffusionModel
 
 
-class EDMArchetecture(DiffusionModel):
+class ContinuousEDM(DiffusionModel):
+    """Continuous-time EDM
+    
+    EDM posits that the concepts of `t` in the diffusion process and the noise schedule are equivalent.
+    Previous noise schedules can be interpreted as perturbing the data with Gaussian noise 
+    followed by scaling. EDM sets the standard deviation of noise as `t`, the scale as 1, 
+    and devises a series of preconditioning steps to aid in model learning.
+    
+    The current implementation of EDM only supports continuous-time ODEs.
+    The sampling steps are required to be greater than 1.
 
+    Args:
+        nn_diffusion (BaseNNDiffusion):
+            The neural network backbone for the Diffusion model.
+        nn_condition (Optional[BaseNNCondition]):
+            The neural network backbone for the condition embedding.
+        
+        fix_mask (Union[list, np.ndarray, torch.Tensor]):
+            Fix some portion of the input data, and only allow the model to complete the rest parts.
+            The mask should be in the shape of `x_shape` with value 1 for fixed parts and 0 for unfixed parts.
+        loss_weight (Union[list, np.ndarray, torch.Tensor]):
+            Loss weight. The weight should be in the shape of `x_shape`.
+        
+        classifier (Optional[BaseClassifier]):
+            The classifier for classifier-guidance. Default: None.
+            
+        ema_rate (float):
+            Exponential moving average rate. Default: 0.995.
+
+        sigma_data (float):
+            The standard deviation of the data. Default: 0.5.
+        sigma_min (float):
+            The minimum standard deviation of the noise. Default: 0.002.
+        sigma_max (float):
+            The maximum standard deviation of the noise. Default: 80.
+        rho (float):
+            The power of the noise schedule. Default: 7.
+        P_mean (float):
+            Hyperparameter for noise sampling during training. Default: -1.2.
+        P_std (float):
+            Hyperparameter for noise sampling during training. Default: 1.2.
+            
+        x_max (Optional[torch.Tensor]):
+            The maximum value for the input data. `None` indicates no constraint.
+        x_min (Optional[torch.Tensor]):
+            The minimum value for the input data. `None` indicates no constraint.
+    """
     def __init__(
             self,
 
@@ -22,364 +68,17 @@ class EDMArchetecture(DiffusionModel):
             nn_condition: Optional[BaseNNCondition] = None,
 
             # ----------------- Masks ----------------- #
-            # Fix some portion of the input data, and only allow the diffusion model to complete the rest part.
-            fix_mask: Union[list, np.ndarray, torch.Tensor] = None,  # be in the shape of `x_shape`
-            # Add loss weight
-            loss_weight: Union[list, np.ndarray, torch.Tensor] = None,  # be in the shape of `x_shape`
+            fix_mask: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
+            loss_weight: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
 
-            # ------------------ Plugs ---------------- #
+            # ------------------ Plugins ---------------- #
             # Add a classifier to enable classifier-guidance
             classifier: Optional[BaseClassifier] = None,
 
-            # ------------------ Params ---------------- #
-            grad_clip_norm: Optional[float] = None,
-            diffusion_steps: int = 1000,
+            # ------------------ Training Params ---------------- #
             ema_rate: float = 0.995,
-            optim_params: Optional[dict] = None,
 
-            device: Union[torch.device, str] = "cpu"
-    ):
-        super().__init__(
-            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, grad_clip_norm,
-            diffusion_steps, ema_rate, optim_params, device)
-
-        self.dot_scale_s = None
-        self.dot_sigma_s = None
-        self.scale_s = None
-        self.t_s = None
-        self.sigma_s = None
-        self.x_weight_s, self.D_weight_s = None, None
-        self.sample_steps = None
-
-    def set_sample_steps(self, N: int):
-        raise NotImplementedError
-
-    def c_skip(self, sigma):
-        raise NotImplementedError
-
-    def c_out(self, sigma):
-        raise NotImplementedError
-
-    def c_in(self, sigma):
-        raise NotImplementedError
-
-    def c_noise(self, sigma):
-        raise NotImplementedError
-
-    def loss_weighting(self, sigma):
-        raise NotImplementedError
-
-    def sample_noise_distribution(self, N):
-        raise NotImplementedError
-
-    def sample_scale_distribution(self, N):
-        raise NotImplementedError
-
-    def D(self, x, sigma, condition=None, use_ema=False):
-        """ Prepositioning in EDM """
-        c_skip, c_out, c_in, c_noise = self.c_skip(sigma), self.c_out(sigma), self.c_in(sigma), self.c_noise(sigma)
-        F = self.model_ema["diffusion"] if use_ema else self.model["diffusion"]
-        c_noise = at_least_ndim(c_noise.squeeze(), 1)
-        return c_skip * x + c_out * F(c_in * x, c_noise, condition)
-
-    # ---------------------------------------------------------------------------
-    # Training
-
-    def loss(self, x0, condition=None):
-        sigma = self.sample_noise_distribution(x0.shape[0])
-        sigma = at_least_ndim(sigma, x0.dim())
-        eps = torch.randn_like(x0) * sigma * (1. - self.fix_mask)
-        condition = self.model["condition"](condition) if condition is not None else None
-        loss = (self.loss_weighting(sigma) * (self.D(x0 + eps, sigma, condition) - x0) ** 2)
-        return (loss * self.loss_weight).mean()
-
-    def update(self, x0, condition=None, **kwargs):
-        self.optimizer.zero_grad()
-        loss = self.loss(x0, condition)
-        loss.backward()
-        grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip_norm) \
-            if self.grad_clip_norm else None
-        self.optimizer.step()
-        self.ema_update()
-        log = {"loss": loss.item(), "grad_norm": grad_norm}
-        return log
-
-    def update_classifier(self, x0, condition):
-        sigma = self.sample_noise_distribution(x0.shape[0])
-        sigma = at_least_ndim(sigma, x0.dim())
-        noise = self.c_noise(sigma)
-        eps = torch.randn_like(x0) * sigma * (1. - self.fix_mask)
-        log = self.classifier.update(x0 + eps, at_least_ndim(noise.squeeze(), 1), condition)
-        return log
-
-    # ---------------------------------------------------------------------------
-    # Inference
-
-    def dot_x(
-            self, x, i, use_ema=False,
-            # ----------------- CFG ----------------- #
-            condition_vec_cfg=None,
-            w_cfg: float = 0.0,
-            # ----------------- CG ----------------- #
-            condition_vec_cg=None,
-            w_cg: float = 1.0,
-    ):
-        b = x.shape[0]
-        sigma = at_least_ndim(self.sigma_s[i].repeat(b), x.dim())
-        noise = self.c_noise(sigma)
-        unscale = 1. / self.scale_s[i] * (1. - self.fix_mask) + self.fix_mask
-        # ----------------- CFG ----------------- #
-        with torch.no_grad():
-            if w_cfg != 0.0 and w_cfg != 1.0:
-                repeat_dim = [2 if i == 0 else 1 for i in range(x.dim())]
-                condition_vec_cfg = torch.cat([condition_vec_cfg, torch.zeros_like(condition_vec_cfg)], 0)
-                D = self.D(
-                    (x * unscale).repeat(*repeat_dim),
-                    sigma.repeat(*repeat_dim),
-                    condition_vec_cfg, use_ema)
-                D = w_cfg * D[:b] + (1. - w_cfg) * D[b:]
-            elif w_cfg == 0.0:
-                D = self.D(x * unscale, sigma, None, use_ema)
-            else:
-                D = self.D(x * unscale, sigma, condition_vec_cfg, use_ema)
-        # ----------------- CG ----------------- #
-        if self.classifier is not None and w_cg != 0.0 and condition_vec_cg is not None:
-            log_p, grad = self.classifier.gradients(x * unscale,
-                                                    at_least_ndim(noise.squeeze(), 1), condition_vec_cg)
-            D = D + w_cg * self.scale_s[i] * (sigma ** 2) * grad
-        else:
-            log_p = None
-
-        # do not change the fixed portion
-        dot_x = self.x_weight_s[i] * x - self.D_weight_s[i] * D
-        dot_x = dot_x * (1. - self.fix_mask)
-
-        return dot_x, {"log_p": log_p}
-
-    def sample(
-            self,
-            # ---------- the known fixed portion ---------- #
-            prior: Optional[torch.Tensor] = None,
-            # ----------------- sampling ----------------- #
-            n_samples: int = 1,
-            sample_steps: int = 5,
-            use_ema: bool = True,
-            solver: str = "euler",
-            # ------------------ guidance ------------------ #
-            condition_cfg=None,
-            mask_cfg=None,
-            w_cfg: float = 0.0,
-            condition_cg=None,
-            w_cg: float = 0.0,
-
-            preserve_history: bool = False,
-            **kwargs
-    ):
-        """
-        Sample from the diffusion model.
-        ---
-        Input:
-            - prior: Optional[torch.Tensor] = None
-                The known fixed portion of the input data. Should be in the shape of `(n_samples, *x_shape)`.
-                Leave the unknown part as `0`. If `None`, which means `fix_mask` is `None`, the model takes no prior.
-
-            - sample_steps: int = 5
-                Number of sampling steps.
-
-            - use_ema: bool = True
-                Whether to use the EMA model. If `False`, you should `eval` the model.
-
-            - solver: str = "euler"
-                The solver to use. Can be either "euler" or "heun".
-
-            - condition_cfg: Optional[torch.Tensor] = None
-                The condition for the CFG. Should be in the shape of `(n_samples, *shape_of_nn_condition_input)`.
-                If `None`, the model takes no condition.
-
-            - mask_cfg: Optional[torch.Tensor] = None
-                The mask for the CFG. Should be in the shape of `(n_samples, *shape_of_nn_condition_mask)`.
-                Model will ignore the `mask_cfg==0` parts in `condition_cfg`. If `None`, the model takes no mask.
-
-            - w_cfg: float = 0.0
-                The weight for the CFG. If `0.0`, the model takes no CFG.
-
-            - condition_cg: Optional[torch.Tensor] = None
-                The condition for the CG. Should be in the shape of `(n_samples, 1)`.
-                If `None`, the model takes no condition.
-
-            - w_cg: float = 0.0
-                The weight for the CG. If `0.0`, the model takes no CG.
-
-            - preserve_history: bool = False
-                Whether to preserve the history of the sampling process. If `True`, the model will return the history.
-
-        Output:
-            - xt: torch.Tensor
-                The sampled data. Should be in the shape of `(n_samples, *x_shape)`.
-
-            - log: dict
-                The log of the sampling process. Contains the following keys:
-                    - "sample_history": np.ndarray
-                        The history of the sampling process. Should be in the shape of `(n_samples, N + 1, *x_shape)`.
-                        If `preserve_history` is `False`, this key will not exist.
-                    - "log_p": torch.Tensor
-                        The log probability of the sampled data estimated by CG.
-                        Should be in the shape of `(n_samples,)`.
-        """
-        if sample_steps != self.sample_steps:
-            self.set_sample_steps(sample_steps)
-
-        N = self.sample_steps
-        model = self.model_ema if use_ema else self.model
-        log, x_history = {}, None
-
-        condition_vec_cfg = model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
-
-        if prior is None:
-            xt = torch.randn((n_samples, *self.default_x_shape),
-                             device=self.device) * self.sigma_s[0] * self.scale_s[0]
-        else:
-            xt = torch.randn_like(prior, device=self.device) * self.sigma_s[0] * self.scale_s[0]
-            xt = xt * (1. - self.fix_mask) + prior * self.fix_mask
-
-        if preserve_history:
-            x_history = np.empty((n_samples, N + 1, *xt.shape))
-            x_history[:, 0] = xt.cpu().numpy()
-
-        for i in range(N):
-            # tmp_w_cg = w_cg if i < 1 else 0.0
-            delta_x, log = self.dot_x(xt, i, use_ema, condition_vec_cfg, w_cfg, condition_cg, w_cg)
-            delta_t = self.t_s[i] - self.t_s[i + 1]
-            x_tp1 = xt - delta_x * delta_t
-            if prior is not None:
-                x_tp1 = x_tp1 * (1. - self.fix_mask) + prior * self.fix_mask
-            if solver == "heun":
-                if i != N - 1 and self.sigma_s[i + 1] > 0.005:
-                    delta_x_2, log = self.dot_x(x_tp1, i + 1, use_ema, condition_vec_cfg, w_cfg, condition_cg, w_cg)
-                    x_tp1 = xt - (delta_x + delta_x_2) / 2. * delta_t
-                    if prior is not None:
-                        x_tp1 = x_tp1 * (1. - self.fix_mask) + prior * self.fix_mask
-
-            xt = x_tp1
-
-            if preserve_history:
-                x_history[:, i + 1] = xt.cpu().numpy()
-
-        log["sample_history"] = x_history
-        if log["log_p"] is None and self.classifier is not None and condition_cg is not None:
-            with torch.no_grad():
-                logp = self.classifier.logp(
-                    xt, at_least_ndim(self.c_noise(self.sigma_s[-1]).squeeze(), 1), condition_cg)
-            log["log_p"] = logp
-
-        return xt, log
-
-    def sample_x(
-            self,
-            # ---------- the known fixed portion ---------- #
-            prior: Optional[torch.Tensor] = None,
-            # ----------------- sampling ----------------- #
-            n_samples: int = 1,
-            sample_steps: int = 5,
-            extra_sample_steps: int = 8,
-            use_ema: bool = True,
-            solver: str = "euler",
-            # ------------------ guidance ------------------ #
-            condition_cfg=None,
-            mask_cfg=None,
-            w_cfg: float = 0.0,
-            condition_cg=None,
-            w_cg: float = 0.0,
-
-            preserve_history: bool = False,
-    ):
-        if sample_steps != self.sample_steps:
-            self.set_sample_steps(sample_steps)
-
-        N = self.sample_steps
-        model = self.model_ema if use_ema else self.model
-        log, x_history = {}, None
-
-        condition_vec_cfg = model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
-
-        if prior is None:
-            xt = torch.randn((n_samples, *self.default_x_shape),
-                             device=self.device) * self.sigma_s[0] * self.scale_s[0]
-        else:
-            xt = torch.randn_like(prior, device=self.device) * self.sigma_s[0] * self.scale_s[0]
-            xt = xt * (1. - self.fix_mask) + prior * self.fix_mask
-
-        if preserve_history:
-            x_history = np.empty((n_samples, N + 1, *xt.shape))
-            x_history[:, 0] = xt.cpu().numpy()
-
-        for i in range(N):
-            # tmp_w_cg = w_cg if i < 1 else 0.0
-            delta_x, log = self.dot_x(xt, i, use_ema, condition_vec_cfg, w_cfg, condition_cg, w_cg)
-            delta_t = self.t_s[i] - self.t_s[i + 1]
-            x_tp1 = xt - delta_x * delta_t
-            if prior is not None:
-                x_tp1 = x_tp1 * (1. - self.fix_mask) + prior * self.fix_mask
-            if solver == "heun":
-                if i != N - 1 and self.sigma_s[i + 1] > 0.005:
-                    delta_x_2, log = self.dot_x(x_tp1, i + 1, use_ema, condition_vec_cfg, w_cfg, condition_cg, w_cg)
-                    x_tp1 = xt - (delta_x + delta_x_2) / 2. * delta_t
-                    if prior is not None:
-                        x_tp1 = x_tp1 * (1. - self.fix_mask) + prior * self.fix_mask
-
-            xt = x_tp1
-
-            if preserve_history:
-                x_history[:, i + 1] = xt.cpu().numpy()
-
-        if extra_sample_steps > 0:
-
-            delta_t = self.t_s[N - 1] - self.t_s[N]
-
-            for _ in range(extra_sample_steps):
-
-                delta_x, log = self.dot_x(xt, N - 1, use_ema, condition_vec_cfg, w_cfg, condition_cg, w_cg)
-                x_tp1 = xt - delta_x * delta_t
-                if prior is not None:
-                    x_tp1 = x_tp1 * (1. - self.fix_mask) + prior * self.fix_mask
-
-                xt = x_tp1
-
-        log["sample_history"] = x_history
-        if log["log_p"] is None and self.classifier is not None and condition_cg is not None:
-            with torch.no_grad():
-                logp = self.classifier.logp(
-                    xt, at_least_ndim(self.c_noise(self.sigma_s[-1]).squeeze(), 1), condition_cg)
-            log["log_p"] = logp
-
-        return xt, log
-
-
-class EDM(EDMArchetecture):
-    def __init__(
-            self,
-
-            # ----------------- Neural Networks ----------------- #
-            nn_diffusion: BaseNNDiffusion,
-            nn_condition: Optional[BaseNNCondition] = None,
-
-            # ----------------- Masks ----------------- #
-            # Fix some portion of the input data, and only allow the diffusion model to complete the rest part.
-            fix_mask: Union[list, np.ndarray, torch.Tensor] = None,  # be in the shape of `x_shape`
-            # Add loss weight
-            loss_weight: Union[list, np.ndarray, torch.Tensor] = None,  # be in the shape of `x_shape`
-
-            # ------------------ Plugs ---------------- #
-            # Add a classifier to enable classifier-guidance
-            classifier: Optional[BaseClassifier] = None,
-
-            # ------------------ Params ---------------- #
-            grad_clip_norm: Optional[float] = None,
-            diffusion_steps: int = 1000,
-            ema_rate: float = 0.995,
-            optim_params: Optional[dict] = None,
-
-            # ------------------- EDM Params ------------------- #
+            # ------------------- Diffusion Params ------------------- #
             sigma_data: float = 0.5,
             sigma_min: float = 0.002,
             sigma_max: float = 80.,
@@ -387,40 +86,351 @@ class EDM(EDMArchetecture):
             P_mean: float = -1.2,
             P_std: float = 1.2,
 
-            device: Union[torch.device, str] = "cpu"
+            x_max: Optional[torch.Tensor] = None,
+            x_min: Optional[torch.Tensor] = None,
     ):
         super().__init__(
-            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, grad_clip_norm,
-            diffusion_steps, ema_rate, optim_params, device)
+            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate)
 
-        self.sigma_data = sigma_data
-        self.sigma_min, self.sigma_max, self.rho = sigma_min, sigma_max, rho
-        self.P_mean, self.P_std = P_mean, P_std
+        self.sigma_data, self.sigma_min, self.sigma_max = sigma_data, sigma_min, sigma_max
+        self.rho, self.P_mean, self.P_std = rho, P_mean, P_std
 
-    def set_sample_steps(self, N: int):
-        self.sample_steps = N
-        self.sigma_s = (self.sigma_max ** (1 / self.rho) + torch.arange(N + 1, device=self.device) / N *
-                        (self.sigma_min ** (1 / self.rho) - self.sigma_max ** (1 / self.rho))) ** self.rho
-        self.t_s = self.sigma_s
-        self.scale_s = torch.ones_like(self.sigma_s)
-        self.dot_sigma_s = torch.ones_like(self.sigma_s)
-        self.dot_scale_s = torch.zeros_like(self.sigma_s)
-        self.x_weight_s = (self.dot_sigma_s / self.sigma_s + self.dot_scale_s / self.scale_s)
-        self.D_weight_s = self.dot_sigma_s / self.sigma_s * self.scale_s
+        self.x_max = nn.Parameter(x_max, requires_grad=False) if x_max is not None else None
+        self.x_min = nn.Parameter(x_min, requires_grad=False) if x_min is not None else None
 
-    def c_skip(self, sigma): return self.sigma_data ** 2 / (self.sigma_data ** 2 + sigma ** 2)
+        # ==================== Continuous Time-step Range ====================
+        self.t_diffusion = [sigma_min, sigma_max]
 
-    def c_out(self, sigma): return sigma * self.sigma_data / (self.sigma_data ** 2 + sigma ** 2).sqrt()
+        # ======================= Noise Schedule =========================
+        # scale(t) = 1., dot_scale(t) = 0.
+        # sigma(t) = t , dot_sigma(t) = 1.
+        
+        self.optimizer = self.configure_optimizers()
 
-    def c_in(self, sigma): return 1 / (self.sigma_data ** 2 + sigma ** 2).sqrt()
+    @property
+    def supported_solvers(self):
+        return ["euler", "heun"]
 
-    def c_noise(self, sigma): return 0.25 * sigma.log()
+    @property
+    def clip_pred(self):
+        return (self.x_max is not None) or (self.x_min is not None)
 
-    def loss_weighting(self, sigma): return (self.sigma_data ** 2 + sigma ** 2) / ((sigma * self.sigma_data) ** 2)
+    # ===================== EDM Pre-conditioning =========================
+    def c_skip(self, sigma):
+        return self.sigma_data ** 2 / (self.sigma_data ** 2 + sigma ** 2)
 
-    def sample_noise_distribution(self, N):
-        log_sigma = torch.randn(N, device=self.device) * self.P_std + self.P_mean
-        return log_sigma.exp()
+    def c_out(self, sigma):
+        return sigma * self.sigma_data / (self.sigma_data ** 2 + sigma ** 2).sqrt()
 
-    def sample_scale_distribution(self, N):
-        return torch.ones(N, device=self.device)
+    def c_in(self, sigma):
+        return 1 / (self.sigma_data ** 2 + sigma ** 2).sqrt()
+
+    def c_noise(self, sigma):
+        return 0.25 * sigma.log()
+
+    def D(self, x, sigma, condition=None, model=None):
+        """ Prepositioning in EDM """
+        c_skip, c_out, c_in, c_noise = self.c_skip(sigma), self.c_out(sigma), self.c_in(sigma), self.c_noise(sigma)
+        if model is None:
+            model = self.model
+        c_skip, c_in, c_out = at_least_ndim(c_skip, x.dim()), at_least_ndim(c_in, x.dim()), at_least_ndim(c_out, x.dim())
+        return c_skip * x + c_out * model["diffusion"](c_in * x, c_noise, condition)
+
+    # ==================== Training: Score Matching ======================
+
+    def add_noise(self, x0, t=None, eps=None):
+
+        t = (torch.randn((x0.shape[0], ), device=x0.device) * self.P_std + self.P_mean).exp() if t is None else t
+
+        eps = torch.randn_like(x0) if eps is None else eps
+
+        scale = 1.
+        sigma = at_least_ndim(t, x0.dim())
+
+        xt = scale * x0 + sigma * eps
+        xt = (1. - self.fix_mask) * xt + self.fix_mask * x0
+
+        return xt, t, eps
+
+    def loss(self, x0, condition=None):
+
+        xt, t, eps = self.add_noise(x0)
+
+        condition = self.model["condition"](condition) if condition is not None else None
+
+        loss = (self.D(xt, t, condition) - x0) ** 2
+
+        edm_loss_weight = at_least_ndim((t ** 2 + self.sigma_data ** 2) / ((t * self.sigma_data) ** 2), x0.dim())
+
+        return (loss * self.loss_weight * (1 - self.fix_mask) * edm_loss_weight).mean()
+
+    def update(self, x0, condition=None, update_ema=True, **kwargs):
+        """ One-step gradient update.
+        
+        Args:
+            x0 (torch.Tensor):
+                Samples from the target distribution.
+            condition (Optional):
+                Condition of x0. `None` indicates no condition.
+            update_ema (bool):
+                Whether to update the exponential moving average model.
+
+        Returns:
+            log (dict):
+                The log dictionary.
+        """
+        loss = self.loss(x0, condition)
+
+        loss.backward()
+        self.optimizer.step()
+        self.optimizer.zero_grad()
+        if update_ema:
+            self.ema_update()
+
+        log = {"loss": loss.item()}
+
+        return log
+
+    def update_classifier(self, x0, condition):
+
+        xt, t, eps = self.add_noise(x0)
+
+        log = self.classifier.update(xt, t.log() / 4., condition)
+
+        return log
+    
+    def training_step(self, batch, batch_idx):
+        x0, condition = batch
+        loss = self.loss(x0, condition)
+        self.log("diffusion_loss", loss)
+        if self.ema_update_schedule(batch_idx):
+            self.ema_update()
+        return loss
+
+    # ==================== Sampling: Solving SDE/ODE ======================
+
+    def classifier_guidance(
+            self, xt, t, sigma,
+            model, condition=None, w: float = 1.0,
+            pred=None):
+        """
+        Guided Sampling CG:
+        bar_eps = eps - w * sigma * grad
+        bar_x0  = x0 + w * (sigma ** 2) * alpha * grad
+        """
+        if pred is None:
+            pred = self.D(xt, t, None, model)
+        if self.classifier is None or w == 0.0 or condition is None:
+            return pred, None
+        else:
+            log_p, grad = self.classifier.gradients(
+                xt.clone(), t.log() / 4., condition)
+            pred = pred + w * (at_least_ndim(sigma, pred.dim()) ** 2) * grad
+
+        return pred, log_p
+
+    def classifier_free_guidance(
+            self, xt, t,
+            model, condition=None, w: float = 1.0,
+            pred=None, pred_uncond=None,
+            requires_grad: bool = False):
+        """
+        Guided Sampling CFG:
+        bar_eps = w * pred + (1 - w) * pred_uncond
+        bar_x0  = w * pred + (1 - w) * pred_uncond
+        """
+        with torch.set_grad_enabled(requires_grad):
+            if w != 0.0 and w != 1.0:
+                if pred is None or pred_uncond is None:
+                    b = xt.shape[0]
+                    repeat_dim = [2 if i == 0 else 1 for i in range(xt.dim())]
+                    condition = torch.cat([condition, torch.zeros_like(condition)], 0)
+                    pred_all = self.D(
+                        xt.repeat(*repeat_dim),
+                        t.repeat(2), condition, model)
+                    pred, pred_uncond = pred_all[:b], pred_all[b:]
+            elif w == 0.0:
+                pred = 0.
+                pred_uncond = self.D(xt, t, None, model)
+            else:
+                pred = self.D(xt, t, condition, model)
+                pred_uncond = 0.
+
+        bar_pred = w * pred + (1 - w) * pred_uncond
+
+        return bar_pred
+
+    def guided_sampling(
+            self, xt, t, sigma,
+            model,
+            condition_cfg=None, w_cfg: float = 0.0,
+            condition_cg=None, w_cg: float = 0.0,
+            requires_grad: bool = False):
+        """
+        One-step epsilon/x0 prediction with guidance.
+        """
+
+        pred = self.classifier_free_guidance(
+            xt, t, model, condition_cfg, w_cfg, None, None, requires_grad)
+
+        pred, logp = self.classifier_guidance(
+            xt, t, sigma, model, condition_cg, w_cg, pred)
+
+        return pred, logp
+
+    def sample(
+            self,
+            # ---------- the known fixed portion ---------- #
+            prior: torch.Tensor,
+            # ----------------- sampling ----------------- #
+            solver: str = "euler",  # euler or heun
+            n_samples: int = 1,
+            sample_steps: int = 5,
+            sample_step_schedule: Optional[str] = None,
+            use_ema: bool = True,
+            temperature: float = 1.0,
+            # ------------------ guidance ------------------ #
+            condition_cfg=None,
+            mask_cfg=None,
+            w_cfg: float = 0.0,
+            condition_cg=None,
+            w_cg: float = 0.0,
+            # ----------- Diffusion-X sampling ----------
+            diffusion_x_sampling_steps: int = 0,
+            # ----------- Warm-Starting -----------
+            warm_start_reference: Optional[torch.Tensor] = None,
+            warm_start_forward_level: float = 0.3,
+            # ------------------ others ------------------ #
+            requires_grad: bool = False,
+            preserve_history: bool = False,
+            **kwargs,
+    ):
+        """Sampling.
+        
+        Inputs:
+        - prior: torch.Tensor
+            The known fixed portion of the input data. Should be in the shape of generated data.
+            Use `torch.zeros((n_samples, *x_shape))` for non-prior sampling.
+        
+        - solver: str
+            The solver for the reverse process. Check `supported_solvers` property for available solvers.
+        - n_samples: int
+            The number of samples to generate.
+        - sample_steps: int
+            The number of sampling steps. Should be greater than 1 and less than or equal to the number of diffusion steps.
+        - sample_step_schedule: Union[str, Callable]
+            The schedule for the sampling steps.
+        - use_ema: bool
+            Whether to use the exponential moving average model.
+        - temperature: float
+            The temperature for sampling.
+        
+        - condition_cfg: Optional
+            Condition for Classifier-free-guidance.
+        - mask_cfg: Optional
+            Mask for Classifier-guidance.
+        - w_cfg: float
+            Weight for Classifier-free-guidance.
+        - condition_cg: Optional
+            Condition for Classifier-guidance.
+        - w_cg: float
+            Weight for Classifier-guidance.
+            
+        - diffusion_x_sampling_steps: int
+            The number of diffusion steps for diffusion-x sampling.
+        
+        - warm_start_reference: Optional[torch.Tensor]
+            Reference data for warm-starting sampling. `None` indicates no warm-starting.
+        - warm_start_forward_level: float
+            The forward noise level to perturb the reference data. Should be in the range of `[0., 1.]`, where `1` indicates pure noise.
+        
+        - requires_grad: bool
+            Whether to preserve gradients.
+        - preserve_history: bool
+            Whether to preserve the sampling history.
+            
+        Outputs:
+        - x0: torch.Tensor
+            Generated samples. Be in the shape of `(n_samples, *x_shape)`.
+        - log: dict
+            The log dictionary.
+        """
+        assert solver in ["euler", "heun"], f"Solver {solver} is not supported. Use 'euler' or 'heun' instead."
+        if sample_step_schedule is not None:
+            warnings.warn("EDM does not support custom `sample_step_schedule`. Use the default schedule instead.")
+
+        # ===================== Initialization =====================
+        log = {
+            "sample_history": np.empty((n_samples, sample_steps + 1, *prior.shape)) if preserve_history else None, }
+
+        model = self.model if not use_ema else self.model_ema
+
+        prior = prior.to(self.device)
+        if isinstance(warm_start_reference, torch.Tensor) and warm_start_forward_level > 0.:
+            fwd_sigma = self.sigma_min + (self.sigma_max - self.sigma_min) * warm_start_forward_level
+            xt = warm_start_reference + fwd_sigma * torch.randn_like(warm_start_reference)
+        else:
+            fwd_sigma = self.sigma_max
+            xt = torch.randn_like(prior) * self.sigma_max * temperature
+        xt = xt * (1. - self.fix_mask) + prior * self.fix_mask
+        if preserve_history:
+            log["sample_history"][:, 0] = xt.cpu().numpy()
+
+        with torch.set_grad_enabled(requires_grad):
+            condition_vec_cfg = model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
+            condition_vec_cg = condition_cg
+
+        # ===================== Sampling Schedule ====================
+        sample_step_schedule = ((self.sigma_min ** (1 / self.rho) + torch.arange(sample_steps + 1, device=self.device)
+                                / sample_steps * (fwd_sigma ** (1 / self.rho) - self.sigma_min ** (1 / self.rho)))
+                                ** self.rho)
+
+        sigmas = sample_step_schedule
+
+        # ===================== Denoising Loop ========================
+        loop_steps = [1] * diffusion_x_sampling_steps + list(range(1, sample_steps + 1))
+        for i in reversed(loop_steps):
+
+            t = torch.full((n_samples,), sample_step_schedule[i], dtype=torch.float32, device=self.device)
+
+            # guided sampling
+            pred, logp = self.guided_sampling(
+                xt, t, sigmas[i],
+                model, condition_vec_cfg, w_cfg, condition_vec_cg, w_cg, requires_grad)
+
+            # clip the prediction
+            if self.clip_pred:
+                pred = pred.clip(self.x_min, self.x_max)
+
+            # one-step update
+            dot_x = (xt - pred) / at_least_ndim(sigmas[i], xt.dim())
+            delta_t = sample_step_schedule[i] - sample_step_schedule[i - 1]
+            x_next = xt - dot_x * delta_t
+            x_next = x_next * (1. - self.fix_mask) + prior * self.fix_mask
+
+            if solver == "heun" and i > 1:
+                pred, logp = self.guided_sampling(
+                    x_next, t / sample_step_schedule[i] * sample_step_schedule[i - 1], sigmas[i - 1],
+                    model, condition_vec_cfg, w_cfg, condition_vec_cg, w_cg, requires_grad)
+                if self.clip_pred:
+                    pred = pred.clip(self.x_min, self.x_max)
+                dot_x_prime = (x_next - pred) / at_least_ndim(sigmas[i - 1], xt.dim())
+                x_next = xt - (dot_x + dot_x_prime) / 2. * delta_t
+                x_next = x_next * (1. - self.fix_mask) + prior * self.fix_mask
+
+            xt = x_next
+
+            if preserve_history:
+                log["sample_history"][:, sample_steps - i + 1] = xt.cpu().numpy()
+
+        # ================= Post-processing =================
+        if self.classifier is not None:
+            with torch.no_grad():
+                t = torch.ones((n_samples,), dtype=torch.long, device=self.device) * self.sigma_min
+                logp = self.classifier.logp(xt, t.log() / 4., condition_vec_cg)
+            log["log_p"] = logp
+
+        if self.clip_pred:
+            xt = xt.clip(self.x_min, self.x_max)
+
+        return xt, log

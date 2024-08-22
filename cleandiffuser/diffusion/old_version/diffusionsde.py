@@ -7,7 +7,6 @@ import torch.nn as nn
 from cleandiffuser.classifier import BaseClassifier
 from cleandiffuser.nn_condition import BaseNNCondition
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
-from cleandiffuser.utils import TensorDict
 from cleandiffuser.utils import (
     at_least_ndim,
     SUPPORTED_NOISE_SCHEDULES, SUPPORTED_DISCRETIZATIONS, SUPPORTED_SAMPLING_STEP_SCHEDULE)
@@ -16,7 +15,7 @@ from .basic import DiffusionModel
 SUPPORTED_SOLVERS = [
     "ddpm", "ddim",
     "ode_dpmsolver_1", "ode_dpmsolver++_1", "ode_dpmsolver++_2M",
-    "sde_dpmsolver_1", "sde_dpmsolver++_1", "sde_dpmsolver++_2M", ]
+    "sde_dpmsolver_1", "sde_dpmsolver++_1", "sde_dpmsolver++_2M",]
 
 
 def epstheta_to_xtheta(x, alpha, sigma, eps_theta):
@@ -43,28 +42,41 @@ class BaseDiffusionSDE(DiffusionModel):
             nn_condition: Optional[BaseNNCondition] = None,
 
             # ----------------- Masks ----------------- #
-            fix_mask: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
-            loss_weight: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
+            # Fix some portion of the input data, and only allow the diffusion model to complete the rest part.
+            fix_mask: Union[list, np.ndarray, torch.Tensor] = None,  # be in the shape of `x_shape`
+            # Add loss weight
+            loss_weight: Union[list, np.ndarray, torch.Tensor] = None,  # be in the shape of `x_shape`
 
             # ------------------ Plugins ---------------- #
+            # Add a classifier to enable classifier-guidance
             classifier: Optional[BaseClassifier] = None,
 
             # ------------------ Training Params ---------------- #
+            grad_clip_norm: Optional[float] = None,
             ema_rate: float = 0.995,
+            optim_params: Optional[dict] = None,
 
             # ------------------- Diffusion Params ------------------- #
             epsilon: float = 1e-3,
+
+            noise_schedule: Union[str, Dict[str, Callable]] = "cosine",
+            noise_schedule_params: Optional[dict] = None,
+
             x_max: Optional[torch.Tensor] = None,
             x_min: Optional[torch.Tensor] = None,
+
             predict_noise: bool = True,
+
+            device: Union[torch.device, str] = "cpu"
     ):
         super().__init__(
-            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate)
+            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, grad_clip_norm,
+            0, ema_rate, optim_params, device)
 
         self.predict_noise = predict_noise
         self.epsilon = epsilon
-        self.x_max = nn.Parameter(x_max, requires_grad=False) if x_max is not None else None
-        self.x_min = nn.Parameter(x_min, requires_grad=False) if x_min is not None else None
+        self.x_max = x_max.to(device) if isinstance(x_max, torch.Tensor) else x_max
+        self.x_min = x_min.to(device) if isinstance(x_min, torch.Tensor) else x_min
 
     @property
     def supported_solvers(self):
@@ -92,43 +104,34 @@ class BaseDiffusionSDE(DiffusionModel):
 
         return (loss * self.loss_weight * (1 - self.fix_mask)).mean()
 
-    def update(
-            self,
-            x0: torch.Tensor,
-            condition: Optional[Union[torch.Tensor, TensorDict]] = None,
-            update_ema: bool = True,
-            **kwargs
-    ):
-        """ One-step update.
+    def update(self, x0, condition=None, update_ema=True, **kwargs):
+        """One-step gradient update.
+        Inputs:
+        - x0: torch.Tensor
+            Samples from the target distribution.
+        - condition: Optional
+            Condition of x0. `None` indicates no condition.
+        - update_ema: bool
+            Whether to update the exponential moving average model.
 
-        Args:
-            x0 (torch.Tensor):
-                Samples from the target distribution. shape: (batch_size, *x_shape)
-            condition (Optional[Union[torch.Tensor, TensorDict]]):
-                Condition of x0. `None` indicates no condition. It can be a tensor or a dictionary of tensors.
-                The update function will automatically handle the condition dropout as defined in NNCondition.
-            update_ema (bool):
-                Whether to update the EMA model.
-
-        Returns:
-            log (dict),
-                The log dictionary.
+        Outputs:
+        - log: dict
+            The log dictionary.
         """
         loss = self.loss(x0, condition)
+
         loss.backward()
+        grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip_norm) \
+            if self.grad_clip_norm else None
         self.optimizer.step()
         self.optimizer.zero_grad()
+
         if update_ema:
             self.ema_update()
-        return {"diffusion_loss": loss.item()}
 
-    def training_step(self, batch, batch_idx):
-        x0, condition = batch
-        loss = self.loss(x0, condition)
-        self.log("diffusion_loss", loss)
-        if self.ema_update_schedule(batch_idx):
-            self.ema_update()
-        return loss
+        log = {"loss": loss.item(), "grad_norm": grad_norm}
+
+        return log
 
     def update_classifier(self, x0, condition):
 
@@ -235,64 +238,68 @@ class BaseDiffusionSDE(DiffusionModel):
 
 
 class DiscreteDiffusionSDE(BaseDiffusionSDE):
-    """Discrete-time Diffusion SDE
-
-    The Diffusion SDE is currently one of the most commonly used formulations of diffusion processes.
-    Its training process involves utilizing neural networks to estimate its scaled score function,
-    which is used to compute the reverse process. The Diffusion SDE has reverse processes
-    in both SDE and ODE forms, sharing the same marginal distribution.
-    The first-order discretized forms of both are equivalent to well-known models such as DDPM and DDIM.
+    """Discrete-time Diffusion SDE (VP-SDE)
+    
+    The Diffusion SDE is currently one of the most commonly used formulations of diffusion processes. 
+    Its training process involves utilizing neural networks to estimate its scaled score function, 
+    which is used to compute the reverse process. The Diffusion SDE has reverse processes 
+    in both SDE and ODE forms, sharing the same marginal distribution. 
+    The first-order discretized forms of both are equivalent to well-known models such as DDPM and DDIM. 
     DPM-Solvers have observed the semi-linearity of the reverse process and have computed its exact solution.
-
-    The DiscreteDiffusionSDE is the discrete-time version of the Diffusion SDE.
-    It discretizes the continuous time interval into a finite number of diffusion steps
-    and only estimates the score function on these steps.
+    
+    The DiscreteDiffusionSDE is the discrete-time version of the Diffusion SDE. 
+    It discretizes the continuous time interval into a finite number of diffusion steps 
+    and only estimates the score function on these steps. 
     Therefore, in sampling, solvers can only work on these learned steps.
     The sampling steps are required to be greater than 1 and less than or equal to the number of diffusion steps.
 
     Args:
-        nn_diffusion: BaseNNDiffusion
-            The neural network backbone for the Diffusion model.
-        nn_condition: Optional[BaseNNCondition]
-            The neural network backbone for the condition embedding.
-        fix_mask: Union[list, np.ndarray, torch.Tensor]
-            Fix some portion of the input data, and only allow the diffusion model to complete the rest part.
-            The mask should be in the shape of `x_shape`.
-        loss_weight: Union[list, np.ndarray, torch.Tensor]
-            Add loss weight. The weight should be in the shape of `x_shape`.
-        classifier: Optional[BaseClassifier]
-            Add a classifier to enable classifier-guidance.
-        grad_clip_norm: Optional[float]
-            Gradient clipping norm.
-        ema_rate: float
-            Exponential moving average rate.
-        optim_params: Optional[dict]
-            Optimizer parameters.
-        epsilon: float
-            The minimum time step for the diffusion reverse process.
-            In practice, using a very small value instead of `0` can avoid numerical instability.
-        diffusion_steps: int
-            The discretization steps for discrete-time diffusion models.
-        discretization: Union[str, Callable]
-            The discretization method for the diffusion steps.
-
-        noise_schedule: Union[str, Dict[str, Callable]]
-            The noise schedule for the diffusion process. Can be "linear" or "cosine".
-        noise_schedule_params: Optional[dict]
-            The parameters for the noise schedule.
-
-        x_max: Optional[torch.Tensor]
-            The maximum value for the input data. `None` indicates no constraint.
-        x_min: Optional[torch.Tensor]
-            The minimum value for the input data. `None` indicates no constraint.
-
-        predict_noise: bool
-            Whether to predict the noise or the data.
-
-        device: Union[torch.device, str]
-            The device to run the model.
+    - nn_diffusion: BaseNNDiffusion
+        The neural network backbone for the Diffusion model.
+    - nn_condition: Optional[BaseNNCondition]
+        The neural network backbone for the condition embedding.
+        
+    - fix_mask: Union[list, np.ndarray, torch.Tensor]
+        Fix some portion of the input data, and only allow the diffusion model to complete the rest part.
+        The mask should be in the shape of `x_shape`.
+    - loss_weight: Union[list, np.ndarray, torch.Tensor]
+        Add loss weight. The weight should be in the shape of `x_shape`.
+        
+    - classifier: Optional[BaseClassifier]
+        Add a classifier to enable classifier-guidance.
+        
+    - grad_clip_norm: Optional[float]
+        Gradient clipping norm.
+    - ema_rate: float
+        Exponential moving average rate.
+    - optim_params: Optional[dict]
+        Optimizer parameters.
+        
+    - epsilon: float
+        The minimum time step for the diffusion reverse process. 
+        In practice, using a very small value instead of `0` can avoid numerical instability.
+    
+    - diffusion_steps: int
+        The discretization steps for discrete-time diffusion models.
+    - discretization: Union[str, Callable]
+        The discretization method for the diffusion steps.
+        
+    - noise_schedule: Union[str, Dict[str, Callable]]
+        The noise schedule for the diffusion process. Can be "linear" or "cosine".
+    - noise_schedule_params: Optional[dict]
+        The parameters for the noise schedule.
+        
+    - x_max: Optional[torch.Tensor]
+        The maximum value for the input data. `None` indicates no constraint.
+    - x_min: Optional[torch.Tensor]
+        The minimum value for the input data. `None` indicates no constraint.
+        
+    - predict_noise: bool
+        Whether to predict the noise or the data.
+        
+    - device: Union[torch.device, str]
+        The device to run the model.
     """
-
     def __init__(
             self,
 
@@ -301,97 +308,79 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
             nn_condition: Optional[BaseNNCondition] = None,
 
             # ----------------- Masks ----------------- #
-            fix_mask: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
-            loss_weight: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
+            # Fix some portion of the input data, and only allow the diffusion model to complete the rest part.
+            fix_mask: Union[list, np.ndarray, torch.Tensor] = None,  # be in the shape of `x_shape`
+            # Add loss weight
+            loss_weight: Union[list, np.ndarray, torch.Tensor] = None,  # be in the shape of `x_shape`
 
             # ------------------ Plugins ---------------- #
             # Add a classifier to enable classifier-guidance
             classifier: Optional[BaseClassifier] = None,
 
             # ------------------ Training Params ---------------- #
+            grad_clip_norm: Optional[float] = None,
             ema_rate: float = 0.995,
+            optim_params: Optional[dict] = None,
 
             # ------------------- Diffusion Params ------------------- #
             epsilon: float = 1e-3,
-            x_max: Optional[torch.Tensor] = None,
-            x_min: Optional[torch.Tensor] = None,
-            predict_noise: bool = True,
 
             diffusion_steps: int = 1000,
             discretization: Union[str, Callable] = "uniform",
+
             noise_schedule: Union[str, Dict[str, Callable]] = "cosine",
             noise_schedule_params: Optional[dict] = None,
+
+            x_max: Optional[torch.Tensor] = None,
+            x_min: Optional[torch.Tensor] = None,
+
+            predict_noise: bool = True,
+
+            device: Union[torch.device, str] = "cpu"
     ):
         super().__init__(
-            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate,
-            epsilon, x_max, x_min, predict_noise)
-
-        self.save_hyperparameters(ignore=[
-            "nn_diffusion", "nn_condition", "classifier"])
+            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, grad_clip_norm, ema_rate, optim_params,
+            epsilon, noise_schedule, noise_schedule_params, x_max, x_min, predict_noise, device)
 
         self.diffusion_steps = diffusion_steps
 
+        if 1. / diffusion_steps < epsilon:
+            raise ValueError("epsilon is too large for the number of diffusion steps")
+
         # ================= Discretization =================
         # - Map the continuous range [epsilon, 1.] to the discrete range [0, T-1]
-        # `t_diffusion` is a tensor with shape (T,), recording the `t` for each discrete step.
         if isinstance(discretization, str):
             if discretization in SUPPORTED_DISCRETIZATIONS.keys():
-                t_diffusion = SUPPORTED_DISCRETIZATIONS[discretization](diffusion_steps, epsilon)
+                self.t_diffusion = SUPPORTED_DISCRETIZATIONS[discretization](diffusion_steps, epsilon).to(device)
             else:
-                raise ValueError(f"Discretization {discretization} is not supported.")
+                Warning(f"Discretization method {discretization} is not supported. "
+                        f"Using uniform discretization instead.")
+                self.t_diffusion = SUPPORTED_DISCRETIZATIONS["uniform"](diffusion_steps, epsilon).to(device)
         elif callable(discretization):
-            t_diffusion = discretization(diffusion_steps, epsilon)
+            self.t_diffusion = discretization(diffusion_steps, epsilon).to(device)
         else:
             raise ValueError("discretization must be a callable or a string")
-        self.t_diffusion = nn.Parameter(t_diffusion, requires_grad=False)
 
         # ================= Noise Schedule =================
-        # - The noise schedule `alpha` and `sigma` for each discrete step.
-        # - Both `alpha` and `sigma` are tensors with shape (T,)
         if isinstance(noise_schedule, str):
             if noise_schedule in SUPPORTED_NOISE_SCHEDULES.keys():
-                alpha, sigma = SUPPORTED_NOISE_SCHEDULES[noise_schedule]["forward"](
-                    t_diffusion, **(noise_schedule_params or {}))
+                self.alpha, self.sigma = SUPPORTED_NOISE_SCHEDULES[noise_schedule]["forward"](
+                    self.t_diffusion, **(noise_schedule_params or {}))
             else:
                 raise ValueError(f"Noise schedule {noise_schedule} is not supported.")
         elif isinstance(noise_schedule, dict):
-            alpha, sigma = noise_schedule["forward"](self.t_diffusion, **(noise_schedule_params or {}))
+            self.alpha, self.sigma = noise_schedule["forward"](self.t_diffusion, **(noise_schedule_params or {}))
         else:
-            raise ValueError("noise_schedule must be a dict of callable or a string")
-        self.alpha = nn.Parameter(alpha, requires_grad=False)
-        self.sigma = nn.Parameter(sigma, requires_grad=False)
-        self.logSNR = nn.Parameter(torch.log(self.alpha / self.sigma), requires_grad=False)
+            raise ValueError("noise_schedule must be a callable or a string")
+
+        self.logSNR = torch.log(self.alpha / self.sigma)
 
     # ==================== Training: Score Matching ======================
 
-    def add_noise(
-            self,
-            x0: torch.Tensor,
-            t: Optional[torch.Tensor] = None,
-            eps: Optional[torch.Tensor] = None
-    ):
-        """ Forward process of the diffusion model.
+    def add_noise(self, x0, t=None, eps=None):
 
-        Args:
-            x0: torch.Tensor,
-                Samples from the target distribution. shape: (batch_size, *x_shape)
-            t: torch.Tensor,
-                Discrete time steps for the diffusion process. shape: (batch_size,).
-                If `None`, randomly sample from Uniform(0, T).
-            eps: torch.Tensor,
-                Noise for the diffusion process. shape: (batch_size, *x_shape).
-                If `None`, randomly sample from Normal(0, I).
-
-        Returns:
-            xt: torch.Tensor,
-                The noisy samples. shape: (batch_size, *x_shape).
-            t: torch.Tensor,
-                The discrete time steps. shape: (batch_size,).
-            eps: torch.Tensor,
-                The noise. shape: (batch_size, *x_shape).
-        """
-        t = t or torch.randint(self.diffusion_steps, (x0.shape[0],), device=self.device)
-        eps = eps or torch.randn_like(x0)
+        t = torch.randint(self.diffusion_steps, (x0.shape[0],), device=self.device) if t is None else t
+        eps = torch.randn_like(x0) if eps is None else eps
 
         alpha, sigma = at_least_ndim(self.alpha[t], x0.dim()), at_least_ndim(self.sigma[t], x0.dim())
 
@@ -430,12 +419,12 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
             **kwargs,
     ):
         """Sampling.
-
+        
         Inputs:
         - prior: torch.Tensor
             The known fixed portion of the input data. Should be in the shape of generated data.
             Use `torch.zeros((n_samples, *x_shape))` for non-prior sampling.
-
+        
         - solver: str
             The solver for the reverse process. Check `supported_solvers` property for available solvers.
         - n_samples: int
@@ -448,7 +437,7 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
             Whether to use the exponential moving average model.
         - temperature: float
             The temperature for sampling.
-
+        
         - condition_cfg: Optional
             Condition for Classifier-free-guidance.
         - mask_cfg: Optional
@@ -459,20 +448,20 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
             Condition for Classifier-guidance.
         - w_cg: float
             Weight for Classifier-guidance.
-
+            
         - diffusion_x_sampling_steps: int
             The number of diffusion steps for diffusion-x sampling.
-
+        
         - warm_start_reference: Optional[torch.Tensor]
             Reference data for warm-starting sampling. `None` indicates no warm-starting.
         - warm_start_forward_level: float
             The forward noise level to perturb the reference data. Should be in the range of `[0., 1.]`, where `1` indicates pure noise.
-
+        
         - requires_grad: bool
             Whether to preserve gradients.
         - preserve_history: bool
             Whether to preserve the sampling history.
-
+            
         Outputs:
         - x0: torch.Tensor
             Generated samples. Be in the shape of `(n_samples, *x_shape)`.
@@ -488,7 +477,7 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
         model = self.model if not use_ema else self.model_ema
 
         prior = prior.to(self.device)
-        if isinstance(warm_start_reference, torch.Tensor) and 0 < warm_start_forward_level < 1:
+        if isinstance(warm_start_reference, torch.Tensor):
             diffusion_steps = int(warm_start_forward_level * self.diffusion_steps)
             fwd_alpha, fwd_sigma = self.alpha[diffusion_steps], self.sigma[diffusion_steps]
             xt = warm_start_reference * fwd_alpha + fwd_sigma * torch.randn_like(warm_start_reference)
@@ -517,7 +506,7 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
 
         alphas = self.alpha[sample_step_schedule]
         sigmas = self.sigma[sample_step_schedule]
-        logSNRs = self.logSNR[sample_step_schedule]
+        logSNRs = torch.log(alphas / sigmas)
         hs = torch.zeros_like(logSNRs)
         hs[1:] = logSNRs[:-1] - logSNRs[1:]  # hs[0] is not correctly calculated, but it will not be used.
         stds = torch.zeros((sample_steps + 1,), device=self.device)
@@ -612,14 +601,14 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
 
 class ContinuousDiffusionSDE(BaseDiffusionSDE):
     """Continuous-time Diffusion SDE (VP-SDE)
-
-    The Diffusion SDE is currently one of the most commonly used formulations of diffusion processes.
-    Its training process involves utilizing neural networks to estimate its scaled score function,
-    which is used to compute the reverse process. The Diffusion SDE has reverse processes
-    in both SDE and ODE forms, sharing the same marginal distribution.
-    The first-order discretized forms of both are equivalent to well-known models such as DDPM and DDIM.
+    
+    The Diffusion SDE is currently one of the most commonly used formulations of diffusion processes. 
+    Its training process involves utilizing neural networks to estimate its scaled score function, 
+    which is used to compute the reverse process. The Diffusion SDE has reverse processes 
+    in both SDE and ODE forms, sharing the same marginal distribution. 
+    The first-order discretized forms of both are equivalent to well-known models such as DDPM and DDIM. 
     DPM-Solvers have observed the semi-linearity of the reverse process and have computed its exact solution.
-
+    
     The ContinuousDiffusionSDE is the continuous-time version of the Diffusion SDE.
     It estimates the score function at any $t\in[0,T]$ and solves the reverse process in continuous time.
     The sampling steps are required to be greater than 1.
@@ -629,44 +618,43 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
         The neural network backbone for the Diffusion model.
     - nn_condition: Optional[BaseNNCondition]
         The neural network backbone for the condition embedding.
-
+        
     - fix_mask: Union[list, np.ndarray, torch.Tensor]
         Fix some portion of the input data, and only allow the diffusion model to complete the rest part.
         The mask should be in the shape of `x_shape`.
     - loss_weight: Union[list, np.ndarray, torch.Tensor]
         Add loss weight. The weight should be in the shape of `x_shape`.
-
+        
     - classifier: Optional[BaseClassifier]
         Add a classifier to enable classifier-guidance.
-
+        
     - grad_clip_norm: Optional[float]
         Gradient clipping norm.
     - ema_rate: float
         Exponential moving average rate.
     - optim_params: Optional[dict]
         Optimizer parameters.
-
+        
     - epsilon: float
-        The minimum time step for the diffusion reverse process.
+        The minimum time step for the diffusion reverse process. 
         In practice, using a very small value instead of `0` can avoid numerical instability.
-
+        
     - noise_schedule: Union[str, Dict[str, Callable]]
         The noise schedule for the diffusion process. Can be "linear" or "cosine".
     - noise_schedule_params: Optional[dict]
         The parameters for the noise schedule.
-
+        
     - x_max: Optional[torch.Tensor]
         The maximum value for the input data. `None` indicates no constraint.
     - x_min: Optional[torch.Tensor]
         The minimum value for the input data. `None` indicates no constraint.
-
+        
     - predict_noise: bool
         Whether to predict the noise or the data.
-
+        
     - device: Union[torch.device, str]
         The device to run the model.
     """
-
     def __init__(
             self,
 
@@ -675,36 +663,42 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
             nn_condition: Optional[BaseNNCondition] = None,
 
             # ----------------- Masks ----------------- #
-            fix_mask: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
-            loss_weight: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
+            # Fix some portion of the input data, and only allow the diffusion model to complete the rest part.
+            fix_mask: Union[list, np.ndarray, torch.Tensor] = None,  # be in the shape of `x_shape`
+            # Add loss weight
+            loss_weight: Union[list, np.ndarray, torch.Tensor] = None,  # be in the shape of `x_shape`
 
             # ------------------ Plugins ---------------- #
             # Add a classifier to enable classifier-guidance
             classifier: Optional[BaseClassifier] = None,
 
             # ------------------ Training Params ---------------- #
+            grad_clip_norm: Optional[float] = None,
             ema_rate: float = 0.995,
+            optim_params: Optional[dict] = None,
 
             # ------------------- Diffusion Params ------------------- #
             epsilon: float = 1e-3,
-            x_max: Optional[torch.Tensor] = None,
-            x_min: Optional[torch.Tensor] = None,
-            predict_noise: bool = True,
 
             noise_schedule: Union[str, Dict[str, Callable]] = "cosine",
             noise_schedule_params: Optional[dict] = None,
+
+            x_max: Optional[torch.Tensor] = None,
+            x_min: Optional[torch.Tensor] = None,
+
+            predict_noise: bool = True,
+
+            device: Union[torch.device, str] = "cpu"
     ):
         super().__init__(
-            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate,
-            epsilon, x_max, x_min, predict_noise)
-
-        self.save_hyperparameters(ignore=[
-            "nn_diffusion", "nn_condition", "classifier"])
+            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, grad_clip_norm, ema_rate, optim_params,
+            epsilon, noise_schedule, noise_schedule_params, x_max, x_min, predict_noise, device)
 
         # ==================== Continuous Time-step Range ====================
-        self.t_diffusion = [epsilon, 1.]
         if noise_schedule == "cosine":
-            self.t_diffusion[1] = 0.9946
+            self.t_diffusion = [epsilon, 0.9946]
+        else:
+            self.t_diffusion = [epsilon, 1.]
 
         # ===================== Noise Schedule ======================
         if isinstance(noise_schedule, str):
@@ -721,38 +715,16 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
 
     # ==================== Training: Score Matching ======================
 
-    def add_noise(
-            self,
-            x0: torch.Tensor,
-            t: Optional[torch.Tensor] = None,
-            eps: Optional[torch.Tensor] = None
-    ):
-        """ Forward process of the diffusion model.
+    def add_noise(self, x0, t=None, eps=None):
 
-        Args:
-            x0: torch.Tensor,
-                Samples from the target distribution. shape: (batch_size, *x_shape)
-            t: torch.Tensor,
-                Discrete time steps for the diffusion process. shape: (batch_size,).
-                If `None`, randomly sample from Uniform(0, T).
-            eps: torch.Tensor,
-                Noise for the diffusion process. shape: (batch_size, *x_shape).
-                If `None`, randomly sample from Normal(0, I).
+        t = (torch.rand((x0.shape[0],), device=self.device) *
+             (self.t_diffusion[1] - self.t_diffusion[0]) + self.t_diffusion[0]) if t is None else t
 
-        Returns:
-            xt: torch.Tensor,
-                The noisy samples. shape: (batch_size, *x_shape).
-            t: torch.Tensor,
-                The discrete time steps. shape: (batch_size,).
-            eps: torch.Tensor,
-                The noise. shape: (batch_size, *x_shape).
-        """
-        t = t or (torch.rand((x0.shape[0],), device=self.device) *
-                  (self.t_diffusion[1] - self.t_diffusion[0]) + self.t_diffusion[0])
-        eps = eps or torch.randn_like(x0)
+        eps = torch.randn_like(x0) if eps is None else eps
 
         alpha, sigma = self.noise_schedule_funcs["forward"](t, **(self.noise_schedule_params or {}))
-        alpha, sigma = at_least_ndim(alpha, x0.dim()), at_least_ndim(sigma, x0.dim())
+        alpha = at_least_ndim(alpha, x0.dim())
+        sigma = at_least_ndim(sigma, x0.dim())
 
         xt = alpha * x0 + sigma * eps
         xt = (1. - self.fix_mask) * xt + self.fix_mask * x0
@@ -789,12 +761,12 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
             **kwargs,
     ):
         """Sampling.
-
+        
         Inputs:
         - prior: torch.Tensor
             The known fixed portion of the input data. Should be in the shape of generated data.
             Use `torch.zeros((n_samples, *x_shape))` for non-prior sampling.
-
+        
         - solver: str
             The solver for the reverse process. Check `supported_solvers` property for available solvers.
         - n_samples: int
@@ -807,7 +779,7 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
             Whether to use the exponential moving average model.
         - temperature: float
             The temperature for sampling.
-
+        
         - condition_cfg: Optional
             Condition for Classifier-free-guidance.
         - mask_cfg: Optional
@@ -818,20 +790,20 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
             Condition for Classifier-guidance.
         - w_cg: float
             Weight for Classifier-guidance.
-
+            
         - diffusion_x_sampling_steps: int
             The number of diffusion steps for diffusion-x sampling.
-
+        
         - warm_start_reference: Optional[torch.Tensor]
             Reference data for warm-starting sampling. `None` indicates no warm-starting.
         - warm_start_forward_level: float
             The forward noise level to perturb the reference data. Should be in the range of `[0., 1.]`, where `1` indicates pure noise.
-
+        
         - requires_grad: bool
             Whether to preserve gradients.
         - preserve_history: bool
             Whether to preserve the sampling history.
-
+            
         Outputs:
         - x0: torch.Tensor
             Generated samples. Be in the shape of `(n_samples, *x_shape)`.
@@ -847,17 +819,13 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
         model = self.model if not use_ema else self.model_ema
 
         prior = prior.to(self.device)
-        if isinstance(warm_start_reference, torch.Tensor) and 0 < warm_start_forward_level < 1:
-            warm_start_forward_level = (self.t_diffusion[0] +
-                                        warm_start_forward_level * (self.t_diffusion[1] - self.t_diffusion[0]))
+        if isinstance(warm_start_reference, torch.Tensor) and warm_start_forward_level > 0.:
+            warm_start_forward_level = self.epsilon + warm_start_forward_level * (1. - self.epsilon)
             fwd_alpha, fwd_sigma = self.noise_schedule_funcs["forward"](
-                torch.tensor([self.t_diffusion[1]], device=self.device) * warm_start_forward_level,
-                **(self.noise_schedule_params or {}))
+                torch.ones((1,), device=self.device) * warm_start_forward_level, **(self.noise_schedule_params or {}))
             xt = warm_start_reference * fwd_alpha + fwd_sigma * torch.randn_like(warm_start_reference)
-            t_diffusion = [self.t_diffusion[0], warm_start_forward_level]
         else:
             xt = torch.randn_like(prior) * temperature
-            t_diffusion = self.t_diffusion
         xt = xt * (1. - self.fix_mask) + prior * self.fix_mask
         if preserve_history:
             log["sample_history"][:, 0] = xt.cpu().numpy()
@@ -867,6 +835,10 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
             condition_vec_cg = condition_cg
 
         # ===================== Sampling Schedule ====================
+        if isinstance(warm_start_reference, torch.Tensor) and warm_start_forward_level > 0.:
+            t_diffusion = [self.t_diffusion[0], warm_start_forward_level]
+        else:
+            t_diffusion = self.t_diffusion
         if isinstance(sample_step_schedule, str):
             if sample_step_schedule in SUPPORTED_SAMPLING_STEP_SCHEDULE.keys():
                 sample_step_schedule = SUPPORTED_SAMPLING_STEP_SCHEDULE[sample_step_schedule](
@@ -892,7 +864,7 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
         loop_steps = [1] * diffusion_x_sampling_steps + list(range(1, sample_steps + 1))
         for i in reversed(loop_steps):
 
-            t = torch.full((n_samples,), sample_step_schedule[i], device=self.device)
+            t = torch.full((n_samples,), sample_step_schedule[i], dtype=torch.float32, device=self.device)
 
             # guided sampling
             pred, logp = self.guided_sampling(
