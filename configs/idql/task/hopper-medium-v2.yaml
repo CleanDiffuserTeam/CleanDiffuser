@@ -1,0 +1,4 @@
+env_name: "hopper-medium-v2"
+
+weight_temperature: 50.
+iql_tau: 0.7

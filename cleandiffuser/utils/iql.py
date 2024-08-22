@@ -4,7 +4,7 @@ import pytorch_lightning as L
 import torch
 import torch.nn as nn
 import os
-from cleandiffuser.utils import GaussianNormalizer
+from .normalizers import GaussianNormalizer
 import pickle as pkl
 import warnings
 

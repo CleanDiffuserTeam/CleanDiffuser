@@ -1,0 +1,4 @@
+env_name: "walker2d-medium-expert-v2"
+
+weight_temperature: 300.
+iql_tau: 0.7
