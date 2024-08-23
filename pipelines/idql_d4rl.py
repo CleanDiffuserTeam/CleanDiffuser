@@ -11,6 +11,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader
 
 from cleandiffuser.dataset.d4rl_mujoco_dataset import D4RLMuJoCoTDDataset
+from cleandiffuser.dataset.d4rl_kitchen_dataset import D4RLKitchenTDDataset
+from cleandiffuser.dataset.d4rl_antmaze_dataset import D4RLAntmazeTDDataset
 from cleandiffuser.diffusion import ContinuousDiffusionSDE
 from cleandiffuser.nn_condition import MLPCondition
 from cleandiffuser.nn_diffusion import IDQLMlp
@@ -57,7 +59,12 @@ def pipeline(args):
     # --- Create Dataset ---
     env = gym.make(env_name)
     raw_dataset = d4rl.qlearning_dataset(env)
-    dataset = D4RLMuJoCoTDDataset(raw_dataset, args.normalize_reward)
+    if "kitchen" in env_name:
+        dataset = D4RLKitchenTDDataset(raw_dataset)
+    elif "antmaze" in env_name:
+        dataset = D4RLAntmazeTDDataset(raw_dataset, reward_tune="iql")
+    else:
+        dataset = D4RLMuJoCoTDDataset(raw_dataset, normalize_reward=True)
     obs_dim, act_dim = dataset.obs_dim, dataset.act_dim
 
     # --- Create Diffusion Model ---
@@ -67,7 +74,7 @@ def pipeline(args):
     nn_condition = MLPCondition(
         in_dim=obs_dim, out_dim=64, hidden_dims=[64, ], act=torch.nn.SiLU(), dropout=0.0)
 
-    # --- Training ---
+    # --- BC Training ---
     if args.mode == "bc_training":
 
         actor = ContinuousDiffusionSDE(
@@ -90,6 +97,7 @@ def pipeline(args):
 
         trainer.fit(actor, dataloader)
 
+    # --- IQL Training ---
     elif args.mode == "iql_training":
 
         iql = IQL(obs_dim, act_dim, tau=args.task.iql_tau,
@@ -110,6 +118,7 @@ def pipeline(args):
 
         trainer.fit(iql, dataloader)
 
+    # --- Inference ---
     elif args.mode == "inference":
 
         num_envs = args.num_envs
@@ -118,7 +127,7 @@ def pipeline(args):
 
         if args.iql_from_pretrain:
             iql, _ = IQL.from_pretrained(
-                env_name, normalize_reward=args.normalize_reward, reward_tune="iql")
+                env_name, normalize_reward=True, reward_tune="iql")
         else:
             iql = IQL.load_from_checkpoint(
                 checkpoint_path=save_path / "iql-step=300000.ckpt",

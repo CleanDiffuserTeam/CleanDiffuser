@@ -69,7 +69,7 @@ class D4RLAntmazeDataset(BaseDataset):
         normed_observations = self.normalizers["state"].normalize(observations)
 
         self.horizon = horizon
-        self.o_dim, self.a_dim = observations.shape[-1], actions.shape[-1]
+        self.obs_dim, self.act_dim = observations.shape[-1], actions.shape[-1]
 
         self.indices = []
         self.seq_obs, self.seq_act, self.seq_rew = [], [], []
@@ -90,8 +90,8 @@ class D4RLAntmazeDataset(BaseDataset):
                 # 1. agent walks out of the goal
                 if path_length < max_path_length:
 
-                    _seq_obs = np.zeros((max_path_length, self.o_dim), dtype=np.float32)
-                    _seq_act = np.zeros((max_path_length, self.a_dim), dtype=np.float32)
+                    _seq_obs = np.zeros((max_path_length, self.obs_dim), dtype=np.float32)
+                    _seq_act = np.zeros((max_path_length, self.act_dim), dtype=np.float32)
                     _seq_rew = np.zeros((max_path_length, 1), dtype=np.float32)
 
                     _seq_obs[:i - ptr] = normed_observations[ptr:i]

@@ -10,7 +10,7 @@ from cleandiffuser.dataset.d4rl_antmaze_dataset import D4RLAntmazeTDDataset
 from cleandiffuser.dataset.d4rl_kitchen_dataset import D4RLKitchenTDDataset
 from cleandiffuser.dataset.d4rl_mujoco_dataset import D4RLMuJoCoTDDataset
 from cleandiffuser.utils import loop_dataloader
-from cleandiffuser.utils.iql_L import IQL
+from cleandiffuser.utils.iql import IQL
 
 
 class IQLD4RLMuJoCoTDDataset(D4RLMuJoCoTDDataset):
@@ -59,10 +59,10 @@ if __name__ == "__main__":
     
     iql, _ = IQL.from_pretrained(env_name=env_name)
     
-    # # checkpoint_callback = ModelCheckpoint(
-    # #     dirpath=f"./logs/iql/{env_name}/",
-    # #     filename=filename
-    # # )
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=f"./logs/iql/{env_name}/",
+        filename=filename
+    )
 
     # import pickle as pkl
     # with open(f"./logs/iql/{env_name}/normalizer_params.pkl", "wb") as f:

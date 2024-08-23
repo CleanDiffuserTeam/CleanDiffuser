@@ -91,11 +91,11 @@ class D4RLMuJoCoDataset(BaseDataset):
         normed_observations = self.normalizers["state"].normalize(observations)
 
         self.horizon = horizon
-        self.o_dim, self.a_dim = observations.shape[-1], actions.shape[-1]
+        self.obs_dim, self.act_dim = observations.shape[-1], actions.shape[-1]
 
         n_paths = np.sum(np.logical_or(terminals, timeouts))
-        self.seq_obs = np.zeros((n_paths, max_path_length, self.o_dim), dtype=np.float32)
-        self.seq_act = np.zeros((n_paths, max_path_length, self.a_dim), dtype=np.float32)
+        self.seq_obs = np.zeros((n_paths, max_path_length, self.obs_dim), dtype=np.float32)
+        self.seq_act = np.zeros((n_paths, max_path_length, self.act_dim), dtype=np.float32)
         self.seq_rew = np.zeros((n_paths, max_path_length, 1), dtype=np.float32)
         self.seq_val = np.zeros((n_paths, max_path_length, 1), dtype=np.float32)
         self.tml_and_not_timeout = []

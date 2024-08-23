@@ -2,23 +2,22 @@ defaults:
   - _self_
   - task: halfcheetah-medium-expert-v2
 
-pipeline_name: idql_d4rl
+pipeline_name: dd_d4rl
 device_id: 0
-mode: bc_training
+mode: diffusion_training
 seed: 0
 
-# Environment
-normalize_reward: True
+invdyn_hidden_dim: 256
 
 # Training
-bc_training_steps: 1000000
-iql_training_steps: 1000000
+diffusion_training_steps: 1000000
+invdyn_training_steps: 200000
 save_interval: 100000
 
 # Inference
 ckpt: latest
 solver: ddpm
-iql_from_pretrain: True
+invdyn_from_pretrain: True
 sampling_steps: 5
 num_envs: 50
 num_episodes: 1

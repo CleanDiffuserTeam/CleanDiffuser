@@ -12,7 +12,7 @@ import hydra
 
 from cleandiffuser.dataset.d4rl_mujoco_dataset import D4RLMuJoCoDataset
 from cleandiffuser.diffusion.diffusionsde import ContinuousDiffusionSDE
-from cleandiffuser.invdynamic.mlp_L import FancyMlpInvDynamic
+from cleandiffuser.invdynamic.mlp import FancyMlpInvDynamic
 from cleandiffuser.nn_condition import MLPCondition
 from cleandiffuser.nn_diffusion import DiT1d
 from cleandiffuser.utils import report_parameters, DD_RETURN_SCALE
