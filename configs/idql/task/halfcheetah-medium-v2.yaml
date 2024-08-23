@@ -1,4 +1,4 @@
 env_name: "halfcheetah-medium-v2"
 
-weight_temperature: 400.
+weight_temperature: 100.
 iql_tau: 0.7

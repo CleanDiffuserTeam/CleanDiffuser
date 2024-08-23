@@ -1,4 +1,4 @@
 env_name: "halfcheetah-medium-replay-v2"
 
-weight_temperature: 100.
+weight_temperature: 30.
 iql_tau: 0.7

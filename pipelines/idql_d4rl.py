@@ -130,13 +130,13 @@ def pipeline(args):
                 env_name, normalize_reward=True, reward_tune="iql")
         else:
             iql = IQL.load_from_checkpoint(
-                checkpoint_path=save_path / "iql-step=300000.ckpt",
+                checkpoint_path=save_path / f"iql-step={args.iql_ckpt}.ckpt",
                 obs_dim=obs_dim, act_dim=act_dim, tau=args.task.iql_tau,
                 hidden_dim=256, discount=0.99)
         iql.to(f"cuda:{args.device_id}").eval()
 
         actor = ContinuousDiffusionSDE.load_from_checkpoint(
-            checkpoint_path=save_path / "diffusion_bc-step=500000.ckpt",
+            checkpoint_path=save_path / f"diffusion_bc-step={args.bc_ckpt}.ckpt",
             nn_diffusion=nn_diffusion, nn_condition=nn_condition, ema_rate=0.9999,
             x_max=+1.0*torch.ones((act_dim, )),
             x_min=-1.0*torch.ones((act_dim, )))
@@ -161,13 +161,13 @@ def pipeline(args):
                     prior, solver=args.solver, n_samples=num_envs * num_candidates,
                     sample_steps=args.sampling_steps,
                     condition_cfg=obs, w_cfg=1.0,
-                    sample_step_schedule="quad_continuous")
+                    sample_step_schedule="uniform_continuous")
 
                 with torch.no_grad():
                     q = iql.q(obs, act)
                     v = iql.v(obs)
                     act = einops.rearrange(
-                        act, "(b k) d -> b k d", k=num_candidates)
+                        act, "(b k) d -> b k d", k=num_candidates)                    
                     adv = einops.rearrange(
                         (q - v), "(b k) 1 -> b k 1", k=num_candidates)
                     w = torch.softmax(
@@ -202,7 +202,7 @@ def pipeline(args):
         episode_rewards = [
             list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards]
         episode_rewards = np.array(episode_rewards).mean(-1) * 100.
-        print(episode_rewards.mean(), episode_rewards.std())
+        print(f"Score: {episode_rewards.mean():.3f}±{episode_rewards.std():.3f}")
 
         env_eval.close()
 

@@ -16,12 +16,13 @@ iql_training_steps: 1000000
 save_interval: 100000
 
 # Inference
-ckpt: latest
-solver: ddpm
+bc_ckpt: 1000000
+iql_ckpt: 1000000
+solver: ddim
 iql_from_pretrain: True
 sampling_steps: 5
 num_envs: 50
-num_episodes: 1
+num_episodes: 3
 num_candidates: 256
 
 # hydra

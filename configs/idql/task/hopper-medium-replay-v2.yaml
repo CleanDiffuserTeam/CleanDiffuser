@@ -1,4 +1,4 @@
 env_name: "hopper-medium-replay-v2"
 
-weight_temperature: 50.
+weight_temperature: 5.
 iql_tau: 0.7

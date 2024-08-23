@@ -1,4 +1,4 @@
 env_name: "hopper-medium-expert-v2"
 
-weight_temperature: 5.
+weight_temperature: 3
 iql_tau: 0.7
