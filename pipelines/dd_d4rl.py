@@ -17,7 +17,7 @@ from cleandiffuser.invdynamic import FancyMlpInvDynamic
 from cleandiffuser.nn_condition import MLPCondition
 from cleandiffuser.nn_diffusion import DiT1d
 
-DD_RETURN_SCALE = {
+RETURN_SCALE = {
     "halfcheetah-medium-expert-v2": 1200,
     "halfcheetah-medium-replay-v2": 550,
     "halfcheetah-medium-v2": 580,
@@ -40,7 +40,7 @@ class ObsSequence_Wrapper(torch.utils.data.Dataset):
     def __init__(self, dataset: torch.utils.data.Dataset, env_name: str):
         self.dataset = dataset
         self.env_name = env_name
-        self.scale = DD_RETURN_SCALE[env_name]
+        self.scale = RETURN_SCALE[env_name]
 
     def __len__(self):
         return len(self.dataset)
@@ -54,7 +54,9 @@ class ObsSequence_Wrapper(torch.utils.data.Dataset):
         val = self.seq_val[path_idx, start] / self.scale
         if "antmaze" in self.env_name:
             val += 1.
-        return obs, val
+        return {
+            "x0": obs,
+            "condition_cfg": val, }
 
 
 class InvDyn_Wrapper(torch.utils.data.Dataset):

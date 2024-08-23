@@ -30,7 +30,9 @@ class BC_Wrapper(torch.utils.data.Dataset):
         return getattr(self.dataset, name)
 
     def __getitem__(self, idx):
-        return self.act[idx], self.obs[idx]
+        return {
+            "x0": self.act[idx],
+            "condition_cfg": self.obs[idx],}
 
 
 class IQL_Wrapper(torch.utils.data.Dataset):

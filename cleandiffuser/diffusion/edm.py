@@ -200,7 +200,12 @@ class ContinuousEDM(DiffusionModel):
         return log
     
     def training_step(self, batch, batch_idx):
-        x0, condition = batch
+        if len(batch) == 2:
+            x0, condition = batch
+        elif len(batch) == 1:
+            x0, condition = batch[0], None
+        else:
+            raise ValueError(f"The batch should be either (x0, condition) or x0.")
         loss = self.loss(x0, condition)
         self.log("diffusion_loss", loss)
         if self.ema_update_schedule(batch_idx):

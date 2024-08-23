@@ -76,9 +76,6 @@ class BaseDiffusionSDE(DiffusionModel):
 
     # ==================== Training: Score Matching ======================
 
-    def add_noise(self, x0, t=None, eps=None):
-        raise NotImplementedError
-
     def loss(self, x0, condition=None):
 
         xt, t, eps = self.add_noise(x0)
@@ -91,52 +88,6 @@ class BaseDiffusionSDE(DiffusionModel):
             loss = (self.model["diffusion"](xt, t, condition) - x0) ** 2
 
         return (loss * self.loss_weight * (1 - self.fix_mask)).mean()
-
-    def update(
-            self,
-            x0: torch.Tensor,
-            condition: Optional[Union[torch.Tensor, TensorDict]] = None,
-            update_ema: bool = True,
-            **kwargs
-    ):
-        """ One-step update.
-
-        Args:
-            x0 (torch.Tensor):
-                Samples from the target distribution. shape: (batch_size, *x_shape)
-            condition (Optional[Union[torch.Tensor, TensorDict]]):
-                Condition of x0. `None` indicates no condition. It can be a tensor or a dictionary of tensors.
-                The update function will automatically handle the condition dropout as defined in NNCondition.
-            update_ema (bool):
-                Whether to update the EMA model.
-
-        Returns:
-            log (dict),
-                The log dictionary.
-        """
-        loss = self.loss(x0, condition)
-        loss.backward()
-        self.optimizer.step()
-        self.optimizer.zero_grad()
-        if update_ema:
-            self.ema_update()
-        return {"diffusion_loss": loss.item()}
-
-    def training_step(self, batch, batch_idx):
-        x0, condition = batch
-        loss = self.loss(x0, condition)
-        self.log("diffusion_loss", loss)
-        if self.ema_update_schedule(batch_idx):
-            self.ema_update()
-        return loss
-
-    def update_classifier(self, x0, condition):
-
-        xt, t, eps = self.add_noise(x0)
-
-        log = self.classifier.update(xt, t, condition)
-
-        return log
 
     # ==================== Sampling: Solving SDE/ODE ======================
 
