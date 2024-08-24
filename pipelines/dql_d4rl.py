@@ -190,11 +190,11 @@ def pipeline(args):
                     ["bc_loss", "policy_q_loss", "critic_td_loss", "target_q"], 0.0)
 
             if step % args.save_interval == 0:
-                actor.save(save_path + f"actor_step={step}.pt")
-                torch.save(critic.state_dict(), save_path +
-                           f"critic_step={step}.pt")
-                torch.save(critic_target.state_dict(), save_path +
-                           f"critic_target_step={step}.pt")
+                actor.save(save_path / f"actor_step={step}.ckpt")
+                torch.save(critic.state_dict(), save_path /
+                           f"critic_step={step}.ckpt")
+                torch.save(critic_target.state_dict(), save_path /
+                           f"critic_target_step={step}.ckpt")
 
             if step >= args.training_steps:
                 break
