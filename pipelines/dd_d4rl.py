@@ -160,19 +160,20 @@ def pipeline(args):
 
         num_envs = args.num_envs
         num_episodes = args.num_episodes
-        num_candidates = args.num_candidates
 
         if args.invdyn_from_pretrain:
             invdyn = FancyMlpInvDynamic.from_pretrained(
                 env_name, hidden_dim=args.invdyn_hidden_dim)
         else:
             invdyn = FancyMlpInvDynamic.load_from_checkpoint(
-                checkpoint_path=save_path / "invdyn-step=300000.ckpt",
+                checkpoint_path=save_path /
+                f"invdyn-step={args.invdyn_ckpt}.ckpt",
                 obs_dim=obs_dim, act_dim=act_dim, hidden_dim=args.invdyn_hidden_dim)
         invdyn.to(f"cuda:{args.device_id}").eval()
 
         actor = ContinuousDiffusionSDE.load_from_checkpoint(
-            checkpoint_path=save_path / "diffusion-step=300000.ckpt",
+            checkpoint_path=save_path /
+            f"diffusion-step={args.diffusion_ckpt}.ckpt",
             nn_diffusion=nn_diffusion, nn_condition=nn_condition,
             fix_mask=fix_mask, loss_weight=loss_weight, ema_rate=0.9999)
         actor.to(f"cuda:{args.device_id}").eval()
@@ -182,13 +183,56 @@ def pipeline(args):
         episode_rewards = []
 
         prior = torch.zeros((num_envs, args.task.horizon, obs_dim))
+        condition = torch.ones(
+            (num_envs, 1), device=f"cuda:{args.device_id}") * args.task.target_return
         for i in range(num_episodes):
 
             obs, ep_reward, all_done, t = env_eval.reset(), 0., False, 0
 
             while not np.all(all_done) and t < 1000:
 
-                pass
+                obs = torch.tensor(normalizer.normalize(
+                    obs), dtype=torch.float32)
+                prior[:, 0] = obs
+
+                traj, log = actor.sample(
+                    prior, solver=args.solver, n_samples=num_envs,
+                    sample_steps=args.sampling_steps,
+                    condition_cfg=condition, w_cfg=args.task.w_cfg,
+                    sample_step_schedule="quad_continuous", temperature=0.5)
+
+                with torch.no_grad():
+                    act = invdyn(traj[:, 0], traj[:, 1]).cpu().numpy()
+
+                obs, rew, done, _ = env_eval.step(act)
+
+                t += 1
+                done = np.logical_and(done, t < 1000)
+                all_done = np.logical_or(all_done, done)
+                if "kitchen" in env_name:
+                    ep_reward = np.clip(ep_reward + rew, 0., 4.)
+                    print(f'[t={t}] finished tasks: {np.around(ep_reward)}')
+                elif "antmaze" in env_name:
+                    ep_reward = np.clip(ep_reward + rew, 0., 1.)
+                    print(f'[t={t}] xy: {np.around(obs[:, :2], 2)}')
+                    print(f'[t={t}] reached goal: {np.around(ep_reward)}')
+                else:
+                    ep_reward += (rew * (1 - all_done))
+                    print(
+                        f'[t={t}] rew: {np.around((rew * (1 - all_done)), 2)}')
+
+                if np.all(all_done):
+                    break
+
+            episode_rewards.append(ep_reward)
+
+        episode_rewards = [
+            list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards]
+        episode_rewards = np.array(episode_rewards).mean(-1) * 100.
+        print(
+            f"Score: {episode_rewards.mean():.3f}±{episode_rewards.std():.3f}")
+
+        env_eval.close()
 
 
 if __name__ == "__main__":

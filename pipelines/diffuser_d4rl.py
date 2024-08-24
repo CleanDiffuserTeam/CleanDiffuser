@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import d4rl
+import einops
 import gym
 import hydra
 import numpy as np
@@ -122,6 +123,84 @@ def pipeline(args):
             default_root_dir=save_path, callbacks=[callback])
 
         trainer.fit(actor, dataloader)
+
+    # --- Inference ---
+    elif args.mode == "inference":
+
+        num_envs = args.num_envs
+        num_episodes = args.num_episodes
+        num_candidates = args.num_candidates
+
+        classifier = OptimalityClassifier(nn_classifier, ema_rate=0.9999)
+
+        actor = ContinuousDiffusionSDE(
+            nn_diffusion, None, fix_mask, loss_weight,
+            ema_rate=0.9999, classifier=classifier)
+        actor.load_state_dict(torch.load(
+            save_path / "diffusion-step=1000000.ckpt", map_location=f"cuda:{args.device_id}")["state_dict"])
+        actor.to(f"cuda:{args.device_id}").eval()
+
+        env_eval = gym.vector.make(env_name, num_envs=num_envs)
+        normalizer = dataset.get_normalizer()
+        episode_rewards = []
+
+        prior = torch.zeros(
+            (num_envs * num_candidates, args.task.horizon, obs_dim + act_dim))
+        for i in range(num_episodes):
+
+            obs, ep_reward, all_done, t = env_eval.reset(), 0, False, 0
+
+            while not np.all(all_done) and t < 1000:
+
+                obs = torch.tensor(
+                    normalizer.normalize(obs), dtype=torch.float32)
+                obs = einops.repeat(obs, "b d -> (b k) d", k=num_candidates)
+                prior[:, 0, :obs_dim] = obs
+
+                traj, log = actor.sample(
+                    prior, solver=args.solver, n_samples=num_envs * num_candidates,
+                    sample_steps=args.sampling_steps,
+                    condition_cg=None, w_cg=args.task.w_cg,
+                    sample_step_schedule="quad_continuous")
+
+                logp = log["log_p"]
+                traj = einops.rearrange(
+                    traj, "(b k) h d -> b k h d", k=num_candidates)
+                logp = einops.rearrange(
+                    logp, "(b k) 1 -> b k 1", k=num_candidates).squeeze(-1)
+                idx = torch.argmax(logp, dim=-1)
+                traj = traj[torch.arange(num_envs), idx]
+                act = traj[:, 0, obs_dim:].cpu().numpy()
+
+                obs, rew, done, _ = env_eval.step(act)
+
+                t += 1
+                done = np.logical_and(done, t < 1000)
+                all_done = np.logical_or(all_done, done)
+                if "kitchen" in env_name:
+                    ep_reward = np.clip(ep_reward + rew, 0., 4.)
+                    print(f'[t={t}] finished tasks: {np.around(ep_reward)}')
+                elif "antmaze" in env_name:
+                    ep_reward = np.clip(ep_reward + rew, 0., 1.)
+                    print(f'[t={t}] xy: {np.around(obs[:, :2], 2)}')
+                    print(f'[t={t}] reached goal: {np.around(ep_reward)}')
+                else:
+                    ep_reward += (rew * (1 - all_done))
+                    print(
+                        f'[t={t}] rew: {np.around((rew * (1 - all_done)), 2)}')
+
+                if np.all(all_done):
+                    break
+
+            episode_rewards.append(ep_reward)
+
+        episode_rewards = [
+            list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards]
+        episode_rewards = np.array(episode_rewards).mean(-1) * 100.
+        print(
+            f"Score: {episode_rewards.mean():.3f}±{episode_rewards.std():.3f}")
+
+        env_eval.close()
 
 
 if __name__ == "__main__":

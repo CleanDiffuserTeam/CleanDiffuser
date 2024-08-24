@@ -89,9 +89,12 @@ def cosine_beta_schedule(s: float = 0.008, T: int = 1000):
 def uniform_discretization(T: int = 1000, eps: float = 1e-3):
     return torch.linspace(eps, 1.0, T)
 
+def quad_discretization(T: int = 1000, eps: float = 1e-3, n: float = 1.5):
+    return (1 - eps) * torch.linspace(0, 1, T) ** n + eps
 
 SUPPORTED_DISCRETIZATIONS = {
     "uniform": uniform_discretization,
+    "quad": quad_discretization
 }
 
 

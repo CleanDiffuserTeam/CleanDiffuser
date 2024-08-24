@@ -18,7 +18,7 @@ solver: ddpm
 sampling_steps: 5
 num_envs: 50
 num_episodes: 1
-num_candidates: 256
+num_candidates: 64
 
 # hydra
 hydra:

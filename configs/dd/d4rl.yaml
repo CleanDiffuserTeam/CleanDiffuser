@@ -7,7 +7,7 @@ device_id: 0
 mode: diffusion_training
 seed: 0
 
-invdyn_hidden_dim: 256
+invdyn_hidden_dim: 512
 
 # Training
 diffusion_training_steps: 1000000
@@ -15,13 +15,13 @@ invdyn_training_steps: 200000
 save_interval: 100000
 
 # Inference
-ckpt: latest
+diffusion_ckpt: 1000000
+invdyn_ckpt: 1000000
 solver: ddpm
 invdyn_from_pretrain: True
-sampling_steps: 5
+sampling_steps: 10
 num_envs: 50
 num_episodes: 1
-num_candidates: 256
 
 # hydra
 hydra:
