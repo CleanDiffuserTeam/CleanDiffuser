@@ -136,6 +136,9 @@ class ChiUNet1d(BaseNNDiffusion):
         Output:
             y:          (b, Ta, act_dim)
         """
+        # check Ta dimension
+        assert x.shape[1] & (x.shape[1] - 1) == 0, "Ta dimension must be 2^n"
+
         x = x.permute(0, 2, 1)
 
         emb = self.map_noise(noise)

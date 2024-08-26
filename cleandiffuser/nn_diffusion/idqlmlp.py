@@ -43,7 +43,7 @@ class IDQLMlp(BaseNNDiffusion):
 
     def forward(self,
                 x: torch.Tensor, noise: torch.Tensor,
-                condition: torch.Tensor = None):
+                condition: torch.Tensor):
         """
         Input:
             x:          (b, act_dim)
@@ -53,9 +53,10 @@ class IDQLMlp(BaseNNDiffusion):
         Output:
             y:          (b, act_dim)
         """
+        assert condition is not None
+
         t = self.time_mlp(self.map_noise(noise))
-        x = torch.cat([x, t, condition], -1) \
-            if condition is not None else torch.cat([x, t], -1)
+        x = torch.cat([x, t, condition], -1)
         x = self.affine_in(x)
         x = self.ln_resnet(x)
 
@@ -87,7 +88,7 @@ class NewIDQLMlp(BaseNNDiffusion):
 
     def forward(self,
                 x: torch.Tensor, noise: torch.Tensor,
-                condition: torch.Tensor = None):
+                condition: torch.Tensor):
         """
         Input:
             x:          (b, act_dim)
@@ -97,9 +98,10 @@ class NewIDQLMlp(BaseNNDiffusion):
         Output:
             y:          (b, act_dim)
         """
+        assert condition is not None
+
         t = self.time_mlp(self.map_noise(noise))
-        x = torch.cat([x, t, condition], -1) \
-            if condition is not None else torch.cat([x, t], -1)
+        x = torch.cat([x, t, condition], -1)
         x = self.affine_in(x)
         x = self.ln_resnet(x)
 

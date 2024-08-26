@@ -12,7 +12,6 @@ outputs/
 datasets/
 dev/
 .idea/
-tests/
 test.py
 test.sh
 logs2/

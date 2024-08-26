@@ -49,6 +49,9 @@ class PearceMlp(BaseNNDiffusion):
             FCBlock(hidden_dim + act_dim + 1, hidden_dim),
             nn.Linear(hidden_dim + act_dim + 1, act_dim)])
 
+        self.To = To
+        self.emb_dim = emb_dim
+
     def forward(self,
                 x: torch.Tensor, noise: torch.Tensor,
                 condition: torch.Tensor = None):
@@ -67,7 +70,8 @@ class PearceMlp(BaseNNDiffusion):
         if condition is not None:
             nn1 = self.fcs[0](torch.cat([x_e, t_e, torch.flatten(condition, 1)], -1))
         else:
-            nn1 = self.fcs[0](torch.cat([x_e, t_e], -1))
+            condition = torch.zeros(x.shape[0], self.To, self.emb_dim)
+            nn1 = self.fcs[0](torch.cat([x_e, t_e, torch.flatten(condition, 1)], -1))
         nn2 = self.fcs[1](torch.cat([nn1 / 1.414, x, t], -1)) + nn1 / 1.414
         nn3 = self.fcs[2](torch.cat([nn2 / 1.414, x, t], -1)) + nn2 / 1.414
         out = self.fcs[3](torch.cat([nn3, x, t], -1))

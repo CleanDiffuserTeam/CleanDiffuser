@@ -95,8 +95,8 @@ def inference(args, envs, dataset, agent, logger):
         obs, t = envs.reset(), 0
 
         # initialize video stream
-        # if args.save_video:
-        #     logger.video_init(envs.envs[0], enable=True, video_id=str(i))  # save videos
+        if args.save_video:
+            logger.video_init(envs.envs[0], enable=True, video_id=str(i))  # save videos
 
         while t < args.max_episode_steps:
             obs_seq = obs.astype(np.float32)  # (num_envs, obs_steps, obs_dim)
@@ -126,7 +126,11 @@ def inference(args, envs, dataset, agent, logger):
             
             if args.abs_action:
                 action = dataset.undo_transform_action(action)
+            import time
+            time1 = time.time()
             obs, reward, done, info = envs.step(action)
+            time2 = time.time()
+            print(time2-time1)
             ep_reward += reward
             t += args.action_steps
         

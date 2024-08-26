@@ -53,7 +53,15 @@ class SfBCUNet(BaseNNDiffusion):
     def forward(self,
                 x: torch.Tensor, noise: torch.Tensor,
                 condition: Optional[torch.Tensor] = None):
+        """
+        Input:
+            x:          (b, horizon, act_dim)
+            noise:      (b, )
+            condition:  (b, emb_dim) or None / No condition indicates zeros((b, emb_dim))
 
+        Output:
+            y:          (b, horizon, act_dim)
+        """
         c = self.t_layer(self.map_noise(noise))
         if condition is not None:
             c += condition

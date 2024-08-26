@@ -163,6 +163,8 @@ class JannerUNet1d(BaseNNDiffusion):
         Output:
             y:          (b, horizon, in_dim)
         """
+        # check horizon dimension
+        assert x.shape[1] & (x.shape[1] - 1) == 0, "Ta dimension must be 2^n"
 
         x = x.permute(0, 2, 1)
 

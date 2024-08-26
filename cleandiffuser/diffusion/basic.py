@@ -70,8 +70,6 @@ class DiffusionModel:
         self.fix_mask = to_tensor(fix_mask, self.device)[None, ] if fix_mask is not None else 0.
         self.loss_weight = to_tensor(loss_weight, self.device)[None, ] if loss_weight is not None else 1.
 
-        # self.default_x_shape = fix_mask.shape if fix_mask != 0. else None
-
     def train(self):
         self.model.train()
         if self.classifier is not None:

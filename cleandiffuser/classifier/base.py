@@ -89,27 +89,3 @@ class BaseClassifier:
         self.model.load_state_dict(checkpoint["model"])
         self.model_ema.load_state_dict(checkpoint["model_ema"])
 
-
-
-# class CategoricalClassifier(BasicClassifier):
-#     """
-#     CategoricalClassifier is used for finite discrete conditional sets.
-#     In this case, the training of the classifier can be transformed into a classification task.
-#     """
-#     def __init__(self, nn_classifier: nn.Module):
-#         super().__init__()
-#
-#     def logp(self, x: torch.Tensor, t: torch.Tensor, c: torch.Tensor, scale: Union[torch.Tensor, float] = 1.) -> torch.Tensor:
-#         """
-#         Calculate logp(c|x_t / scale, t) for classifier-guidance.
-#
-#         Input:
-#             - x:         (batch, *x_shape)
-#             - t:         (batch, *t_shape)
-#             - c:         (batch, *c_shape)
-#             - scale      (batch, *x_shape) or float
-#
-#         Output:
-#             - logp(c|x / scale, t): (batch, 1)
-#         """
-#         raise NotImplementedError
