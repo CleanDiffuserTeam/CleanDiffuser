@@ -1,0 +1,4 @@
+env_name: "kitchen-mixed-v0"
+
+weight_temperature: 3.
+eta: 0.005

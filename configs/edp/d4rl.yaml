@@ -22,7 +22,7 @@ ckpt: latest
 num_envs: 50
 num_episodes: 3
 num_candidates: 50
-temperature: 1.0
+temperature: 0.5
 use_ema: True
 
 # hydra

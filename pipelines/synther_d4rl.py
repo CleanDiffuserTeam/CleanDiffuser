@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Dict
 
 import d4rl
 import gym
@@ -9,12 +10,16 @@ import torch.utils
 import torch.utils.data
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader
+from tqdm import tqdm
+import h5py
+import numpy as np
 
 from cleandiffuser.dataset.d4rl_antmaze_dataset import D4RLAntmazeTDDataset
 from cleandiffuser.dataset.d4rl_kitchen_dataset import D4RLKitchenTDDataset
 from cleandiffuser.dataset.d4rl_mujoco_dataset import D4RLMuJoCoTDDataset
 from cleandiffuser.diffusion import ContinuousDiffusionSDE
-from cleandiffuser.nn_diffusion import IDQLMlp
+from cleandiffuser.nn_diffusion import IDQLMlp, TransitionTransformer
+from cleandiffuser.utils import TD3BC
 
 
 class Transition_Wrapper(torch.utils.data.Dataset):
@@ -37,6 +42,28 @@ class Transition_Wrapper(torch.utils.data.Dataset):
         return {"x0": torch.cat([obs, next_obs, rew, act, tml], -1)}
 
 
+class Upsampling_Wrapper(torch.utils.data.Dataset):
+    def __init__(self, dataset: torch.utils.data.Dataset, upsampling_dataset: Dict[str, torch.Tensor]):
+        super().__init__()
+        self.dataset = dataset
+        self.obs = torch.cat([dataset.obs, upsampling_dataset["obs"]], 0)
+        self.next_obs = torch.cat(
+            [dataset.next_obs, upsampling_dataset["next_obs"]], 0)
+        self.act = torch.cat([dataset.act, upsampling_dataset["act"]], 0)
+        self.rew = torch.cat([dataset.rew, upsampling_dataset["rew"]], 0)
+        self.tml = torch.cat([dataset.tml, upsampling_dataset["tml"]], 0)
+        self.size = self.obs.shape[0]
+
+    def __len__(self):
+        return self.size
+
+    def __getattr__(self, name):
+        return getattr(self.dataset, name)
+
+    def __getitem__(self, idx):
+        return self.obs[idx], self.act[idx], self.rew[idx], self.next_obs[idx], self.tml[idx]
+
+
 @hydra.main(config_path="../configs/synther", config_name="d4rl", version_base=None)
 def pipeline(args):
 
@@ -45,6 +72,8 @@ def pipeline(args):
     env_name = args.task.env_name
     save_path = Path(__file__).parents[1] / \
         f"results/{args.pipeline_name}/{env_name}/"
+
+    device = f"cuda:{args.device_id}"
 
     # --- Create Dataset ---
     env = gym.make(env_name)
@@ -86,9 +115,11 @@ def pipeline(args):
     x_min[-1] = 0
 
     # --- Create Diffusion Model ---
-    nn_diffusion = IDQLMlp(
-        x_dim=x_dim, emb_dim=128, hidden_dim=1024, n_blocks=6, dropout=0.1,
-        timestep_emb_type="untrainable_fourier")
+    # nn_diffusion = IDQLMlp(
+    #     x_dim=x_dim, emb_dim=128, hidden_dim=1024, n_blocks=6, dropout=0.1,
+    #     timestep_emb_type="untrainable_fourier")
+    nn_diffusion = TransitionTransformer(
+        obs_dim, act_dim, 128, 256, 4, 2, "untrainable_fourier")
 
     # --- SynthER Training ---
     if args.mode == "synther_training":
@@ -116,9 +147,126 @@ def pipeline(args):
     elif args.mode == "dataset_upsampling":
 
         synther = ContinuousDiffusionSDE.load_from_checkpoint(
-            checkpoint_path=save_path / "synther-step=1000000.ckpt",
+            checkpoint_path=save_path / "synther-step=300000.ckpt",
             nn_diffusion=nn_diffusion, loss_weight=loss_weight, ema_rate=0.9999,
-            x_max=x_max, x_min=x_min)
+            x_max=x_max, x_min=x_min, map_location=device)
+        synther.eval()
+
+        ori_size = dataset.size
+        syn_size = 5000000 - ori_size
+        max_batch_size = 5000
+
+        syn_obs = torch.empty((syn_size, obs_dim))
+        syn_next_obs = torch.empty((syn_size, obs_dim))
+        syn_rew = torch.empty((syn_size, 1))
+        syn_act = torch.empty((syn_size, act_dim))
+        syn_tml = torch.empty((syn_size, 1))
+
+        print(f"Total dataset size: {ori_size + syn_size}")
+        print(f"Original dataset size: {ori_size}")
+        print(f"Synthetic dataset size: {syn_size}")
+        print(f"Batch size: {max_batch_size}")
+        print(f"Begin upsampling...")
+
+        prior, ptr = torch.zeros((max_batch_size, x_dim)), 0
+        for i in tqdm(range(0, syn_size, max_batch_size)):
+
+            batch_size = min(syn_size - i, max_batch_size)
+
+            transition, _ = synther.sample(
+                prior[:batch_size], solver=args.solver, n_samples=batch_size,
+                sample_steps=args.sampling_steps,
+                sample_step_schedule="quad_continuous")
+            transition.cpu()
+
+            syn_obs[ptr:ptr + batch_size] = transition[:, :obs_dim]
+            syn_next_obs[ptr:ptr + batch_size] = transition[:,
+                                                            obs_dim:2 * obs_dim]
+            syn_rew[ptr:ptr + batch_size] = transition[:,
+                                                       2 * obs_dim:2 * obs_dim + 1]
+            syn_act[ptr:ptr + batch_size] = transition[:,
+                                                       2 * obs_dim + 1:2 * obs_dim + 1 + act_dim]
+            syn_tml[ptr:ptr + batch_size] = transition[:, -1:]
+            ptr += batch_size
+
+        assert ptr == syn_size
+
+        upsampling_dataset = {
+            "obs": syn_obs,
+            "next_obs": syn_next_obs,
+            "rew": syn_rew,
+            "act": syn_act,
+            "tml": syn_tml, }
+
+        with h5py.File(save_path / "upsampling_dataset.hdf5", "w") as f:
+            for k, v in upsampling_dataset.items():
+                f.create_dataset(k, data=v.numpy())
+
+        print(
+            f"Upsampling done. Saved to {save_path / 'upsampling_dataset.hdf5'}")
+
+    elif args.mode == "td3bc_training":
+
+        with h5py.File(save_path / "upsampling_dataset.hdf5", "r") as f:
+            upsampling_dataset = {k: torch.tensor(v[:]) for k, v in f.items()}
+
+        td3bc = TD3BC(obs_dim, act_dim)
+
+        dataloader = DataLoader(
+            Upsampling_Wrapper(dataset, upsampling_dataset),
+            batch_size=256, shuffle=True, num_workers=4, persistent_workers=True)
+
+        callback = ModelCheckpoint(
+            dirpath=save_path, filename="td3bc-{step}",
+            every_n_train_steps=args.save_interval)
+
+        trainer = L.Trainer(
+            accelerator='gpu', devices=[args.device_id,],
+            max_steps=args.td3bc_training_steps, deterministic=True, log_every_n_steps=1000,
+            default_root_dir=save_path, callbacks=[callback])
+
+        trainer.fit(td3bc, dataloader)
+
+    elif args.mode == "inference":
+
+        td3bc = TD3BC.load_from_checkpoint(
+            checkpoint_path=save_path / "td3bc-step=800000.ckpt",
+            obs_dim=obs_dim, act_dim=act_dim)
+        td3bc.eval()
+
+        env_eval = gym.vector.make(args.task.env_name, args.num_envs)
+        normalizer = dataset.get_normalizer()
+        episode_rewards = []
+
+        for i in range(args.num_episodes):
+
+            obs, ep_reward, cum_done, t = env_eval.reset(), 0., 0., 0
+
+            while not np.all(cum_done) and t < 1000 + 1:
+                # normalize obs
+                obs = normalizer.normalize(obs)
+
+                # sample actions
+                act = td3bc.act(obs)
+
+                # step
+                obs, rew, done, info = env_eval.step(act)
+
+                t += 1
+                cum_done = done if cum_done is None else np.logical_or(
+                    cum_done, done)
+                ep_reward += (rew * (1 - cum_done)) if t < 1000 else rew
+                print(f'[t={t}] rew: {np.around((rew * (1 - cum_done)), 2)}')
+
+                if np.all(cum_done):
+                    break
+
+            episode_rewards.append(ep_reward)
+
+        episode_rewards = [
+            list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards]
+        episode_rewards = np.array(episode_rewards)
+        print(np.mean(episode_rewards, -1), np.std(episode_rewards, -1))
 
         pass
 

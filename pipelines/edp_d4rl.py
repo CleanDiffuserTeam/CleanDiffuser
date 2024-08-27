@@ -15,43 +15,14 @@ from torch.utils.data import DataLoader
 from cleandiffuser.dataset.d4rl_antmaze_dataset import D4RLAntmazeTDDataset
 from cleandiffuser.dataset.d4rl_kitchen_dataset import D4RLKitchenTDDataset
 from cleandiffuser.dataset.d4rl_mujoco_dataset import D4RLMuJoCoTDDataset
-from cleandiffuser.diffusion import DiscreteDiffusionSDE
-from cleandiffuser.nn_condition import MLPCondition, IdentityCondition
-from cleandiffuser.nn_diffusion import IDQLMlp, DQLMlp
+from cleandiffuser.diffusion import ContinuousDiffusionSDE
+from cleandiffuser.nn_condition import MLPCondition
+from cleandiffuser.nn_diffusion import IDQLMlp
 from cleandiffuser.utils import FreezeModules, loop_dataloader
-import torch.nn as nn
+from cleandiffuser.utils.iql import TwinQ
 
 
-class TwinQ(nn.Module):
-    def __init__(self, obs_dim, act_dim, hidden_dim: int = 256):
-        super().__init__()
-        self.Q1 = nn.Sequential(
-            nn.Linear(obs_dim + act_dim,
-                      hidden_dim), nn.LayerNorm(hidden_dim), nn.Tanh(),
-            nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(
-                hidden_dim), nn.Mish(),
-            nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(
-                hidden_dim), nn.Mish(),
-            nn.Linear(hidden_dim, 1))
-        self.Q2 = nn.Sequential(
-            nn.Linear(obs_dim + act_dim,
-                      hidden_dim), nn.LayerNorm(hidden_dim), nn.Tanh(),
-            nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(
-                hidden_dim), nn.Mish(),
-            nn.Linear(hidden_dim, hidden_dim), nn.LayerNorm(
-                hidden_dim), nn.Mish(),
-            nn.Linear(hidden_dim, 1))
-
-    def both(self, obs, act):
-        q1, q2 = self.Q1(torch.cat([obs, act], -1)
-                         ), self.Q2(torch.cat([obs, act], -1))
-        return q1, q2
-
-    def forward(self, obs, act):
-        return torch.min(*self.both(obs, act))
-
-
-@hydra.main(config_path="../configs/dql", config_name="d4rl", version_base=None)
+@hydra.main(config_path="../configs/edp", config_name="d4rl", version_base=None)
 def pipeline(args):
 
     L.seed_everything(args.seed, workers=True)
@@ -76,12 +47,9 @@ def pipeline(args):
     # --- Create Diffusion Model ---
     nn_diffusion = IDQLMlp(
         x_dim=act_dim, emb_dim=64, hidden_dim=256, n_blocks=3, dropout=0.0,
-        timestep_emb_type="positional")
+        timestep_emb_type="untrainable_fourier")
     nn_condition = MLPCondition(
         in_dim=obs_dim, out_dim=64, hidden_dims=[64, ], act=torch.nn.SiLU(), dropout=0.0)
-    # nn_diffusion = DQLMlp(
-    #     obs_dim, act_dim, emb_dim=64, timestep_emb_type="positional")
-    # nn_condition = IdentityCondition(0.0)
 
     critic = TwinQ(obs_dim, act_dim, hidden_dim=256).to(device)
     critic_target = deepcopy(critic).requires_grad_(False).eval().to(device)
@@ -90,7 +58,7 @@ def pipeline(args):
     if args.mode == "training":
 
         """
-        Unlike other pipelines, DQL training contains two coupled training steps:
+        Unlike other pipelines, EDP training contains two coupled training steps:
         (1) policy Q function update, and (2) diffusion BC with Q maximization.
         So it is not straightforward to use the standard pytorch-lightning trainer.
         We can instead manually train the diffusion model and the policy Q function,
@@ -110,9 +78,8 @@ def pipeline(args):
         diffusion loss, it causes instability when adding an additional
         Q maximization loss. So we use a smaller `ema_rate` here.
         """
-        actor = DiscreteDiffusionSDE(
+        actor = ContinuousDiffusionSDE(
             nn_diffusion, nn_condition, ema_rate=0.995,
-            diffusion_steps=args.sampling_steps,
             x_max=+1.0 * torch.ones((act_dim,)),
             x_min=-1.0 * torch.ones((act_dim,))).to(device)
 
@@ -166,7 +133,7 @@ def pipeline(args):
                     target_q = torch.min(
                         *critic_target.both(next_obs, next_act))
 
-            target_q = (rew + (1 - tml) * 0.99 * target_q).detach()
+            target_q = (rew + (1 - tml) * 0.99 * target_q)
 
             critic_td_loss = F.mse_loss(
                 q1, target_q) + F.mse_loss(q2, target_q)
@@ -188,16 +155,15 @@ def pipeline(args):
                 prior, solver=args.solver,
                 n_samples=256, sample_steps=args.sampling_steps,
                 condition_cfg=obs, w_cfg=1.0,
-                use_ema=False,
                 requires_grad=True)
 
             with FreezeModules([critic, ]):
                 q1_actor, q2_actor = critic.both(obs, new_act)
 
-            if np.random.uniform() > 0.5:
-                policy_q_loss = - q1_actor.mean() / q2_actor.abs().mean().detach()
+            if step % 2 == 0:
+                policy_q_loss = - q1_actor.mean() / q2_actor.abs().mean()
             else:
-                policy_q_loss = - q2_actor.mean() / q1_actor.abs().mean().detach()
+                policy_q_loss = - q2_actor.mean() / q1_actor.abs().mean()
 
             actor_loss = bc_loss + policy_q_loss * args.task.eta
 
@@ -208,15 +174,13 @@ def pipeline(args):
             log["bc_loss"] += bc_loss.item()
             log["policy_q_loss"] += policy_q_loss.item()
 
-            step += 1
-
             # --- EMA Update ---
             if step % args.ema_update_interval == 0:
-                if step >= 1000:
-                    actor.ema_update()
-                for param, target_param in zip(critic.parameters(), critic_target.parameters()):
-                    target_param.data.copy_(
-                        0.995 * param.data + (1 - 0.995) * target_param.data)
+                actor.ema_update()
+                for p, p_target in zip(critic.parameters(), critic_target.parameters()):
+                    p_target.data.copy_(0.995 * p_target.data + 0.005 * p.data)
+
+            step += 1
 
             if step % args.log_interval == 0:
                 log = {k: v / args.log_interval for k, v in log.items()}
@@ -233,87 +197,6 @@ def pipeline(args):
 
             if step >= args.training_steps:
                 break
-
-    elif args.mode == "inference":
-
-        num_envs = args.num_envs
-        num_episodes = args.num_episodes
-        num_candidates = args.num_candidates
-
-        critic.load_state_dict(torch.load(
-            save_path / f"critic_step={900000}.ckpt", map_location=device))
-        critic.eval()
-
-        actor = DiscreteDiffusionSDE(
-            nn_diffusion, nn_condition, ema_rate=0.995,
-            diffusion_steps=args.sampling_steps,
-            x_max=+1.0 * torch.ones((act_dim,)),
-            x_min=-1.0 * torch.ones((act_dim,))).to(device)
-        actor.load(save_path / f"actor_step={900000}.ckpt")
-        actor.eval()
-
-        env_eval = gym.vector.make(env_name, num_envs=num_envs)
-        normalizer = dataset.get_normalizer()
-        episode_rewards = []
-
-        prior = torch.zeros((num_envs * num_candidates, act_dim))
-        for i in range(num_episodes):
-
-            obs, ep_reward, all_done, t = env_eval.reset(), 0., False, 0
-
-            while not np.all(all_done) and t < 1000:
-
-                obs = torch.tensor(normalizer.normalize(
-                    obs), dtype=torch.float32, device=f"cuda:{args.device_id}")
-                obs = einops.repeat(obs, "b d -> (b k) d", k=num_candidates)
-
-                act, log = actor.sample(
-                    prior, solver=args.solver, n_samples=num_envs * num_candidates,
-                    sample_steps=args.sampling_steps,
-                    condition_cfg=obs, w_cfg=1.0)
-
-                with torch.no_grad():
-                    q = critic(obs, act)
-                    act = einops.rearrange(
-                        act, "(b k) d -> b k d", k=num_candidates)
-                    q = einops.rearrange(
-                        q, "(b k) 1 -> b k 1", k=num_candidates)
-                    w = torch.softmax(
-                        q * args.task.weight_temperature, dim=1)
-
-                    idx = torch.multinomial(
-                        w.squeeze(-1), num_samples=1).squeeze(-1)
-                    act = act[torch.arange(num_envs), idx].cpu().numpy()
-
-                obs, rew, done, _ = env_eval.step(act)
-
-                t += 1
-                done = np.logical_and(done, t < 1000)
-                all_done = np.logical_or(all_done, done)
-                if "kitchen" in env_name:
-                    ep_reward = np.clip(ep_reward + rew, 0., 4.)
-                    print(f'[t={t}] finished tasks: {np.around(ep_reward)}')
-                elif "antmaze" in env_name:
-                    ep_reward = np.clip(ep_reward + rew, 0., 1.)
-                    print(f'[t={t}] xy: {np.around(obs[:, :2], 2)}')
-                    print(f'[t={t}] reached goal: {np.around(ep_reward)}')
-                else:
-                    ep_reward += (rew * (1 - all_done))
-                    print(
-                        f'[t={t}] rew: {np.around((rew * (1 - all_done)), 2)}')
-
-                if np.all(all_done):
-                    break
-
-            episode_rewards.append(ep_reward)
-
-        episode_rewards = [
-            list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards]
-        episode_rewards = np.array(episode_rewards).mean(-1) * 100.
-        print(
-            f"Score: {episode_rewards.mean():.3f}±{episode_rewards.std():.3f}")
-
-        env_eval.close()
 
 
 if __name__ == "__main__":
