@@ -1,0 +1,4 @@
+env_name: "kitchen-partial-v0"
+dim_mult: [1, 2, 2, 2]
+w_cg: 0.01
+horizon: 32

@@ -1,0 +1,4 @@
+env_name: "antmaze-large-diverse-v2"
+target_return: 0.3
+w_cfg: 2.5
+horizon: 64

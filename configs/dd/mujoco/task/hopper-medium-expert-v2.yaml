@@ -1,0 +1,4 @@
+env_name: "hopper-medium-expert-v2"
+target_return: 0.95
+w_cfg: 1.2
+horizon: 32

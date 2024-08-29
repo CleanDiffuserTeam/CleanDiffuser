@@ -1,0 +1,4 @@
+env_name: "halfcheetah-medium-v2"
+target_return: 1.1
+w_cfg: 3.2
+horizon: 32

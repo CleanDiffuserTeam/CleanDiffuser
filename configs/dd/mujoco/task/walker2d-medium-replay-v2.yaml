@@ -1,0 +1,4 @@
+env_name: "walker2d-medium-replay-v2"
+target_return: 0.75
+w_cfg: 2.4
+horizon: 32

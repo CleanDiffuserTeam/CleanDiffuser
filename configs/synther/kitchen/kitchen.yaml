@@ -1,0 +1,37 @@
+defaults:
+  - _self_
+  - task: kitchen-mixed-v0
+
+pipeline_name: synther_d4rl_kitchen
+mode: inference
+seed: 0
+device: cuda:0
+
+# Actor
+solver: ddpm
+diffusion_steps: 128
+sampling_steps: 128
+predict_noise: True
+ema_rate: 0.999
+diffusion_learning_rate: 0.0003
+
+# Diffusion Training
+diffusion_gradient_steps: 200000
+batch_size: 256
+log_interval: 1000
+save_interval: 100000
+
+# RL Training
+rl_gradient_steps: 1000000
+
+# Inference
+ckpt: latest
+num_envs: 50
+num_episodes: 3
+use_ema: True
+
+# hydra
+hydra:
+  job:
+    chdir: false
+

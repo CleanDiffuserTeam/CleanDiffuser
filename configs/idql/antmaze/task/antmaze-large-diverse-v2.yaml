@@ -1,0 +1,3 @@
+env_name: "antmaze-large-diverse-v2"
+
+weight_temperature: 5.

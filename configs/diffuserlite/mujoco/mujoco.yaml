@@ -1,0 +1,52 @@
+defaults:
+  - _self_
+  - task: halfcheetah-medium-expert-v2
+
+pipeline_name: diffuserlite_d4rl_mujoco
+# R1: training -> inference (test_model: R1)
+# R2: training -> prepare_dataset -> reflow -> inference (test_model: R2)
+mode: training
+seed: 0
+device: cuda:0
+
+# Environment
+terminal_penalty: -100
+discount: 0.997
+
+# Network Architecture
+emb_dim: 256
+d_model: 256
+n_heads: 8
+depth: 2
+next_obs_loss_weight: 10.
+ema_rate: 0.9999
+
+# Training
+diffusion_gradient_steps: 1000000
+invdyn_gradient_steps: 1000000
+batch_size: 256
+log_interval: 1000
+save_interval: 200000
+
+# Reflow
+reflow_backbone_ckpt: latest
+cond_dataset_size: 1600000
+uncond_dataset_size: 400000
+dataset_prepare_batch_size: 5000
+dataset_prepare_sampling_steps: 20
+reflow_gradient_steps: 200000
+
+# Inference
+test_model: R1
+diffusion_ckpt: latest
+invdyn_ckpt: latest
+num_envs: 50
+num_episodes: 3
+temperature: 0.5
+use_ema: True
+
+# hydra
+hydra:
+  job:
+    chdir: false
+

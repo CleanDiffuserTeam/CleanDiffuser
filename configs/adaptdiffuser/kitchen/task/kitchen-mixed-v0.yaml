@@ -1,0 +1,5 @@
+env_name: "kitchen-mixed-v0"
+dim_mult: [1, 2, 2, 2]
+w_cg: 0.0001
+horizon: 32
+metric_value: 380

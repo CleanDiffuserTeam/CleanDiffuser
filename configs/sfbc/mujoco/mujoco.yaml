@@ -1,0 +1,52 @@
+defaults:
+  - _self_
+  - task: halfcheetah-medium-expert-v2
+
+pipeline_name: sfbc_d4rl_mujoco
+mode: bc_training
+seed: 0
+device: cuda:0
+
+# Environment
+discount: 0.99
+
+# Actor
+predict_noise: True
+ema_rate: 0.9999
+actor_learning_rate: 0.0003
+
+# Critic
+hidden_dim: 256
+
+# BC Training
+bc_gradient_steps: 1000000
+batch_size: 32
+log_interval: 1000
+save_interval: 100000
+
+# Critic Training
+critic_learning_rate: 0.001
+critic_gradient_steps: 50000
+eval_actor_ckpt: latest
+eval_actor_solver: ddpm
+eval_actor_sampling_steps: 5
+eval_actor_temperature: 1.0
+q_training_iters: 2
+monte_carlo_samples: 16
+weight_temperature: 20
+
+# Inference
+ckpt: latest
+solver: ddpm
+sampling_steps: 5
+num_envs: 50
+num_episodes: 3
+num_candidates: 50
+temperature: 1.0
+top_k_average: 4
+
+# hydra
+hydra:
+  job:
+    chdir: false
+

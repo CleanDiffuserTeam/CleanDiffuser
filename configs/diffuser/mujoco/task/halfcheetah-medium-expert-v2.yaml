@@ -1,0 +1,4 @@
+env_name: "halfcheetah-medium-expert-v2"
+dim_mult: [1, 4, 2]
+w_cg: 0.0001
+horizon: 4

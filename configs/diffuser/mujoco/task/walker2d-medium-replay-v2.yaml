@@ -1,0 +1,4 @@
+env_name: "walker2d-medium-replay-v2"
+dim_mult: [1, 2, 2, 2]
+w_cg: 0.01
+horizon: 32

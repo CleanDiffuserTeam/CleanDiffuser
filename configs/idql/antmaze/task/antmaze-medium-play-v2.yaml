@@ -1,0 +1,3 @@
+env_name: "antmaze-medium-play-v2"
+
+weight_temperature: 5.

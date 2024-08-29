@@ -1,0 +1,4 @@
+env_name: "hopper-medium-replay-v2"
+target_return: 0.6
+w_cfg: 6.0
+horizon: 32

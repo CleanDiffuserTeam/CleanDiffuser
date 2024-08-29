@@ -1,0 +1,5 @@
+env_name: "walker2d-medium-expert-v2"
+dim_mult: [1, 2, 2, 2]
+w_cg: 0.001
+horizon: 32
+metric_value: 4900
