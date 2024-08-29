@@ -96,7 +96,7 @@ class EarlyConvViTMultiViewImageCondition(BaseNNCondition):
         >>> batch, view, To, C, H, W, D = 4, 2, 1, 3, 64, 64, 9
         >>> nn_condition = EarlyConvViTMultiViewImageCondition(d_model=d_model, ...)
         >>> condition = {
-        ...     "image": torch.randn((batch, view, To, C, H, W)),
+        ...     "image": [torch.randn((batch, To, C, H, W)) for _ in range(view)],
         ...     "lowdim": torch.randn((batch, To, D)),}
         >>> nn_condition(condition).shape
         torch.Size([batch, d_model])
@@ -170,8 +170,9 @@ class EarlyConvViTMultiViewImageCondition(BaseNNCondition):
         return [self.patchifies[i](examples[i]).shape[1] for i in range(self.n_views)]
 
     def forward(self, condition: Dict[str, torch.Tensor], mask: Optional[torch.Tensor] = None):
-
-        b, v, t, c, h, w = condition["image"].shape
+        
+        v = len(condition["image"])
+        b, t, c, h, w = condition["image"][0].shape
 
         tokens = []
 
@@ -181,7 +182,7 @@ class EarlyConvViTMultiViewImageCondition(BaseNNCondition):
 
         for i in range(v):
             view_tokens = self.patchifies[i](
-                einops.rearrange(condition["image"][:, i], "b t c h w -> (b t) c h w"))
+                einops.rearrange(condition["image"][i], "b t c h w -> (b t) c h w"))
             view_tokens = (einops.rearrange(view_tokens, "(b t) n d -> b (t n) d", b=b)
                            + self.view_emb[i] + self.pos_emb[i])
             tokens.append(view_tokens)
@@ -192,6 +193,6 @@ class EarlyConvViTMultiViewImageCondition(BaseNNCondition):
 
         if self.mask_cache is None or tokens.shape[1] != self.mask_cache.shape[1]:
             self.mask_cache = torch.tril(
-                torch.ones(tokens.shape[1], tokens.shape[1], device=condition["image"].device), diagonal=0)
+                torch.ones(tokens.shape[1], tokens.shape[1], device=condition["lowdim"].device), diagonal=0)
 
         return self.tfm(tokens, self.mask_cache)[0][:, -1]
