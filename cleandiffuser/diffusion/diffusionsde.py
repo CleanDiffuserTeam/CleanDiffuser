@@ -3,20 +3,32 @@ from typing import Optional, Union, Callable, Dict
 import numpy as np
 import torch
 import torch.nn as nn
+import einops
 
 from cleandiffuser.classifier import BaseClassifier
 from cleandiffuser.nn_condition import BaseNNCondition
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
-from cleandiffuser.utils import TensorDict
 from cleandiffuser.utils import (
     at_least_ndim,
-    SUPPORTED_NOISE_SCHEDULES, SUPPORTED_DISCRETIZATIONS, SUPPORTED_SAMPLING_STEP_SCHEDULE)
+    TensorDict,
+    dict_apply,
+    concat_zeros,
+    SUPPORTED_NOISE_SCHEDULES,
+    SUPPORTED_DISCRETIZATIONS,
+    SUPPORTED_SAMPLING_STEP_SCHEDULE,
+)
 from .basic import DiffusionModel
 
 SUPPORTED_SOLVERS = [
-    "ddpm", "ddim",
-    "ode_dpmsolver_1", "ode_dpmsolver++_1", "ode_dpmsolver++_2M",
-    "sde_dpmsolver_1", "sde_dpmsolver++_1", "sde_dpmsolver++_2M", ]
+    "ddpm",
+    "ddim",
+    "ode_dpmsolver_1",
+    "ode_dpmsolver++_1",
+    "ode_dpmsolver++_2M",
+    "sde_dpmsolver_1",
+    "sde_dpmsolver++_1",
+    "sde_dpmsolver++_2M",
+]
 
 
 def epstheta_to_xtheta(x, alpha, sigma, eps_theta):
@@ -34,32 +46,25 @@ def xtheta_to_epstheta(x, alpha, sigma, x_theta):
 
 
 class BaseDiffusionSDE(DiffusionModel):
-
     def __init__(
-            self,
-
-            # ----------------- Neural Networks ----------------- #
-            nn_diffusion: BaseNNDiffusion,
-            nn_condition: Optional[BaseNNCondition] = None,
-
-            # ----------------- Masks ----------------- #
-            fix_mask: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
-            loss_weight: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
-
-            # ------------------ Plugins ---------------- #
-            classifier: Optional[BaseClassifier] = None,
-
-            # ------------------ Training Params ---------------- #
-            ema_rate: float = 0.995,
-
-            # ------------------- Diffusion Params ------------------- #
-            epsilon: float = 1e-3,
-            x_max: Optional[torch.Tensor] = None,
-            x_min: Optional[torch.Tensor] = None,
-            predict_noise: bool = True,
+        self,
+        # ----------------- Neural Networks ----------------- #
+        nn_diffusion: BaseNNDiffusion,
+        nn_condition: Optional[BaseNNCondition] = None,
+        # ----------------- Masks ----------------- #
+        fix_mask: Optional[torch.Tensor] = None,
+        loss_weight: Optional[torch.Tensor] = None,
+        # ------------------ Plugins ---------------- #
+        classifier: Optional[BaseClassifier] = None,
+        # ------------------ Training Params ---------------- #
+        ema_rate: float = 0.995,
+        # ------------------- Diffusion Params ------------------- #
+        epsilon: float = 1e-3,
+        x_max: Optional[torch.Tensor] = None,
+        x_min: Optional[torch.Tensor] = None,
+        predict_noise: bool = True,
     ):
-        super().__init__(
-            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate)
+        super().__init__(nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate)
 
         self.predict_noise = predict_noise
         self.epsilon = epsilon
@@ -76,8 +81,7 @@ class BaseDiffusionSDE(DiffusionModel):
 
     # ==================== Training: Score Matching ======================
 
-    def loss(self, x0, condition=None):
-
+    def loss(self, x0: torch.Tensor, condition: Optional[Union[torch.Tensor, TensorDict]] = None):
         xt, t, eps = self.add_noise(x0)
 
         condition = self.model["condition"](condition) if condition is not None else None
@@ -91,10 +95,7 @@ class BaseDiffusionSDE(DiffusionModel):
 
     # ==================== Sampling: Solving SDE/ODE ======================
 
-    def classifier_guidance(
-            self, xt, t, alpha, sigma,
-            model, condition=None, w: float = 1.0,
-            pred=None):
+    def classifier_guidance(self, xt, t, alpha, sigma, model, condition=None, w: float = 1.0, pred=None):
         """
         Guided Sampling CG:
         bar_eps = eps - w * sigma * grad
@@ -109,40 +110,75 @@ class BaseDiffusionSDE(DiffusionModel):
             if self.predict_noise:
                 pred = pred - w * sigma * grad
             else:
-                pred = pred + w * ((sigma ** 2) / alpha) * grad
+                pred = pred + w * ((sigma**2) / alpha) * grad
 
         return pred, log_p
 
     def classifier_free_guidance(
-            self, xt, t,
-            model, condition=None, w: float = 1.0,
-            pred=None, pred_uncond=None,
-            requires_grad: bool = False):
-        """
-        Guided Sampling CFG:
-        bar_eps = w * pred + (1 - w) * pred_uncond
-        bar_x0  = w * pred + (1 - w) * pred_uncond
+        self,
+        xt: torch.Tensor,
+        t: torch.Tensor,
+        model: BaseNNDiffusion,
+        condition: Optional[Union[torch.Tensor, TensorDict]] = None,
+        w: float = 0.0,
+        pred: Optional[torch.Tensor] = None,
+        pred_uncond: Optional[torch.Tensor] = None,
+        requires_grad: bool = False,
+    ):
+        """Classifier-Free Guided Sampling.
+
+        Add classifier-free guidance to the network prediction
+        (epsilon_theta for `predict_noise` and x0_theta for not `predict_noise`).
+
+        Args:
+            xt (torch.Tensor):
+                Noisy data at time `t`. (bs, *x_shape)
+            t (torch.Tensor):
+                Diffusion timestep. (bs, )
+            model (BaseNNDiffusion):
+                Diffusion model network backbone.
+            condition (Optional[Union[torch.Tensor, TensorDict]]):
+                CFG Condition. It is a tensor or a TensorDict that can be handled by `nn_condition`.
+                Defaults to None.
+            w (float):
+                Guidance strength. Defaults to 0.0.
+            pred (Optional[torch.Tensor]):
+                Network prediction at time `t` for conditioned model. Defaults to None.
+            pred_uncond (Optional[torch.Tensor]):
+                Network prediction at time `t` for unconditioned model. Defaults to None.
+            requires_grad (bool):
+                Whether to calculate gradients. Defaults to False.
+
+        Returns:
+            pred (torch.Tensor):
+                Prediction with classifier-free guidance. (bs, *x_shape)
         """
         with torch.set_grad_enabled(requires_grad):
-            if w != 0.0 and w != 1.0:
-                if pred is None or pred_uncond is None:
-                    b = xt.shape[0]
-                    repeat_dim = [2 if i == 0 else 1 for i in range(xt.dim())]
-                    condition = torch.cat([condition, torch.zeros_like(condition)], 0)
-                    pred_all = model["diffusion"](
-                        xt.repeat(*repeat_dim), t.repeat(2), condition)
-                    pred, pred_uncond = pred_all[:b], pred_all[b:]
-            elif w == 0.0:
-                pred = 0.
-                pred_uncond = model["diffusion"](xt, t, None)
-            else:
+            # fully conditioned prediction
+            if w == 1.0:
                 pred = model["diffusion"](xt, t, condition)
-                pred_uncond = 0.
+                pred_uncond = 0.0
 
-        if self.predict_noise or not self.predict_noise:
-            bar_pred = w * pred + (1 - w) * pred_uncond
-        else:
-            bar_pred = pred
+            # unconditioned prediction
+            elif w == 0.0:
+                pred = 0.0
+                pred_uncond = model["diffusion"](xt, t, None)
+
+            # classifier-free guidance
+            else:
+                if pred is None or pred_uncond is None:
+                    if isinstance(condition, dict):
+                        condition = dict_apply(condition, concat_zeros, dim=0)
+                    elif isinstance(condition, torch.Tensor):
+                        condition = concat_zeros(condition, dim=0)
+                    else:
+                        raise ValueError("Condition must be either Tensor or TensorDict.")
+
+                    pred_all = model["diffusion"](einops.repeat(xt, "b ... -> (2 b) ..."), t.repeat(2), condition)
+
+                    pred, pred_uncond = torch.chunk(pred_all, 2, dim=0)
+
+        bar_pred = w * pred + (1 - w) * pred_uncond
 
         return bar_pred
 
@@ -164,20 +200,25 @@ class BaseDiffusionSDE(DiffusionModel):
         return pred
 
     def guided_sampling(
-            self, xt, t, alpha, sigma,
-            model,
-            condition_cfg=None, w_cfg: float = 0.0,
-            condition_cg=None, w_cg: float = 0.0,
-            requires_grad: bool = False):
+        self,
+        xt: torch.Tensor,
+        t: torch.Tensor,
+        alpha: torch.Tensor,
+        sigma: torch.Tensor,
+        model: BaseNNDiffusion,
+        condition_cfg: Optional[Union[torch.Tensor, TensorDict]] = None,
+        w_cfg: float = 0.0,
+        condition_cg: Optional[Union[torch.Tensor, TensorDict]] = None,
+        w_cg: float = 0.0,
+        requires_grad: bool = False,
+    ):
         """
         One-step epsilon/x0 prediction with guidance.
         """
 
-        pred = self.classifier_free_guidance(
-            xt, t, model, condition_cfg, w_cfg, None, None, requires_grad)
+        pred = self.classifier_free_guidance(xt, t, model, condition_cfg, w_cfg, None, None, requires_grad)
 
-        pred, logp = self.classifier_guidance(
-            xt, t, alpha, sigma, model, condition_cg, w_cg, pred)
+        pred, logp = self.classifier_guidance(xt, t, alpha, sigma, model, condition_cg, w_cg, pred)
 
         return pred, logp
 
@@ -245,40 +286,42 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
     """
 
     def __init__(
-            self,
-
-            # ----------------- Neural Networks ----------------- #
-            nn_diffusion: BaseNNDiffusion,
-            nn_condition: Optional[BaseNNCondition] = None,
-
-            # ----------------- Masks ----------------- #
-            fix_mask: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
-            loss_weight: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
-
-            # ------------------ Plugins ---------------- #
-            # Add a classifier to enable classifier-guidance
-            classifier: Optional[BaseClassifier] = None,
-
-            # ------------------ Training Params ---------------- #
-            ema_rate: float = 0.995,
-
-            # ------------------- Diffusion Params ------------------- #
-            epsilon: float = 1e-3,
-            x_max: Optional[torch.Tensor] = None,
-            x_min: Optional[torch.Tensor] = None,
-            predict_noise: bool = True,
-
-            diffusion_steps: int = 1000,
-            discretization: Union[str, Callable] = "uniform",
-            noise_schedule: Union[str, Dict[str, Callable]] = "cosine",
-            noise_schedule_params: Optional[dict] = None,
+        self,
+        # ----------------- Neural Networks ----------------- #
+        nn_diffusion: BaseNNDiffusion,
+        nn_condition: Optional[BaseNNCondition] = None,
+        # ----------------- Masks ----------------- #
+        fix_mask: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
+        loss_weight: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
+        # ------------------ Plugins ---------------- #
+        # Add a classifier to enable classifier-guidance
+        classifier: Optional[BaseClassifier] = None,
+        # ------------------ Training Params ---------------- #
+        ema_rate: float = 0.995,
+        # ------------------- Diffusion Params ------------------- #
+        epsilon: float = 1e-3,
+        x_max: Optional[torch.Tensor] = None,
+        x_min: Optional[torch.Tensor] = None,
+        predict_noise: bool = True,
+        diffusion_steps: int = 1000,
+        discretization: Union[str, Callable] = "uniform",
+        noise_schedule: Union[str, Dict[str, Callable]] = "cosine",
+        noise_schedule_params: Optional[dict] = None,
     ):
         super().__init__(
-            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate,
-            epsilon, x_max, x_min, predict_noise)
+            nn_diffusion,
+            nn_condition,
+            fix_mask,
+            loss_weight,
+            classifier,
+            ema_rate,
+            epsilon,
+            x_max,
+            x_min,
+            predict_noise,
+        )
 
-        self.save_hyperparameters(ignore=[
-            "nn_diffusion", "nn_condition", "classifier"])
+        self.save_hyperparameters(ignore=["nn_diffusion", "nn_condition", "classifier"])
 
         self.diffusion_steps = diffusion_steps
 
@@ -302,7 +345,8 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
         if isinstance(noise_schedule, str):
             if noise_schedule in SUPPORTED_NOISE_SCHEDULES.keys():
                 alpha, sigma = SUPPORTED_NOISE_SCHEDULES[noise_schedule]["forward"](
-                    t_diffusion, **(noise_schedule_params or {}))
+                    t_diffusion, **(noise_schedule_params or {})
+                )
             else:
                 raise ValueError(f"Noise schedule {noise_schedule} is not supported.")
         elif isinstance(noise_schedule, dict):
@@ -315,13 +359,8 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
 
     # ==================== Training: Score Matching ======================
 
-    def add_noise(
-            self,
-            x0: torch.Tensor,
-            t: Optional[torch.Tensor] = None,
-            eps: Optional[torch.Tensor] = None
-    ):
-        """ Forward process of the diffusion model.
+    def add_noise(self, x0: torch.Tensor, t: Optional[torch.Tensor] = None, eps: Optional[torch.Tensor] = None):
+        """Forward process of the diffusion model.
 
         Args:
             x0: torch.Tensor,
@@ -347,38 +386,38 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
         alpha, sigma = at_least_ndim(self.alpha[t], x0.dim()), at_least_ndim(self.sigma[t], x0.dim())
 
         xt = alpha * x0 + sigma * eps
-        xt = (1. - self.fix_mask) * xt + self.fix_mask * x0
+        xt = (1.0 - self.fix_mask) * xt + self.fix_mask * x0
 
         return xt, t, eps
 
     # ==================== Sampling: Solving SDE/ODE ======================
 
     def sample(
-            self,
-            # ---------- the known fixed portion ---------- #
-            prior: torch.Tensor,
-            # ----------------- sampling ----------------- #
-            solver: str = "ddpm",
-            n_samples: int = 1,
-            sample_steps: int = 5,
-            sample_step_schedule: Union[str, Callable] = "uniform",
-            use_ema: bool = True,
-            temperature: float = 1.0,
-            # ------------------ guidance ------------------ #
-            condition_cfg=None,
-            mask_cfg=None,
-            w_cfg: float = 0.0,
-            condition_cg=None,
-            w_cg: float = 0.0,
-            # ----------- Diffusion-X sampling ----------
-            diffusion_x_sampling_steps: int = 0,
-            # ----------- Warm-Starting -----------
-            warm_start_reference: Optional[torch.Tensor] = None,
-            warm_start_forward_level: float = 0.3,
-            # ------------------ others ------------------ #
-            requires_grad: bool = False,
-            preserve_history: bool = False,
-            **kwargs,
+        self,
+        # ---------- the known fixed portion ---------- #
+        prior: torch.Tensor,
+        # ----------------- sampling ----------------- #
+        solver: str = "ddpm",
+        n_samples: int = 1,
+        sample_steps: int = 5,
+        sample_step_schedule: Union[str, Callable] = "uniform",
+        use_ema: bool = True,
+        temperature: float = 1.0,
+        # ------------------ guidance ------------------ #
+        condition_cfg=None,
+        mask_cfg=None,
+        w_cfg: float = 0.0,
+        condition_cg=None,
+        w_cg: float = 0.0,
+        # ----------- Diffusion-X sampling ----------
+        diffusion_x_sampling_steps: int = 0,
+        # ----------- Warm-Starting -----------
+        warm_start_reference: Optional[torch.Tensor] = None,
+        warm_start_forward_level: float = 0.3,
+        # ------------------ others ------------------ #
+        requires_grad: bool = False,
+        preserve_history: bool = False,
+        **kwargs,
     ):
         """Sampling.
 
@@ -434,7 +473,8 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
 
         # ===================== Initialization =====================
         log = {
-            "sample_history": np.empty((n_samples, sample_steps + 1, *prior.shape)) if preserve_history else None, }
+            "sample_history": np.empty((n_samples, sample_steps + 1, *prior.shape)) if preserve_history else None,
+        }
 
         model = self.model if not use_ema else self.model_ema
 
@@ -446,7 +486,7 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
         else:
             diffusion_steps = self.diffusion_steps
             xt = torch.randn_like(prior) * temperature
-        xt = xt * (1. - self.fix_mask) + prior * self.fix_mask
+        xt = xt * (1.0 - self.fix_mask) + prior * self.fix_mask
         if preserve_history:
             log["sample_history"][:, 0] = xt.cpu().numpy()
 
@@ -458,7 +498,8 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
         if isinstance(sample_step_schedule, str):
             if sample_step_schedule in SUPPORTED_SAMPLING_STEP_SCHEDULE.keys():
                 sample_step_schedule = SUPPORTED_SAMPLING_STEP_SCHEDULE[sample_step_schedule](
-                    diffusion_steps, sample_steps)
+                    diffusion_steps, sample_steps
+                )
             else:
                 raise ValueError(f"Sampling step schedule {sample_step_schedule} is not supported.")
         elif callable(sample_step_schedule):
@@ -479,13 +520,12 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
         # ===================== Denoising Loop ========================
         loop_steps = [1] * diffusion_x_sampling_steps + list(range(1, sample_steps + 1))
         for i in reversed(loop_steps):
-
             t = torch.full((n_samples,), sample_step_schedule[i], dtype=torch.long, device=self.device)
 
             # guided sampling
             pred, logp = self.guided_sampling(
-                xt, t, alphas[i], sigmas[i],
-                model, condition_vec_cfg, w_cfg, condition_vec_cg, w_cg, requires_grad)
+                xt, t, alphas[i], sigmas[i], model, condition_vec_cfg, w_cfg, condition_vec_cg, w_cg, requires_grad
+            )
 
             # clip the prediction
             pred = self.clip_prediction(pred, xt, alphas[i], sigmas[i])
@@ -496,14 +536,14 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
 
             # one-step update
             if solver == "ddpm":
-                xt = (
-                        (alphas[i - 1] / alphas[i]) * (xt - sigmas[i] * eps_theta) +
-                        (sigmas[i - 1] ** 2 - stds[i] ** 2 + 1e-8).sqrt() * eps_theta)
+                xt = (alphas[i - 1] / alphas[i]) * (xt - sigmas[i] * eps_theta) + (
+                    sigmas[i - 1] ** 2 - stds[i] ** 2 + 1e-8
+                ).sqrt() * eps_theta
                 if i > 1:
-                    xt += (stds[i] * torch.randn_like(xt))
+                    xt += stds[i] * torch.randn_like(xt)
 
             elif solver == "ddim":
-                xt = (alphas[i - 1] * ((xt - sigmas[i] * eps_theta) / alphas[i]) + sigmas[i - 1] * eps_theta)
+                xt = alphas[i - 1] * ((xt - sigmas[i] * eps_theta) / alphas[i]) + sigmas[i - 1] * eps_theta
 
             elif solver == "ode_dpmsolver_1":
                 xt = (alphas[i - 1] / alphas[i]) * xt - sigmas[i - 1] * torch.expm1(hs[i]) * eps_theta
@@ -521,30 +561,38 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
                     xt = (sigmas[i - 1] / sigmas[i]) * xt - alphas[i - 1] * torch.expm1(-hs[i]) * x_theta
 
             elif solver == "sde_dpmsolver_1":
-                xt = ((alphas[i - 1] / alphas[i]) * xt -
-                      2 * sigmas[i - 1] * torch.expm1(hs[i]) * eps_theta +
-                      sigmas[i - 1] * torch.expm1(2 * hs[i]).sqrt() * torch.randn_like(xt))
+                xt = (
+                    (alphas[i - 1] / alphas[i]) * xt
+                    - 2 * sigmas[i - 1] * torch.expm1(hs[i]) * eps_theta
+                    + sigmas[i - 1] * torch.expm1(2 * hs[i]).sqrt() * torch.randn_like(xt)
+                )
 
             elif solver == "sde_dpmsolver++_1":
-                xt = ((sigmas[i - 1] / sigmas[i]) * (-hs[i]).exp() * xt -
-                      alphas[i - 1] * torch.expm1(-2 * hs[i]) * x_theta +
-                      sigmas[i - 1] * (-torch.expm1(-2 * hs[i])).sqrt() * torch.randn_like(xt))
+                xt = (
+                    (sigmas[i - 1] / sigmas[i]) * (-hs[i]).exp() * xt
+                    - alphas[i - 1] * torch.expm1(-2 * hs[i]) * x_theta
+                    + sigmas[i - 1] * (-torch.expm1(-2 * hs[i])).sqrt() * torch.randn_like(xt)
+                )
 
             elif solver == "sde_dpmsolver++_2M":
                 buffer.append(x_theta)
                 if i < sample_steps:
                     r = hs[i + 1] / hs[i]
                     D = (1 + 0.5 / r) * buffer[-1] - 0.5 / r * buffer[-2]
-                    xt = ((sigmas[i - 1] / sigmas[i]) * (-hs[i]).exp() * xt -
-                          alphas[i - 1] * torch.expm1(-2 * hs[i]) * D +
-                          sigmas[i - 1] * (-torch.expm1(-2 * hs[i])).sqrt() * torch.randn_like(xt))
+                    xt = (
+                        (sigmas[i - 1] / sigmas[i]) * (-hs[i]).exp() * xt
+                        - alphas[i - 1] * torch.expm1(-2 * hs[i]) * D
+                        + sigmas[i - 1] * (-torch.expm1(-2 * hs[i])).sqrt() * torch.randn_like(xt)
+                    )
                 else:
-                    xt = ((sigmas[i - 1] / sigmas[i]) * (-hs[i]).exp() * xt -
-                          alphas[i - 1] * torch.expm1(-2 * hs[i]) * x_theta +
-                          sigmas[i - 1] * (-torch.expm1(-2 * hs[i])).sqrt() * torch.randn_like(xt))
+                    xt = (
+                        (sigmas[i - 1] / sigmas[i]) * (-hs[i]).exp() * xt
+                        - alphas[i - 1] * torch.expm1(-2 * hs[i]) * x_theta
+                        + sigmas[i - 1] * (-torch.expm1(-2 * hs[i])).sqrt() * torch.randn_like(xt)
+                    )
 
             # fix the known portion, and preserve the sampling history
-            xt = xt * (1. - self.fix_mask) + prior * self.fix_mask
+            xt = xt * (1.0 - self.fix_mask) + prior * self.fix_mask
             if preserve_history:
                 log["sample_history"][:, sample_steps - i + 1] = xt.cpu().numpy()
 
@@ -619,41 +667,43 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
     """
 
     def __init__(
-            self,
-
-            # ----------------- Neural Networks ----------------- #
-            nn_diffusion: BaseNNDiffusion,
-            nn_condition: Optional[BaseNNCondition] = None,
-
-            # ----------------- Masks ----------------- #
-            fix_mask: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
-            loss_weight: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
-
-            # ------------------ Plugins ---------------- #
-            # Add a classifier to enable classifier-guidance
-            classifier: Optional[BaseClassifier] = None,
-
-            # ------------------ Training Params ---------------- #
-            ema_rate: float = 0.995,
-
-            # ------------------- Diffusion Params ------------------- #
-            epsilon: float = 1e-3,
-            x_max: Optional[torch.Tensor] = None,
-            x_min: Optional[torch.Tensor] = None,
-            predict_noise: bool = True,
-
-            noise_schedule: Union[str, Dict[str, Callable]] = "cosine",
-            noise_schedule_params: Optional[dict] = None,
+        self,
+        # ----------------- Neural Networks ----------------- #
+        nn_diffusion: BaseNNDiffusion,
+        nn_condition: Optional[BaseNNCondition] = None,
+        # ----------------- Masks ----------------- #
+        fix_mask: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
+        loss_weight: Optional[torch.Tensor] = None,  # be in the shape of `x_shape`
+        # ------------------ Plugins ---------------- #
+        # Add a classifier to enable classifier-guidance
+        classifier: Optional[BaseClassifier] = None,
+        # ------------------ Training Params ---------------- #
+        ema_rate: float = 0.995,
+        # ------------------- Diffusion Params ------------------- #
+        epsilon: float = 1e-3,
+        x_max: Optional[torch.Tensor] = None,
+        x_min: Optional[torch.Tensor] = None,
+        predict_noise: bool = True,
+        noise_schedule: Union[str, Dict[str, Callable]] = "cosine",
+        noise_schedule_params: Optional[dict] = None,
     ):
         super().__init__(
-            nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate,
-            epsilon, x_max, x_min, predict_noise)
+            nn_diffusion,
+            nn_condition,
+            fix_mask,
+            loss_weight,
+            classifier,
+            ema_rate,
+            epsilon,
+            x_max,
+            x_min,
+            predict_noise,
+        )
 
-        self.save_hyperparameters(ignore=[
-            "nn_diffusion", "nn_condition", "classifier"])
+        self.save_hyperparameters(ignore=["nn_diffusion", "nn_condition", "classifier"])
 
         # ==================== Continuous Time-step Range ====================
-        self.t_diffusion = [epsilon, 1.]
+        self.t_diffusion = [epsilon, 1.0]
         if noise_schedule == "cosine":
             self.t_diffusion[1] = 0.9946
 
@@ -672,13 +722,8 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
 
     # ==================== Training: Score Matching ======================
 
-    def add_noise(
-            self,
-            x0: torch.Tensor,
-            t: Optional[torch.Tensor] = None,
-            eps: Optional[torch.Tensor] = None
-    ):
-        """ Forward process of the diffusion model.
+    def add_noise(self, x0: torch.Tensor, t: Optional[torch.Tensor] = None, eps: Optional[torch.Tensor] = None):
+        """Forward process of the diffusion model.
 
         Args:
             x0: torch.Tensor,
@@ -698,46 +743,48 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
             eps: torch.Tensor,
                 The noise. shape: (batch_size, *x_shape).
         """
-        t = t or (torch.rand((x0.shape[0],), device=self.device) *
-                  (self.t_diffusion[1] - self.t_diffusion[0]) + self.t_diffusion[0])
+        t = t or (
+            torch.rand((x0.shape[0],), device=self.device) * (self.t_diffusion[1] - self.t_diffusion[0])
+            + self.t_diffusion[0]
+        )
         eps = eps or torch.randn_like(x0)
 
         alpha, sigma = self.noise_schedule_funcs["forward"](t, **(self.noise_schedule_params or {}))
         alpha, sigma = at_least_ndim(alpha, x0.dim()), at_least_ndim(sigma, x0.dim())
 
         xt = alpha * x0 + sigma * eps
-        xt = (1. - self.fix_mask) * xt + self.fix_mask * x0
+        xt = (1.0 - self.fix_mask) * xt + self.fix_mask * x0
 
         return xt, t, eps
 
     # ==================== Sampling: Solving SDE/ODE ======================
 
     def sample(
-            self,
-            # ---------- the known fixed portion ---------- #
-            prior: torch.Tensor,
-            # ----------------- sampling ----------------- #
-            solver: str = "ddpm",
-            n_samples: int = 1,
-            sample_steps: int = 5,
-            sample_step_schedule: Union[str, Callable] = "uniform_continuous",
-            use_ema: bool = True,
-            temperature: float = 1.0,
-            # ------------------ guidance ------------------ #
-            condition_cfg=None,
-            mask_cfg=None,
-            w_cfg: float = 0.0,
-            condition_cg=None,
-            w_cg: float = 0.0,
-            # ----------- Diffusion-X sampling ----------
-            diffusion_x_sampling_steps: int = 0,
-            # ----------- Warm-Starting -----------
-            warm_start_reference: Optional[torch.Tensor] = None,
-            warm_start_forward_level: float = 0.3,
-            # ------------------ others ------------------ #
-            requires_grad: bool = False,
-            preserve_history: bool = False,
-            **kwargs,
+        self,
+        # ---------- the known fixed portion ---------- #
+        prior: torch.Tensor,
+        # ----------------- sampling ----------------- #
+        solver: str = "ddpm",
+        n_samples: int = 1,
+        sample_steps: int = 5,
+        sample_step_schedule: Union[str, Callable] = "uniform_continuous",
+        use_ema: bool = True,
+        temperature: float = 1.0,
+        # ------------------ guidance ------------------ #
+        condition_cfg=None,
+        mask_cfg=None,
+        w_cfg: float = 0.0,
+        condition_cg=None,
+        w_cg: float = 0.0,
+        # ----------- Diffusion-X sampling ----------
+        diffusion_x_sampling_steps: int = 0,
+        # ----------- Warm-Starting -----------
+        warm_start_reference: Optional[torch.Tensor] = None,
+        warm_start_forward_level: float = 0.3,
+        # ------------------ others ------------------ #
+        requires_grad: bool = False,
+        preserve_history: bool = False,
+        **kwargs,
     ):
         """Sampling.
 
@@ -793,23 +840,26 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
 
         # ===================== Initialization =====================
         log = {
-            "sample_history": np.empty((n_samples, sample_steps + 1, *prior.shape)) if preserve_history else None, }
+            "sample_history": np.empty((n_samples, sample_steps + 1, *prior.shape)) if preserve_history else None,
+        }
 
         model = self.model if not use_ema else self.model_ema
 
         prior = prior.to(self.device)
         if isinstance(warm_start_reference, torch.Tensor) and 0 < warm_start_forward_level < 1:
-            warm_start_forward_level = (self.t_diffusion[0] +
-                                        warm_start_forward_level * (self.t_diffusion[1] - self.t_diffusion[0]))
+            warm_start_forward_level = self.t_diffusion[0] + warm_start_forward_level * (
+                self.t_diffusion[1] - self.t_diffusion[0]
+            )
             fwd_alpha, fwd_sigma = self.noise_schedule_funcs["forward"](
                 torch.tensor([self.t_diffusion[1]], device=self.device) * warm_start_forward_level,
-                **(self.noise_schedule_params or {}))
+                **(self.noise_schedule_params or {}),
+            )
             xt = warm_start_reference * fwd_alpha + fwd_sigma * torch.randn_like(warm_start_reference)
             t_diffusion = [self.t_diffusion[0], warm_start_forward_level]
         else:
             xt = torch.randn_like(prior) * temperature
             t_diffusion = self.t_diffusion
-        xt = xt * (1. - self.fix_mask) + prior * self.fix_mask
+        xt = xt * (1.0 - self.fix_mask) + prior * self.fix_mask
         if preserve_history:
             log["sample_history"][:, 0] = xt.cpu().numpy()
 
@@ -820,8 +870,7 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
         # ===================== Sampling Schedule ====================
         if isinstance(sample_step_schedule, str):
             if sample_step_schedule in SUPPORTED_SAMPLING_STEP_SCHEDULE.keys():
-                sample_step_schedule = SUPPORTED_SAMPLING_STEP_SCHEDULE[sample_step_schedule](
-                    t_diffusion, sample_steps)
+                sample_step_schedule = SUPPORTED_SAMPLING_STEP_SCHEDULE[sample_step_schedule](t_diffusion, sample_steps)
             else:
                 raise ValueError(f"Sampling step schedule {sample_step_schedule} is not supported.")
         elif callable(sample_step_schedule):
@@ -830,7 +879,8 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
             raise ValueError("sample_step_schedule must be a callable or a string")
 
         alphas, sigmas = self.noise_schedule_funcs["forward"](
-            sample_step_schedule, **(self.noise_schedule_params or {}))
+            sample_step_schedule, **(self.noise_schedule_params or {})
+        )
         logSNRs = torch.log(alphas / sigmas)
         hs = torch.zeros_like(logSNRs)
         hs[1:] = logSNRs[:-1] - logSNRs[1:]  # hs[0] is not correctly calculated, but it will not be used.
@@ -842,13 +892,12 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
         # ===================== Denoising Loop ========================
         loop_steps = [1] * diffusion_x_sampling_steps + list(range(1, sample_steps + 1))
         for i in reversed(loop_steps):
-
             t = torch.full((n_samples,), sample_step_schedule[i], device=self.device)
 
             # guided sampling
             pred, logp = self.guided_sampling(
-                xt, t, alphas[i], sigmas[i],
-                model, condition_vec_cfg, w_cfg, condition_vec_cg, w_cg, requires_grad)
+                xt, t, alphas[i], sigmas[i], model, condition_vec_cfg, w_cfg, condition_vec_cg, w_cg, requires_grad
+            )
 
             # clip the prediction
             pred = self.clip_prediction(pred, xt, alphas[i], sigmas[i])
@@ -859,14 +908,14 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
 
             # one-step update
             if solver == "ddpm":
-                xt = (
-                        (alphas[i - 1] / alphas[i]) * (xt - sigmas[i] * eps_theta) +
-                        (sigmas[i - 1] ** 2 - stds[i] ** 2 + 1e-8).sqrt() * eps_theta)
+                xt = (alphas[i - 1] / alphas[i]) * (xt - sigmas[i] * eps_theta) + (
+                    sigmas[i - 1] ** 2 - stds[i] ** 2 + 1e-8
+                ).sqrt() * eps_theta
                 if i > 1:
-                    xt += (stds[i] * torch.randn_like(xt))
+                    xt += stds[i] * torch.randn_like(xt)
 
             elif solver == "ddim":
-                xt = (alphas[i - 1] * ((xt - sigmas[i] * eps_theta) / alphas[i]) + sigmas[i - 1] * eps_theta)
+                xt = alphas[i - 1] * ((xt - sigmas[i] * eps_theta) / alphas[i]) + sigmas[i - 1] * eps_theta
 
             elif solver == "ode_dpmsolver_1":
                 xt = (alphas[i - 1] / alphas[i]) * xt - sigmas[i - 1] * torch.expm1(hs[i]) * eps_theta
@@ -884,35 +933,43 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
                     xt = (sigmas[i - 1] / sigmas[i]) * xt - alphas[i - 1] * torch.expm1(-hs[i]) * x_theta
 
             elif solver == "sde_dpmsolver_1":
-                xt = ((alphas[i - 1] / alphas[i]) * xt -
-                      2 * sigmas[i - 1] * torch.expm1(hs[i]) * eps_theta +
-                      sigmas[i - 1] * torch.expm1(2 * hs[i]).sqrt() * torch.randn_like(xt))
+                xt = (
+                    (alphas[i - 1] / alphas[i]) * xt
+                    - 2 * sigmas[i - 1] * torch.expm1(hs[i]) * eps_theta
+                    + sigmas[i - 1] * torch.expm1(2 * hs[i]).sqrt() * torch.randn_like(xt)
+                )
 
             elif solver == "sde_dpmsolver++_1":
-                xt = ((sigmas[i - 1] / sigmas[i]) * (-hs[i]).exp() * xt -
-                      alphas[i - 1] * torch.expm1(-2 * hs[i]) * x_theta +
-                      sigmas[i - 1] * (-torch.expm1(-2 * hs[i])).sqrt() * torch.randn_like(xt))
+                xt = (
+                    (sigmas[i - 1] / sigmas[i]) * (-hs[i]).exp() * xt
+                    - alphas[i - 1] * torch.expm1(-2 * hs[i]) * x_theta
+                    + sigmas[i - 1] * (-torch.expm1(-2 * hs[i])).sqrt() * torch.randn_like(xt)
+                )
 
             elif solver == "sde_dpmsolver++_2M":
                 buffer.append(x_theta)
                 if i < sample_steps:
                     r = hs[i + 1] / hs[i]
                     D = (1 + 0.5 / r) * buffer[-1] - 0.5 / r * buffer[-2]
-                    xt = ((sigmas[i - 1] / sigmas[i]) * (-hs[i]).exp() * xt -
-                          alphas[i - 1] * torch.expm1(-2 * hs[i]) * D +
-                          sigmas[i - 1] * (-torch.expm1(-2 * hs[i])).sqrt() * torch.randn_like(xt))
+                    xt = (
+                        (sigmas[i - 1] / sigmas[i]) * (-hs[i]).exp() * xt
+                        - alphas[i - 1] * torch.expm1(-2 * hs[i]) * D
+                        + sigmas[i - 1] * (-torch.expm1(-2 * hs[i])).sqrt() * torch.randn_like(xt)
+                    )
                 else:
-                    xt = ((sigmas[i - 1] / sigmas[i]) * (-hs[i]).exp() * xt -
-                          alphas[i - 1] * torch.expm1(-2 * hs[i]) * x_theta +
-                          sigmas[i - 1] * (-torch.expm1(-2 * hs[i])).sqrt() * torch.randn_like(xt))
+                    xt = (
+                        (sigmas[i - 1] / sigmas[i]) * (-hs[i]).exp() * xt
+                        - alphas[i - 1] * torch.expm1(-2 * hs[i]) * x_theta
+                        + sigmas[i - 1] * (-torch.expm1(-2 * hs[i])).sqrt() * torch.randn_like(xt)
+                    )
 
             # fix the known portion, and preserve the sampling history
-            xt = xt * (1. - self.fix_mask) + prior * self.fix_mask
+            xt = xt * (1.0 - self.fix_mask) + prior * self.fix_mask
             if preserve_history:
                 log["sample_history"][:, sample_steps - i + 1] = xt.cpu().numpy()
 
         # ================= Post-processing =================
-        if self.classifier is not None and w_cg != 0.:
+        if self.classifier is not None and w_cg != 0.0:
             with torch.no_grad():
                 t = torch.zeros((n_samples,), dtype=torch.long, device=self.device)
                 logp = self.classifier.logp(xt, t, condition_vec_cg)

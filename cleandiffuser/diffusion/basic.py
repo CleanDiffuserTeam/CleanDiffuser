@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Optional
+from typing import Optional, Union
 
 import pytorch_lightning as L
 import torch
@@ -8,6 +8,7 @@ import torch.nn as nn
 from cleandiffuser.classifier import BaseClassifier
 from cleandiffuser.nn_condition import BaseNNCondition, IdentityCondition
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
+from cleandiffuser.utils import TensorDict
 
 
 class DiffusionModel(L.LightningModule):
@@ -64,7 +65,7 @@ class DiffusionModel(L.LightningModule):
     def ema_update(self):
         """Update the EMA model."""
         with torch.no_grad():
-            for p, p_ema in zip(self.model.parameters(), self.model_ema.parameters(), strict=True):
+            for p, p_ema in zip(self.model.parameters(), self.model_ema.parameters()):
                 p_ema.data.mul_(self.ema_rate).add_(p.data, alpha=1.0 - self.ema_rate)
 
     @staticmethod
@@ -92,12 +93,12 @@ class DiffusionModel(L.LightningModule):
         """
         return x0, t, eps
 
-    def loss(self, x0: torch.Tensor, condition: Optional[torch.Tensor] = None):
+    def loss(self, x0: torch.Tensor, condition: Optional[Union[torch.Tensor, TensorDict]] = None):
         """Loss function.
 
         Args:
-            x0 (torch.Tensor): Clean data.
-            condition (Optional[torch.Tensor]): CFG Condition. Defaults to None.
+            x0 (torch.Tensor): Clean data sampled from the target distribution.
+            condition (Optional[Union[torch.Tensor, TensorDict]]): CFG Condition. Defaults to None.
 
         Returns:
             loss (torch.Tensor): Loss value.

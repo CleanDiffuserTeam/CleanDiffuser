@@ -9,7 +9,7 @@ import torch.nn as nn
 
 
 def set_seed(seed: int):
-    """ Set seed for reproducibility """
+    """Set seed for reproducibility"""
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
     np.random.seed(seed)
@@ -19,7 +19,7 @@ def set_seed(seed: int):
 
 
 def at_least_ndim(x: Union[np.ndarray, torch.Tensor, int, float], ndim: int, pad: int = 0):
-    """ Add dimensions to the input tensor to make it at least ndim-dimensional.
+    """Add dimensions to the input tensor to make it at least ndim-dimensional.
 
     Args:
         x: Union[np.ndarray, torch.Tensor, int, float], input tensor
@@ -74,6 +74,19 @@ def to_tensor(x, device=None):
         raise ValueError(f"Unsupported type {type(x)}")
 
 
+def concat_zeros(x: torch.Tensor, dim: int = 0):
+    """Concatenate zeros to the tensor.
+
+    Args:
+        x (torch.Tensor): input tensor
+        dim (int): concatenate dimension. Default: 0
+
+    Returns:
+        torch.Tensor: output tensor
+    """
+    return torch.cat([x, torch.zeros_like(x)], dim=dim)
+
+
 def linear_beta_schedule(beta_min: float = 1e-4, beta_max: float = 0.02, T: int = 1000):
     return np.linspace(beta_min, beta_max, T)
 
@@ -89,19 +102,16 @@ def cosine_beta_schedule(s: float = 0.008, T: int = 1000):
 def uniform_discretization(T: int = 1000, eps: float = 1e-3):
     return torch.linspace(eps, 1.0, T)
 
+
 def quad_discretization(T: int = 1000, eps: float = 1e-3, n: float = 1.5):
     return (1 - eps) * torch.linspace(0, 1, T) ** n + eps
 
-SUPPORTED_DISCRETIZATIONS = {
-    "uniform": uniform_discretization,
-    "quad": quad_discretization
-}
+
+SUPPORTED_DISCRETIZATIONS = {"uniform": uniform_discretization, "quad": quad_discretization}
 
 
 # ================= Noise schedules =================
-def linear_noise_schedule(
-    t_diffusion: torch.Tensor, beta0: float = 0.1, beta1: float = 20.0
-):
+def linear_noise_schedule(t_diffusion: torch.Tensor, beta0: float = 0.1, beta1: float = 20.0):
     log_alpha = -(beta1 - beta0) / 4.0 * (t_diffusion**2) - beta0 / 2.0 * t_diffusion
     alpha = log_alpha.exp()
     sigma = (1.0 - alpha**2).sqrt()
@@ -117,15 +127,15 @@ def inverse_linear_noise_schedule(
 ):
     assert (logSNR is not None) or (alpha is not None and sigma is not None)
     lmbda = (alpha / sigma).log() if logSNR is None else logSNR
-    t_diffusion = (2 * (1 + (-2 * lmbda).exp()).log() /
-                   (beta0 + (beta0**2 + 2 * (beta1 - beta0) * (1 + (-2 * lmbda).exp()).log())))
+    t_diffusion = (
+        2 * (1 + (-2 * lmbda).exp()).log() / (beta0 + (beta0**2 + 2 * (beta1 - beta0) * (1 + (-2 * lmbda).exp()).log()))
+    )
     return t_diffusion
 
 
 def cosine_noise_schedule(t_diffusion: torch.Tensor, s: float = 0.008):
     t_diffusion[-1] = 0.9946
-    alpha = (np.pi / 2.0 * (t_diffusion + s) / (1 + s)).cos() / np.cos(
-        np.pi / 2.0 * s / (1 + s))
+    alpha = (np.pi / 2.0 * (t_diffusion + s) / (1 + s)).cos() / np.cos(np.pi / 2.0 * s / (1 + s))
     sigma = (1.0 - alpha**2).sqrt()
     return alpha, sigma
 
@@ -139,9 +149,12 @@ def inverse_cosine_noise_schedule(
     assert (logSNR is not None) or (alpha is not None and sigma is not None)
     lmbda = (alpha / sigma).log() if logSNR is None else logSNR
     t_diffusion = (
-        2 * (1 + s) / np.pi * torch.arccos((
-            -0.5 * (1 + (-2 * lmbda).exp()).log()
-            + np.log(np.cos(np.pi * s / 2 / (s + 1)))).exp()) - s)
+        2
+        * (1 + s)
+        / np.pi
+        * torch.arccos((-0.5 * (1 + (-2 * lmbda).exp()).log() + np.log(np.cos(np.pi * s / 2 / (s + 1)))).exp())
+        - s
+    )
     return t_diffusion
 
 
@@ -169,54 +182,43 @@ def uniform_sampling_step_schedule_continuous(trange=None, sampling_steps: int =
 
 
 def quad_sampling_step_schedule(T: int = 1000, sampling_steps: int = 10, n: int = 1.5):
-    schedule = (T - 1) * (
-        torch.linspace(0, 1, sampling_steps + 1, dtype=torch.float32) ** n)
+    schedule = (T - 1) * (torch.linspace(0, 1, sampling_steps + 1, dtype=torch.float32) ** n)
     return schedule.to(torch.long)
 
 
-def quad_sampling_step_schedule_continuous(
-    trange=None, sampling_steps: int = 10, n: int = 1.5
-):
+def quad_sampling_step_schedule_continuous(trange=None, sampling_steps: int = 10, n: int = 1.5):
     if trange is None:
         trange = [1e-3, 1.0]
-    schedule = (trange[1] - trange[0]) * (
-        torch.linspace(0, 1, sampling_steps + 1, dtype=torch.float32) ** n
-    ) + trange[0]
+    schedule = (trange[1] - trange[0]) * (torch.linspace(0, 1, sampling_steps + 1, dtype=torch.float32) ** n) + trange[
+        0
+    ]
     return schedule
 
 
-def cat_cos_sampling_step_schedule(
-    T: int = 1000, sampling_steps: int = 10, n: int = 2.0
-):
+def cat_cos_sampling_step_schedule(T: int = 1000, sampling_steps: int = 10, n: int = 2.0):
     idx = torch.linspace(0, 1, sampling_steps + 1, dtype=torch.float32)
-    idx = (0.5 * (2 * (idx > 0.5) - 1) * torch.sin(np.pi * torch.abs(idx - 0.5)) ** (1 / n) + 0.5)
+    idx = 0.5 * (2 * (idx > 0.5) - 1) * torch.sin(np.pi * torch.abs(idx - 0.5)) ** (1 / n) + 0.5
     schedule = (T - 1) * idx
     return schedule.to(torch.long)
 
 
-def cat_cos_sampling_step_schedule_continuous(
-    trange=None, sampling_steps: int = 10, n: int = 2.0
-):
+def cat_cos_sampling_step_schedule_continuous(trange=None, sampling_steps: int = 10, n: int = 2.0):
     if trange is None:
         trange = [1e-3, 1.0]
     idx = torch.linspace(0, 1, sampling_steps + 1, dtype=torch.float32)
-    idx = (0.5 * (2 * (idx > 0.5) - 1) * torch.sin(np.pi * torch.abs(idx - 0.5)) ** (1 / n) + 0.5)
+    idx = 0.5 * (2 * (idx > 0.5) - 1) * torch.sin(np.pi * torch.abs(idx - 0.5)) ** (1 / n) + 0.5
     schedule = (trange[1] - trange[0]) * idx + trange[0]
     return schedule
 
 
-def quad_cos_sampling_step_schedule(
-    T: int = 1000, sampling_steps: int = 10, n: int = 2.0
-):
+def quad_cos_sampling_step_schedule(T: int = 1000, sampling_steps: int = 10, n: int = 2.0):
     idx = torch.linspace(0, 1, sampling_steps + 1, dtype=torch.float32)
     idx = ((torch.sin(np.pi * (idx - 0.5)) + 1) / 2) ** n
     schedule = (T - 1) * idx
     return schedule.to(torch.long)
 
 
-def quad_cos_sampling_step_schedule_continuous(
-    trange=None, sampling_steps: int = 10, n: int = 2.0
-):
+def quad_cos_sampling_step_schedule_continuous(trange=None, sampling_steps: int = 10, n: int = 2.0):
     if trange is None:
         trange = [1e-3, 1.0]
     idx = torch.linspace(0, 1, sampling_steps + 1, dtype=torch.float32)
@@ -257,9 +259,7 @@ class PositionalEmbedding(nn.Module):
         self.endpoint = endpoint
 
     def forward(self, x):
-        freqs = torch.arange(
-            start=0, end=self.dim // 2, dtype=torch.float32, device=x.device
-        )
+        freqs = torch.arange(start=0, end=self.dim // 2, dtype=torch.float32, device=x.device)
         freqs = freqs / (self.dim // 2 - (1 if self.endpoint else 0))
         freqs = (1 / self.max_positions) ** freqs
         x = x.ger(freqs.to(x.dtype))
@@ -275,11 +275,10 @@ class UntrainablePositionalEmbedding(nn.Module):
         self.endpoint = endpoint
 
     def forward(self, x):
-        freqs = torch.arange(
-            start=0, end=self.dim // 2, dtype=torch.float32, device=x.device)
+        freqs = torch.arange(start=0, end=self.dim // 2, dtype=torch.float32, device=x.device)
         freqs = freqs / (self.dim // 2 - (1 if self.endpoint else 0))
         freqs = (1 / self.max_positions) ** freqs
-        x = torch.einsum('...i,j->...ij', x, freqs.to(x.dtype))
+        x = torch.einsum("...i,j->...ij", x, freqs.to(x.dtype))
         # x = x.ger(freqs.to(x.dtype))
         x = torch.cat([x.cos(), x.sin()], dim=1)
         return x
@@ -297,7 +296,7 @@ class SinusoidalEmbedding(nn.Module):
         half_dim = self.dim // 2
         emb = math.log(10000) / (half_dim - 1)
         emb = torch.exp(torch.arange(half_dim, device=device) * -emb)
-        emb = torch.einsum('...i,j->...ij', x, emb.to(x.dtype))
+        emb = torch.einsum("...i,j->...ij", x, emb.to(x.dtype))
         # emb = x[:, None] * emb[None, :]
         emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
         return emb
@@ -309,12 +308,10 @@ class FourierEmbedding(nn.Module):
     def __init__(self, dim: int, scale=16):
         super().__init__()
         self.freqs = nn.Parameter(torch.randn(dim // 8) * scale, requires_grad=False)
-        self.mlp = nn.Sequential(
-            nn.Linear(dim // 4, dim), nn.Mish(), nn.Linear(dim, dim)
-        )
+        self.mlp = nn.Sequential(nn.Linear(dim // 4, dim), nn.Mish(), nn.Linear(dim, dim))
 
     def forward(self, x: torch.Tensor):
-        emb = torch.einsum('...i,j->...ij', x, (2 * np.pi * self.freqs).to(x.dtype))
+        emb = torch.einsum("...i,j->...ij", x, (2 * np.pi * self.freqs).to(x.dtype))
         # emb = x.ger((2 * np.pi * self.freqs).to(x.dtype))
         emb = torch.cat([emb.cos(), emb.sin()], -1)
         return self.mlp(emb)
@@ -326,7 +323,7 @@ class UntrainableFourierEmbedding(nn.Module):
         self.freqs = nn.Parameter(torch.randn(dim // 2) * scale, requires_grad=False)
 
     def forward(self, x: torch.Tensor):
-        emb = torch.einsum('...i,j->...ij', x, (2 * np.pi * self.freqs).to(x.dtype))
+        emb = torch.einsum("...i,j->...ij", x, (2 * np.pi * self.freqs).to(x.dtype))
         # emb = x.ger((2 * np.pi * self.freqs).to(x.dtype))
         emb = torch.cat([emb.cos(), emb.sin()], -1)
         return emb
@@ -466,10 +463,7 @@ class TrainModules:
             module.train(self.original_status[id(module)])
 
 
-def dict_apply(
-        x: Dict[str, torch.Tensor],
-        func: Callable[[torch.Tensor], torch.Tensor]
-) -> Dict[str, torch.Tensor]:
+def dict_apply(x: Dict[str, torch.Tensor], func: Callable[[torch.Tensor], torch.Tensor], **kwargs):
     result = dict()
     for key, value in x.items():
         if isinstance(value, dict):
@@ -477,7 +471,7 @@ def dict_apply(
         elif value is None:
             result[key] = None
         else:
-            result[key] = func(value)
+            result[key] = func(value, **kwargs)
     return result
 
 
