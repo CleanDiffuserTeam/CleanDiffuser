@@ -262,7 +262,7 @@ class PositionalEmbedding(nn.Module):
         freqs = torch.arange(start=0, end=self.dim // 2, dtype=torch.float32, device=x.device)
         freqs = freqs / (self.dim // 2 - (1 if self.endpoint else 0))
         freqs = (1 / self.max_positions) ** freqs
-        x = x.ger(freqs.to(x.dtype))
+        x = x.ger(freqs)
         x = torch.cat([x.cos(), x.sin()], dim=1)
         return x
 
@@ -278,7 +278,7 @@ class UntrainablePositionalEmbedding(nn.Module):
         freqs = torch.arange(start=0, end=self.dim // 2, dtype=torch.float32, device=x.device)
         freqs = freqs / (self.dim // 2 - (1 if self.endpoint else 0))
         freqs = (1 / self.max_positions) ** freqs
-        x = torch.einsum("...i,j->...ij", x, freqs.to(x.dtype))
+        x = torch.einsum("...i,j->...ij", x, freqs)
         # x = x.ger(freqs.to(x.dtype))
         x = torch.cat([x.cos(), x.sin()], dim=1)
         return x
@@ -296,7 +296,7 @@ class SinusoidalEmbedding(nn.Module):
         half_dim = self.dim // 2
         emb = math.log(10000) / (half_dim - 1)
         emb = torch.exp(torch.arange(half_dim, device=device) * -emb)
-        emb = torch.einsum("...i,j->...ij", x, emb.to(x.dtype))
+        emb = torch.einsum("...i,j->...ij", x, emb)
         # emb = x[:, None] * emb[None, :]
         emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
         return emb
