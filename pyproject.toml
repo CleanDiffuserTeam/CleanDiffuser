@@ -59,3 +59,6 @@ local_scheme = "dirty-tag"
 
 [tool.setuptools.packages.find]
 include = ["cleandiffuser"]
+
+[tool.ruff]
+line-length = 120
