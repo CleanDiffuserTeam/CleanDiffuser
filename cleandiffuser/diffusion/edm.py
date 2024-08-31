@@ -139,21 +139,21 @@ class ContinuousEDM(DiffusionModel):
         """Forward process of the diffusion model.
 
         Args:
-            x0: torch.Tensor,
+            x0 (torch.Tensor):
                 Samples from the target distribution. shape: (batch_size, *x_shape)
-            t: torch.Tensor,
-                Discrete time steps for the diffusion process. shape: (batch_size,).
-                If `None`, randomly sample from Uniform(0, T).
-            eps: torch.Tensor,
+            t (Optional[torch.Tensor]):
+                Continuous time steps for the diffusion process. shape: (batch_size,).
+                If `None`, randomly sample log(t) from Normal(`P_mean`, `P_std`).
+            eps (Optional[torch.Tensor]):
                 Noise for the diffusion process. shape: (batch_size, *x_shape).
                 If `None`, randomly sample from Normal(0, I).
 
         Returns:
-            xt: torch.Tensor,
+            xt (torch.Tensor):
                 The noisy samples. shape: (batch_size, *x_shape).
-            t: torch.Tensor,
-                The discrete time steps. shape: (batch_size,).
-            eps: torch.Tensor,
+            t (torch.Tensor):
+                The continuous time steps. shape: (batch_size,).
+            eps (torch.Tensor):
                 The noise. shape: (batch_size, *x_shape).
         """
         t = (torch.randn((x0.shape[0],), device=x0.device) * self.P_std + self.P_mean).exp() if t is None else t
@@ -248,12 +248,7 @@ class ContinuousEDM(DiffusionModel):
 
             else:
                 if pred is None or pred_uncond is None:
-                    if isinstance(condition, dict):
-                        condition = dict_apply(condition, concat_zeros, dim=0)
-                    elif isinstance(condition, torch.Tensor):
-                        condition = concat_zeros(condition, dim=0)
-                    else:
-                        raise ValueError("Condition must be either Tensor or TensorDict.")
+                    condition = dict_apply(condition, concat_zeros, dim=0)
 
                     pred_all = self.D(einops.repeat(xt, "b ... -> (2 b) ..."), t.repeat(2), condition)
 

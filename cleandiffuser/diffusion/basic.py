@@ -178,7 +178,7 @@ class DiffusionModel(L.LightningModule):
             log (dict),
                 The log dictionary.
         """
-        loss = self.loss(x0, condition_cfg)
+        loss = self.loss(x0, condition_cfg, **kwargs)
         loss.backward()
         self.optimizer.step()
         self.optimizer.zero_grad()
