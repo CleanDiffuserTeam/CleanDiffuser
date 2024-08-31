@@ -1,23 +1,24 @@
-from typing import Tuple, Optional, Dict
+from typing import Dict, List, Optional, Tuple, Union
 
 import einops
 import torch
 import torch.nn as nn
 
 from cleandiffuser.nn_condition import BaseNNCondition
-from cleandiffuser.utils import SinusoidalEmbedding, Transformer
+from cleandiffuser.utils import PositionalEmbedding, Transformer
 
 
 class SmallStem(nn.Module):
     def __init__(
-            self, patch_size: int = 16,
-            in_channels: int = 3,
-            channels_per_group: int = 16,
-            kernel_sizes: tuple = (3, 3, 3, 3),
-            strides: tuple = (2, 2, 2, 2),
-            features: tuple = (32, 64, 128, 256),
-            padding: tuple = (1, 1, 1, 1),
-            num_features: int = 256,
+        self,
+        patch_size: int = 16,
+        in_channels: int = 3,
+        channels_per_group: int = 16,
+        kernel_sizes: tuple = (3, 3, 3, 3),
+        strides: tuple = (2, 2, 2, 2),
+        features: tuple = (32, 64, 128, 256),
+        padding: tuple = (1, 1, 1, 1),
+        num_features: int = 256,
     ):
         super().__init__()
 
@@ -27,16 +28,16 @@ class SmallStem(nn.Module):
         for n, (k, s, f, p) in enumerate(zip(kernel_sizes, strides, features, padding)):
             cnn.append(
                 nn.Sequential(
-                    nn.Conv2d(
-                        in_channels if n == 0 else features[n - 1], f, k, s, p),
+                    nn.Conv2d(in_channels if n == 0 else features[n - 1], f, k, s, p),
                     nn.GroupNorm(f // channels_per_group, f),
-                    nn.ReLU()))
+                    nn.ReLU(),
+                )
+            )
         self.cnn = nn.Sequential(*cnn)
 
         self.patchify = nn.Conv2d(
-            features[-1], num_features,
-            kernel_size=patch_size // 16,
-            stride=patch_size // 16, padding=0)
+            features[-1], num_features, kernel_size=patch_size // 16, stride=patch_size // 16, padding=0
+        )
 
     def forward(self, x):
         x = self.cnn(x)
@@ -45,7 +46,7 @@ class SmallStem(nn.Module):
 
 
 class EarlyConvViTMultiViewImageCondition(BaseNNCondition):
-    """ Early-CNN Vision Transformer (ViT) for multi-view image condition.
+    """Early-CNN Vision Transformer (ViT) for multi-view image condition.
 
     A ViT model that uses a shallow CNN instead of a patchify layer to extract image tokens.
     This architecture is proposed in https://arxiv.org/pdf/2106.14881 and demonstrated to be
@@ -101,90 +102,98 @@ class EarlyConvViTMultiViewImageCondition(BaseNNCondition):
         >>> nn_condition(condition).shape
         torch.Size([batch, d_model])
     """
+
     def __init__(
-            self,
-            image_sz: Tuple[int] = (64, 64),
-            in_channels: Tuple[int] = (3, 3),
-            lowdim_sz: Optional[int] = None,
-            To: int = 1,
-
-            # Transformer parameters
-            d_model: int = 384,
-            nhead: int = 6,
-            num_layers: int = 2,
-            attn_dropout: float = 0.,
-            ffn_dropout: float = 0.,
-
-            # CNN parameters
-            patch_size: Tuple[int] = (16, 16),
-            channels_per_group: Tuple[int] = (16, 16),
-            kernel_sizes: Tuple[Tuple[int]] = ((3, 3, 3, 3), (3, 3, 3, 3)),
-            strides: Tuple[Tuple[int]] = ((2, 2, 2, 2), (2, 2, 2, 2)),
-            features: Tuple[Tuple[int]] = ((32, 64, 128, 256), (32, 64, 128, 256)),
-            padding: Tuple[Tuple[int]] = ((1, 1, 1, 1), (1, 1, 1, 1)),
+        self,
+        image_sz: Tuple[int] = (64, 64),
+        in_channels: Tuple[int] = (3, 3),
+        lowdim_sz: Optional[int] = None,
+        To: int = 1,
+        # Transformer parameters
+        d_model: int = 384,
+        nhead: int = 6,
+        num_layers: int = 2,
+        attn_dropout: float = 0.0,
+        ffn_dropout: float = 0.0,
+        # CNN parameters
+        patch_size: Tuple[int] = (16, 16),
+        channels_per_group: Tuple[int] = (16, 16),
+        kernel_sizes: Tuple[Tuple[int]] = ((3, 3, 3, 3), (3, 3, 3, 3)),
+        strides: Tuple[Tuple[int]] = ((2, 2, 2, 2), (2, 2, 2, 2)),
+        features: Tuple[Tuple[int]] = ((32, 64, 128, 256), (32, 64, 128, 256)),
+        padding: Tuple[Tuple[int]] = ((1, 1, 1, 1), (1, 1, 1, 1)),
     ):
         super().__init__()
 
         self.image_sz, self.in_channels = image_sz, in_channels
         self.n_views = len(image_sz)
 
-        self.patchifies = nn.ModuleList([
-            SmallStem(
-                patch_size=patch_size[i],
-                in_channels=in_channels[i],
-                channels_per_group=channels_per_group[i],
-                kernel_sizes=kernel_sizes[i],
-                strides=strides[i],
-                features=features[i],
-                padding=padding[i],
-                num_features=d_model) for i in range(self.n_views)])
+        self.patchifies = nn.ModuleList(
+            [
+                SmallStem(
+                    patch_size=patch_size[i],
+                    in_channels=in_channels[i],
+                    channels_per_group=channels_per_group[i],
+                    kernel_sizes=kernel_sizes[i],
+                    strides=strides[i],
+                    features=features[i],
+                    padding=padding[i],
+                    num_features=d_model,
+                )
+                for i in range(self.n_views)
+            ]
+        )
 
-        self.pos_emb = nn.ParameterList([
-            nn.Parameter(
-                SinusoidalEmbedding(d_model)(torch.arange(To * self.image_token_lens[i]))[None, :],
-                requires_grad=False)
-            for i in range(self.n_views)])
+        self.pos_emb = nn.ParameterList(
+            [
+                nn.Parameter(
+                    PositionalEmbedding(d_model)(torch.arange(To * self.image_token_lens[i]))[None, :],
+                    requires_grad=False,
+                )
+                for i in range(self.n_views)
+            ]
+        )
 
-        self.view_emb = nn.ParameterList([
-            nn.Parameter(
-                torch.zeros((1, 1, d_model)), requires_grad=True)
-            for _ in range(self.n_views)])
+        self.view_emb = nn.ParameterList(
+            [nn.Parameter(torch.randn((1, 1, d_model)), requires_grad=True) for _ in range(self.n_views)]
+        )
 
         self.lowdim_proj = nn.Linear(lowdim_sz, d_model) if lowdim_sz is not None else None
-        self.lowdim_emb = nn.Parameter(
-            torch.zeros((1, 1, d_model)), requires_grad=True) if lowdim_sz is not None else None
+        self.lowdim_emb = (
+            nn.Parameter(torch.randn((1, 1, d_model)), requires_grad=True) if lowdim_sz is not None else None
+        )
 
-        self.readout_emb = nn.Parameter(
-            torch.zeros((1, 1, d_model)), requires_grad=True)
+        self.readout_emb = nn.Parameter(torch.randn((1, 1, d_model)), requires_grad=True)
 
-        self.tfm = Transformer(
-            d_model, nhead, num_layers, 4, attn_dropout, ffn_dropout)
+        self.tfm = Transformer(d_model, nhead, num_layers, 4, attn_dropout, ffn_dropout)
 
         self.mask_cache = None
 
     @property
     def image_token_lens(self):
         examples = [
-            torch.randn((1, self.in_channels[i], self.image_sz[i], self.image_sz[i]))
-            for i in range(self.n_views)]
+            torch.randn((1, self.in_channels[i], self.image_sz[i], self.image_sz[i])) for i in range(self.n_views)
+        ]
         return [self.patchifies[i](examples[i]).shape[1] for i in range(self.n_views)]
 
-    def forward(self, condition: Dict[str, torch.Tensor], mask: Optional[torch.Tensor] = None):
-        
+    def forward(
+        self,
+        condition: Dict[str, Union[torch.Tensor, List[torch.Tensor]]],
+        mask: Optional[Dict[str, Union[torch.Tensor, List[torch.Tensor]]]] = None,
+    ):
         v = len(condition["image"])
         b, t, c, h, w = condition["image"][0].shape
 
         tokens = []
 
         if self.lowdim_proj is not None:
-            tokens.append(
-                self.lowdim_proj(condition["lowdim"]) + self.lowdim_emb)
+            tokens.append(self.lowdim_proj(condition["lowdim"]) + self.lowdim_emb)
 
         for i in range(v):
-            view_tokens = self.patchifies[i](
-                einops.rearrange(condition["image"][i], "b t c h w -> (b t) c h w"))
-            view_tokens = (einops.rearrange(view_tokens, "(b t) n d -> b (t n) d", b=b)
-                           + self.view_emb[i] + self.pos_emb[i])
+            view_tokens = self.patchifies[i](einops.rearrange(condition["image"][i], "b t c h w -> (b t) c h w"))
+            view_tokens = (
+                einops.rearrange(view_tokens, "(b t) n d -> b (t n) d", b=b) + self.view_emb[i] + self.pos_emb[i]
+            )
             tokens.append(view_tokens)
 
         tokens.append(self.readout_emb.repeat(b, 1, 1))
@@ -193,6 +202,22 @@ class EarlyConvViTMultiViewImageCondition(BaseNNCondition):
 
         if self.mask_cache is None or tokens.shape[1] != self.mask_cache.shape[1]:
             self.mask_cache = torch.tril(
-                torch.ones(tokens.shape[1], tokens.shape[1], device=condition["lowdim"].device), diagonal=0)
+                torch.ones(tokens.shape[1], tokens.shape[1], device=condition["lowdim"].device), diagonal=0
+            )
 
         return self.tfm(tokens, self.mask_cache)[0][:, -1]
+
+
+if __name__ == "__main__":
+    x = {
+        "image": [
+            torch.randn((1, 2, 3, 116, 116)),
+            torch.randn((1, 2, 3, 128, 128)),
+        ],
+        "lowdim": torch.randn((1, 2, 7)),
+    }
+
+    m = EarlyConvViTMultiViewImageCondition(image_sz=(116, 128), in_channels=(3, 3), lowdim_sz=7, To=2)
+
+    print(m(x).shape)
+    print(m.image_token_lens)

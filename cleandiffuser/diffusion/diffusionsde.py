@@ -1,22 +1,23 @@
-from typing import Optional, Union, Callable, Dict
+from typing import Callable, Dict, Optional, Union
 
+import einops
 import numpy as np
 import torch
 import torch.nn as nn
-import einops
 
 from cleandiffuser.classifier import BaseClassifier
 from cleandiffuser.nn_condition import BaseNNCondition
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
 from cleandiffuser.utils import (
-    at_least_ndim,
-    TensorDict,
-    dict_apply,
-    concat_zeros,
-    SUPPORTED_NOISE_SCHEDULES,
     SUPPORTED_DISCRETIZATIONS,
+    SUPPORTED_NOISE_SCHEDULES,
     SUPPORTED_SAMPLING_STEP_SCHEDULE,
+    TensorDict,
+    at_least_ndim,
+    concat_zeros,
+    dict_apply,
 )
+
 from .basic import DiffusionModel
 
 SUPPORTED_SOLVERS = [
@@ -380,8 +381,8 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
             eps: torch.Tensor,
                 The noise. shape: (batch_size, *x_shape).
         """
-        t = t or torch.randint(self.diffusion_steps, (x0.shape[0],), device=self.device)
-        eps = eps or torch.randn_like(x0)
+        t = torch.randint(self.diffusion_steps, (x0.shape[0],), device=self.device, dtype=x0.dtype) if t is None else t
+        eps = torch.randn_like(x0) if eps is None else eps
 
         alpha, sigma = at_least_ndim(self.alpha[t], x0.dim()), at_least_ndim(self.sigma[t], x0.dim())
 
@@ -520,7 +521,7 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
         # ===================== Denoising Loop ========================
         loop_steps = [1] * diffusion_x_sampling_steps + list(range(1, sample_steps + 1))
         for i in reversed(loop_steps):
-            t = torch.full((n_samples,), sample_step_schedule[i], dtype=torch.long, device=self.device)
+            t = torch.full((n_samples,), sample_step_schedule[i], dtype=prior.dtype, device=self.device)
 
             # guided sampling
             pred, logp = self.guided_sampling(
@@ -599,7 +600,7 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
         # ================= Post-processing =================
         if self.classifier is not None:
             with torch.no_grad():
-                t = torch.zeros((n_samples,), dtype=torch.long, device=self.device)
+                t = torch.zeros((n_samples,), dtype=prior.dtype, device=self.device)
                 logp = self.classifier.logp(xt, t, condition_vec_cg)
             log["log_p"] = logp
 
@@ -771,10 +772,10 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
         use_ema: bool = True,
         temperature: float = 1.0,
         # ------------------ guidance ------------------ #
-        condition_cfg=None,
-        mask_cfg=None,
+        condition_cfg: Optional[Union[torch.Tensor, TensorDict]] = None,
+        mask_cfg: Optional[Union[torch.Tensor, TensorDict]] = None,
         w_cfg: float = 0.0,
-        condition_cg=None,
+        condition_cg: Optional[Union[torch.Tensor, TensorDict]] = None,
         w_cg: float = 0.0,
         # ----------- Diffusion-X sampling ----------
         diffusion_x_sampling_steps: int = 0,
@@ -971,7 +972,7 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
         # ================= Post-processing =================
         if self.classifier is not None and w_cg != 0.0:
             with torch.no_grad():
-                t = torch.zeros((n_samples,), dtype=torch.long, device=self.device)
+                t = torch.zeros((n_samples,), dtype=prior.dtype, device=self.device)
                 logp = self.classifier.logp(xt, t, condition_vec_cg)
             log["log_p"] = logp
 

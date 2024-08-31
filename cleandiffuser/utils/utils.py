@@ -1,11 +1,13 @@
 import math
 import os
 import random
-from typing import Union, Dict, Callable
+from typing import Callable, Dict, Union, List
 
 import numpy as np
 import torch
 import torch.nn as nn
+
+from .typings import TensorDict
 
 
 def set_seed(seed: int):
@@ -85,6 +87,23 @@ def concat_zeros(x: torch.Tensor, dim: int = 0):
         torch.Tensor: output tensor
     """
     return torch.cat([x, torch.zeros_like(x)], dim=dim)
+
+
+def get_mask(
+    x: Union[torch.Tensor, TensorDict],
+    prob: float = 0.0,
+    dims: Union[int, List[int]] = 0,
+):
+    if prob <= 0.0:
+        return 1.0
+    if isinstance(dims, int):
+        dims = [dims]
+    if isinstance(x, torch.Tensor):
+        mask_shape = tuple(x.shape[i] if i in dims else 1 for i in range(x.dim()))
+        mask = (torch.rand(mask_shape, device=x.device) > prob).to(x.dtype)
+        return mask
+    else:
+        return dict_apply(x, get_mask, prob=prob, dims=dims)
 
 
 def linear_beta_schedule(beta_min: float = 1e-4, beta_max: float = 0.02, T: int = 1000):
@@ -464,14 +483,30 @@ class TrainModules:
 
 
 def dict_apply(x: Dict[str, torch.Tensor], func: Callable[[torch.Tensor], torch.Tensor], **kwargs):
+    if isinstance(x, torch.Tensor):
+        return func(x, **kwargs)
     result = dict()
     for key, value in x.items():
         if isinstance(value, dict):
-            result[key] = dict_apply(value, func)
+            result[key] = dict_apply(value, func, **kwargs)
         elif value is None:
             result[key] = None
         else:
             result[key] = func(value, **kwargs)
+    return result
+
+
+def dict_operation(
+    x: Union[torch.Tensor, TensorDict],
+    y: Union[torch.Tensor, TensorDict],
+    func: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+    **kwargs,
+):
+    if isinstance(x, torch.Tensor) and isinstance(y, torch.Tensor):
+        return func(x, y, **kwargs)
+    result = {}
+    for key in x.keys():
+        result[key] = dict_operation(x[key], y[key], func, **kwargs)
     return result
 
 

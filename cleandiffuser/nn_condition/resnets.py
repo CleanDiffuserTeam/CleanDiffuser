@@ -1,9 +1,11 @@
-import einops
+from typing import Optional
+
 import numpy as np
 import torch
 import torch.nn as nn
 
-from .base_nn_condition import BaseNNCondition, get_mask, at_least_ndim
+from cleandiffuser.nn_condition import BaseNNCondition
+from cleandiffuser.utils import get_mask
 
 
 def get_norm(channel: int, use_group_norm: bool = True, group_channels: int = 16):
@@ -26,9 +28,13 @@ def get_image_coordinates(h, w, normalise):
 
 class ResidualBlock(nn.Module):
     def __init__(
-            self, in_channel: int, out_channel: int, downsample: bool = False,
-            use_group_norm: bool = True, group_channels: int = 16,
-            activation: nn.Module = nn.ReLU(),
+        self,
+        in_channel: int,
+        out_channel: int,
+        downsample: bool = False,
+        use_group_norm: bool = True,
+        group_channels: int = 16,
+        activation: nn.Module = nn.ReLU(),
     ):
         super().__init__()
 
@@ -36,14 +42,20 @@ class ResidualBlock(nn.Module):
 
         self.cnn = nn.Sequential(
             nn.Conv2d(in_channel, out_channel, 3, stride, 1, bias=False),
-            get_norm(out_channel, use_group_norm, group_channels), activation,
+            get_norm(out_channel, use_group_norm, group_channels),
+            activation,
             nn.Conv2d(out_channel, out_channel, 3, 1, 1, bias=False),
-            get_norm(out_channel, use_group_norm, group_channels))
+            get_norm(out_channel, use_group_norm, group_channels),
+        )
 
-        self.skip = nn.Sequential(
-            nn.Conv2d(in_channel, out_channel, 1, stride, bias=False),
-            get_norm(out_channel, use_group_norm, group_channels)) \
-            if downsample else nn.Identity()
+        self.skip = (
+            nn.Sequential(
+                nn.Conv2d(in_channel, out_channel, 1, stride, bias=False),
+                get_norm(out_channel, use_group_norm, group_channels),
+            )
+            if downsample
+            else nn.Identity()
+        )
 
     def forward(self, x):
         return self.cnn(x) + self.skip(x)
@@ -54,7 +66,7 @@ class SpatialSoftmax(nn.Module):
     Spatial Softmax layer as described in [1].
     [1]: "Deep Spatial Autoencoders for Visuomotor Learning"
     Chelsea Finn, Xin Yu Tan, Yan Duan, Trevor Darrell, Sergey Levine, Pieter Abbeel
-    
+
     Adapted from https://github.com/gorosgobe/dsae-torch/blob/master/dsae.py
     """
 
@@ -85,49 +97,41 @@ class SpatialSoftmax(nn.Module):
 
 class ResNet18(nn.Module):
     def __init__(
-            self, image_sz: int, in_channel: int, emb_dim: int, act_fn=lambda: nn.ReLU(),
-            use_group_norm: bool = True, group_channels: int = 16,
-            use_spatial_softmax: bool = True):
+        self,
+        image_sz: int,
+        in_channel: int,
+        emb_dim: int,
+        act_fn=lambda: nn.ReLU(),
+        use_group_norm: bool = True,
+        group_channels: int = 16,
+        use_spatial_softmax: bool = True,
+    ):
         super().__init__()
 
         self.image_sz, self.in_channel = image_sz, in_channel
 
         self.cnn = nn.Sequential(
-
             # Initial convolution
             nn.Conv2d(in_channel, 64, 7, 2, 3, bias=False),
             get_norm(64, use_group_norm, group_channels),
-            act_fn(), nn.MaxPool2d(3, 2, 1),
-
+            act_fn(),
+            nn.MaxPool2d(3, 2, 1),
             # Residual blocks
-            ResidualBlock(64, 64, False,
-                          use_group_norm, group_channels, act_fn()),
-            ResidualBlock(64, 64, False,
-                          use_group_norm, group_channels, act_fn()),
-
-            ResidualBlock(64, 128, True,
-                          use_group_norm, group_channels, act_fn()),
-            ResidualBlock(128, 128, False,
-                          use_group_norm, group_channels, act_fn()),
-
-            ResidualBlock(128, 256, True,
-                          use_group_norm, group_channels, act_fn()),
-            ResidualBlock(256, 256, False,
-                          use_group_norm, group_channels, act_fn()),
-
-            ResidualBlock(256, 512, True,
-                          use_group_norm, group_channels, act_fn()),
-            ResidualBlock(512, 512, False,
-                          use_group_norm, group_channels, act_fn()),
-
+            ResidualBlock(64, 64, False, use_group_norm, group_channels, act_fn()),
+            ResidualBlock(64, 64, False, use_group_norm, group_channels, act_fn()),
+            ResidualBlock(64, 128, True, use_group_norm, group_channels, act_fn()),
+            ResidualBlock(128, 128, False, use_group_norm, group_channels, act_fn()),
+            ResidualBlock(128, 256, True, use_group_norm, group_channels, act_fn()),
+            ResidualBlock(256, 256, False, use_group_norm, group_channels, act_fn()),
+            ResidualBlock(256, 512, True, use_group_norm, group_channels, act_fn()),
+            ResidualBlock(512, 512, False, use_group_norm, group_channels, act_fn()),
             # Final pooling
-            nn.AvgPool2d(7, 1, 0) if not use_spatial_softmax else
-            SpatialSoftmax(None, True)
+            nn.AvgPool2d(7, 1, 0) if not use_spatial_softmax else SpatialSoftmax(None, True),
         )
 
         self.mlp = nn.Sequential(
-            nn.Linear(np.prod(self.cnn_output_shape), emb_dim), nn.SiLU(),
-            nn.Linear(emb_dim, emb_dim))
+            nn.Linear(np.prod(self.cnn_output_shape), emb_dim), nn.SiLU(), nn.Linear(emb_dim, emb_dim)
+        )
 
     @property
     def device(self):
@@ -139,8 +143,7 @@ class ResNet18(nn.Module):
 
     @property
     def cnn_output_shape(self):
-        example = torch.zeros((1, self.in_channel, self.image_sz, self.image_sz),
-                              device=self.device, dtype=self.dtype)
+        example = torch.zeros((1, self.in_channel, self.image_sz, self.image_sz), device=self.device, dtype=self.dtype)
         return self.cnn(example).shape
 
     def forward(self, x):
@@ -149,31 +152,31 @@ class ResNet18(nn.Module):
 
 
 class ResNet18ImageCondition(BaseNNCondition):
-    """ ResNet18 for image condition.
+    """ResNet18 for image condition.
 
     ResNet18Condition encodes the input image into a fixed-size embedding.
     The implementation is adapted from `DiffusionPolicy`.
-    Compared to the original implementation, we replace `BatchNorm2d` with `GroupNorm`, 
+    Compared to the original implementation, we replace `BatchNorm2d` with `GroupNorm`,
     and use a SpatialSoftmax instead of an average pooling layer.
 
     Args:
-        image_sz: int,
+        image_sz (int):
             Size of the input image. The image is assumed to be square.
-        in_channel: int,
+        in_channel (int):
             Number of input channels. 3 for RGB images.
-        emb_dim: int,
+        emb_dim (int):
             Dimension of the output embedding.
-        
-        act_fn: callable,
+
+        act_fn (callable):
             Activation function to use in the network. Default is ReLU.
-        use_group_norm: bool,
+        use_group_norm (bool):
             Whether to use GroupNorm instead of BatchNorm. Default is True.
-        group_channels: int,
+        group_channels (int):
             Number of channels per group in GroupNorm. Default is 16.
-        use_spatial_softmax: bool,
+        use_spatial_softmax (bool):
             Whether to use SpatialSoftmax instead of average pooling. Default is True.
-    
-        dropout: float,
+
+        dropout (float):
             Condition Dropout rate. Default is 0.0.
 
     Examples:
@@ -185,40 +188,50 @@ class ResNet18ImageCondition(BaseNNCondition):
         >>> nn_condition(condition).shape
         torch.Size([32, 4, 256])
     """
+
     def __init__(
-            self, image_sz: int, in_channel: int, emb_dim: int, act_fn=lambda: nn.ReLU(),
-            use_group_norm: bool = True, group_channels: int = 16,
-            use_spatial_softmax: bool = True, dropout: float = 0.0,
+        self,
+        image_sz: int,
+        in_channel: int,
+        emb_dim: int,
+        act_fn=lambda: nn.ReLU(),
+        use_group_norm: bool = True,
+        group_channels: int = 16,
+        use_spatial_softmax: bool = True,
+        dropout: float = 0.0,
     ):
         super().__init__()
         self.dropout = dropout
+        self.image_sz, self.in_channel = image_sz, in_channel
 
         self.resnet18 = ResNet18(
-            image_sz, in_channel, emb_dim, act_fn, use_group_norm, group_channels, use_spatial_softmax)
+            image_sz, in_channel, emb_dim, act_fn, use_group_norm, group_channels, use_spatial_softmax
+        )
 
-    def forward(self, condition: torch.Tensor, mask: torch.Tensor = None):
+    @property
+    def device(self):
+        return next(iter(self.parameters())).device
 
-        condition_dim = condition.dim()
-        assert condition_dim == 4 or condition_dim == 5, \
-            "Input condition must be 4D or 5D tensor, got shape {}".format(condition.shape)
+    @property
+    def feature_map_shape(self):
+        return self.resnet18.cnn_output_shape
 
-        b = condition.shape[0]
-        if condition_dim == 5:
-            condition = einops.rearrange(condition, 'b n c h w -> (b n) c h w')
+    def forward(self, condition: torch.Tensor, mask: Optional[torch.Tensor] = None):
+        other_dims = condition.shape[:-3]
 
-        mask = get_mask(
-            mask, (b,), self.dropout, self.training, condition.device)
+        condition = condition.reshape(-1, self.in_channel, self.image_sz, self.image_sz)
 
-        emb = self.resnet18(condition)
+        condition = self.resnet18(condition)
 
-        if condition_dim == 5:
-            emb = einops.rearrange(emb, '(b n) d -> b n d', b=b) * mask[:, None, None]
+        if mask is None:
+            prob = self.dropout if self.training else 0.0
+            mask = get_mask(condition, prob, dims=0)
 
-        return emb
+        return (condition * mask).reshape(*other_dims, -1)
 
 
 class ResNet18MultiViewImageCondition(BaseNNCondition):
-    """ ResNet18 for multi-view image condition.
+    """ResNet18 for multi-view image condition.
 
     ResNet18Condition encodes the input image into a fixed-size embedding.
     The implementation is adapted from `DiffusionPolicy`.
@@ -227,69 +240,101 @@ class ResNet18MultiViewImageCondition(BaseNNCondition):
     The Multi-view version uses different ResNet18 networks for each view.
 
     Args:
-        image_sz: int,
+        image_sz (int):
             Size of the input image. The image is assumed to be square.
-        in_channel: int,
+        in_channel (int):
             Number of input channels. 3 for RGB images.
-        emb_dim: int,
+        emb_dim (int):
             Dimension of the output embedding.
-        n_views: int,
+        n_views (int):
             Number of views.
-        
-        act_fn: callable,
+
+        act_fn (callable):
             Activation function to use in the network. Default is ReLU.
-        use_group_norm: bool,
+        use_group_norm (bool):
             Whether to use GroupNorm instead of BatchNorm. Default is True.
-        group_channels: int,
+        group_channels (int):
             Number of channels per group in GroupNorm. Default is 16.
-        use_spatial_softmax: bool,
+        use_spatial_softmax (bool):
             Whether to use SpatialSoftmax instead of average pooling. Default is True.
-    
-        dropout: float,
+
+        dropout (float):
             Condition Dropout rate. Default is 0.0.
 
     Examples:
         >>> nn_condition = ResNet18MultiViewImageCondition(image_sz=64, in_channel=3, emb_dim=256, n_views=2)
-        >>> condition = torch.randn(32, 2, 3, 64, 64)
+        >>> condition = torch.randn(32, 2, 3, 64, 64)  # (bs, n_views, ..., c, h, w)
         >>> nn_condition(condition).shape
         torch.Size([32, 2, 256])
-        >>> condition = torch.randn(32, 2, 4, 3, 64, 64)
+        >>> condition = torch.randn(32, 2, 4, 3, 64, 64)  # (bs, n_views, ..., c, h, w)
         >>> nn_condition(condition).shape
         torch.Size([32, 2, 4, 256])
     """
+
     def __init__(
-            self, image_sz: int, in_channel: int, emb_dim: int, n_views: int, act_fn=lambda: nn.ReLU(),
-            use_group_norm: bool = True, group_channels: int = 16,
-            use_spatial_softmax: bool = True, dropout: float = 0.0,
+        self,
+        image_sz: int,
+        in_channel: int,
+        emb_dim: int,
+        n_views: int,
+        act_fn=lambda: nn.ReLU(),
+        use_group_norm: bool = True,
+        group_channels: int = 16,
+        use_spatial_softmax: bool = True,
+        dropout: float = 0.0,
     ):
         super().__init__()
         self.dropout = dropout
         self.n_views = n_views
+        self.image_sz, self.in_channel = image_sz, in_channel
 
-        self.resnet18 = nn.ModuleList([
-            ResNet18(
-                image_sz, in_channel, emb_dim, act_fn, use_group_norm, group_channels, use_spatial_softmax)
-            for _ in range(n_views)
-        ])
+        self.resnet18 = nn.ModuleList(
+            [
+                ResNet18(image_sz, in_channel, emb_dim, act_fn, use_group_norm, group_channels, use_spatial_softmax)
+                for _ in range(n_views)
+            ]
+        )
+
+    @property
+    def device(self):
+        return next(iter(self.parameters())).device
+
+    @property
+    def feature_map_shape(self):
+        return self.resnet18.cnn_output_shape
 
     def forward(self, condition: torch.Tensor, mask: torch.Tensor = None):
+        emb = []
 
-        condition_dim = condition.dim()
-        assert condition_dim == 5 or condition_dim == 6, \
-            "Input condition must be 5D or 6D tensor, got shape {}".format(condition.shape)
+        for n in range(self.n_views):
+            this_condition = condition[:, n]
 
-        b = condition.shape[0]
-        if condition.dim() == 6:
-            condition = einops.rearrange(condition, 'b v n c h w -> (b n) v c h w')
+            other_dims = this_condition.shape[:-3]
 
-        mask = get_mask(
-            mask, (b,), self.dropout, self.training, condition.device)
+            this_condition = this_condition.reshape(-1, self.in_channel, self.image_sz, self.image_sz)
 
-        emb = [self.resnet18[i](condition[:, i]) for i in range(self.n_views)]
+            this_condition = self.resnet18[n](this_condition)
 
-        emb = torch.stack(emb, dim=1)
+            if mask is None:
+                prob = self.dropout if self.training else 0.0
+                mask = get_mask(this_condition, prob, dims=0)
 
-        if condition_dim == 6:
-            emb = einops.rearrange(emb, '(b n) v d -> b v n d', b=b) * at_least_ndim(mask, 4)
+            emb.append((this_condition * mask).reshape(*other_dims, -1))
 
-        return emb
+        return torch.stack(emb, 1)
+
+
+if __name__ == "__main__":
+    x1 = torch.randn((32, 3, 64, 64))
+    x2 = torch.randn((32, 4, 3, 64, 64))
+    x3 = torch.randn((32, 4, 5, 3, 64, 64))
+
+    m1 = ResNet18ImageCondition(image_sz=64, in_channel=3, emb_dim=256)
+    m2 = ResNet18MultiViewImageCondition(image_sz=64, in_channel=3, emb_dim=256, n_views=4)
+
+    print(m1(x1).shape)
+    print(m1(x2).shape)
+    print(m1(x3).shape)
+
+    print(m2(x2).shape)
+    print(m2(x3).shape)
