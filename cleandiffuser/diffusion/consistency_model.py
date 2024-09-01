@@ -5,11 +5,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from cleandiffuser.diffusion import DiffusionModel
+from cleandiffuser.diffusion import DiffusionModel, ContinuousEDM
 from cleandiffuser.nn_condition import BaseNNCondition
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
 from cleandiffuser.utils import at_least_ndim
-from .newedm import ContinuousEDM
 
 
 def erf(x):

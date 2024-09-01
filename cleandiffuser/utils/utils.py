@@ -502,7 +502,7 @@ def dict_operation(
     func: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
     **kwargs,
 ):
-    if isinstance(x, torch.Tensor) and isinstance(y, torch.Tensor):
+    if not (isinstance(x, dict) and isinstance(y, dict)):
         return func(x, y, **kwargs)
     result = {}
     for key in x.keys():
