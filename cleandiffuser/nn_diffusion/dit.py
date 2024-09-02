@@ -3,7 +3,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from cleandiffuser.utils import SinusoidalEmbedding
+from cleandiffuser.utils import UntrainablePositionalEmbedding
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
 
 
@@ -70,7 +70,7 @@ class DiT1d(BaseNNDiffusion):
         self.map_emb = nn.Sequential(
             nn.Linear(emb_dim, d_model), nn.Mish(), nn.Linear(d_model, d_model), nn.Mish())
 
-        self.pos_emb = SinusoidalEmbedding(d_model)
+        self.pos_emb = UntrainablePositionalEmbedding(d_model)
         self.pos_emb_cache = None
 
         self.blocks = nn.ModuleList([
