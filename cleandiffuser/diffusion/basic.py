@@ -11,7 +11,6 @@ from cleandiffuser.nn_diffusion import BaseNNDiffusion
 from cleandiffuser.utils import TensorDict
 
 
-# TODO: Add customisable optimizers
 class DiffusionModel(L.LightningModule):
     def __init__(
         self,
