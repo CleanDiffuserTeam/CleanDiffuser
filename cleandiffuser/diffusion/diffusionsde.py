@@ -59,13 +59,14 @@ class BaseDiffusionSDE(DiffusionModel):
         classifier: Optional[BaseClassifier] = None,
         # ------------------ Training Params ---------------- #
         ema_rate: float = 0.995,
+        optimizer_params: Optional[dict] = None,
         # ------------------- Diffusion Params ------------------- #
         epsilon: float = 1e-3,
         x_max: Optional[torch.Tensor] = None,
         x_min: Optional[torch.Tensor] = None,
         predict_noise: bool = True,
     ):
-        super().__init__(nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate)
+        super().__init__(nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate, optimizer_params)
 
         self.predict_noise = predict_noise
         self.epsilon = epsilon
@@ -168,7 +169,6 @@ class BaseDiffusionSDE(DiffusionModel):
             # classifier-free guidance
             else:
                 if pred is None or pred_uncond is None:
-                    
                     condition = dict_apply(condition, concat_zeros, dim=0)
 
                     pred_all = model["diffusion"](einops.repeat(xt, "b ... -> (2 b) ..."), t.repeat(2), condition)
@@ -295,6 +295,7 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
         classifier: Optional[BaseClassifier] = None,
         # ------------------ Training Params ---------------- #
         ema_rate: float = 0.995,
+        optimizer_params: Optional[dict] = None,
         # ------------------- Diffusion Params ------------------- #
         epsilon: float = 1e-3,
         x_max: Optional[torch.Tensor] = None,
@@ -312,6 +313,7 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
             loss_weight,
             classifier,
             ema_rate,
+            optimizer_params,
             epsilon,
             x_max,
             x_min,
@@ -377,7 +379,7 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
             eps (torch.Tensor):
                 The noise. shape: (batch_size, *x_shape).
         """
-        t = torch.randint(self.diffusion_steps, (x0.shape[0],), device=self.device, dtype=x0.dtype) if t is None else t
+        t = torch.randint(self.diffusion_steps, (x0.shape[0],), device=self.device) if t is None else t
         eps = torch.randn_like(x0) if eps is None else eps
 
         alpha, sigma = at_least_ndim(self.alpha[t], x0.dim()), at_least_ndim(self.sigma[t], x0.dim())
@@ -676,6 +678,7 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
         classifier: Optional[BaseClassifier] = None,
         # ------------------ Training Params ---------------- #
         ema_rate: float = 0.995,
+        optimizer_params: Optional[dict] = None,
         # ------------------- Diffusion Params ------------------- #
         epsilon: float = 1e-3,
         x_max: Optional[torch.Tensor] = None,
@@ -691,6 +694,7 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
             loss_weight,
             classifier,
             ema_rate,
+            optimizer_params,
             epsilon,
             x_max,
             x_min,

@@ -11,6 +11,7 @@ from cleandiffuser.nn_diffusion import BaseNNDiffusion
 from cleandiffuser.utils import TensorDict
 
 
+# TODO: Add customisable optimizers
 class DiffusionModel(L.LightningModule):
     def __init__(
         self,
@@ -29,9 +30,16 @@ class DiffusionModel(L.LightningModule):
         classifier: Optional[BaseClassifier] = None,
         # ------------------ Params ---------------- #
         ema_rate: float = 0.995,
+        optimizer_params: Optional[dict] = None,
     ):
         super().__init__()
         self.ema_rate = ema_rate
+        self.optimizer_params = self._preprocess_optimizer_params(optimizer_params or {}, classifier)
+
+        # When updating both diffusion and classifier, use manual optimization.
+        self.automatic_optimization = (
+            False if (classifier is not None and "diffusion" in self.optimizer_params.keys()) else True
+        )
 
         # nn_condition is None means that the model is not conditioned on any input.
         nn_condition = nn_condition or IdentityCondition()
@@ -51,16 +59,57 @@ class DiffusionModel(L.LightningModule):
             requires_grad=False,
         )
 
-        self.optimizer = self.configure_optimizers()
+        self.manual_optimizers = {}
 
-        self.update_list = ["diffusion", "classifier"]
+    @staticmethod
+    def _preprocess_optimizer_params(optimizer_params: dict, classifier: Optional[BaseClassifier] = None):
+        keys = optimizer_params.keys()
+        if len(keys) == 0:
+            optimizer_params["diffusion"] = {"optimizer": "adam", "lr": 3e-4}
+            if classifier is not None:
+                optimizer_params["classifier"] = {"optimizer": "adam", "lr": 3e-4}
+        if len(keys) > 0 and "diffusion" not in keys and "optimizer" not in keys:
+            optimizer_params["lr"] = optimizer_params.get("lr", 3e-4)
+            optimizer_params["optimizer"] = optimizer_params.get("optimizer", "adam")
+            optimizer_params = {"diffusion": optimizer_params}
+        return optimizer_params
+
+    @staticmethod
+    def _get_optimizer(params, optimizer_params: dict):
+        if optimizer_params["optimizer"].lower() == "sgd":
+            return torch.optim.SGD(params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"})
+        elif optimizer_params["optimizer"].lower() == "adam":
+            return torch.optim.Adam(params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"})
+        elif optimizer_params["optimizer"].lower() == "adamw":
+            return torch.optim.AdamW(params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"})
+        elif optimizer_params["optimizer"].lower() == "adagrad":
+            return torch.optim.Adagrad(params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"})
+        elif optimizer_params["optimizer"].lower() == "rmsprop":
+            return torch.optim.RMSprop(params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"})
+        elif optimizer_params["optimizer"].lower() == "adadelta":
+            return torch.optim.Adadelta(params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"})
+        elif optimizer_params["optimizer"].lower() == "adamax":
+            return torch.optim.Adamax(params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"})
+        else:
+            raise ValueError(f"Optimizer {optimizer_params['optimizer']} is not supported.")
 
     def configure_optimizers(self):
         """PyTorch Lightning optimizer configuration."""
-        param_group = [{"params": self.model.parameters(), "lr": 3e-4}]
-        if self.classifier is not None:
-            param_group.append({"params": self.classifier.model.parameters(), "lr": 3e-4})
-        return torch.optim.Adam(param_group)
+        if "diffusion" in self.optimizer_params.keys() and "classifier" in self.optimizer_params.keys():
+            return (
+                {"optimizer": self._get_optimizer(self.model.parameters(), self.optimizer_params["diffusion"])},
+                {
+                    "optimizer": self._get_optimizer(
+                        self.classifier.model.parameters(), self.optimizer_params["classifier"]
+                    )
+                },
+            )
+        elif "diffusion" in self.optimizer_params.keys():
+            return self._get_optimizer(self.model.parameters(), self.optimizer_params["diffusion"])
+        elif "classifier" in self.optimizer_params.keys():
+            return self._get_optimizer(self.classifier.model.parameters(), self.optimizer_params["classifier"])
+        else:
+            raise ValueError("Invalid optimizer configuration.")
 
     def ema_update(self):
         """Update the EMA model."""
@@ -123,9 +172,6 @@ class DiffusionModel(L.LightningModule):
                 "condition_cg" is the CG condition and is optional.
             batch_idx (int): Batch index.
         """
-
-        assert self.update_list, "The update list should not be empty."
-
         assert (
             isinstance(batch, dict) and "x0" in batch.keys()
         ), "The batch should contain the key `x0` for the input data."
@@ -134,31 +180,55 @@ class DiffusionModel(L.LightningModule):
         condition_cfg = batch.get("condition_cfg", None)
         condition_cg = batch.get("condition_cg", None)
 
-        loss = 0.0
+        # If update both diffusion and classifier, use manual optimization.
+        if len(self.optimizer_params.keys()) == 2:
+            optim_diffusion, optim_classifier = self.optimizers()
 
-        if "diffusion" in self.update_list:
             loss_diffusion = self.loss(x0, condition_cfg)
-
+            optim_diffusion.zero_grad()
+            self.manual_backward(loss_diffusion)
+            optim_diffusion.step()
             self.log("diffusion_loss", loss_diffusion, prog_bar=True)
+
+            xt, t, eps = self.add_noise(x0)
+            loss_classifier = self.classifier.loss(xt, t, condition_cg)
+            optim_classifier.zero_grad()
+            self.manual_backward(loss_classifier)
+            optim_classifier.step()
+            self.log("classifier_loss", loss_classifier, prog_bar=True)
 
             if self.ema_update_schedule(batch_idx):
                 self.ema_update()
-
-            loss += loss_diffusion
-
-        if "classifier" in self.update_list and self.classifier is not None:
-            xt, t, eps = self.add_noise(x0)
-
-            loss_classifier = self.classifier.loss(xt, t, condition_cg)
-
-            self.log("classifier_loss", loss_classifier, prog_bar=True)
-
             if self.classifier.ema_update_schedule(batch_idx):
                 self.classifier.ema_update()
 
-            loss += loss_classifier
+        # Otherwise, use automatic optimization.
+        else:
+            loss = 0.0
 
-        return loss
+            if "diffusion" in self.optimizer_params.keys():
+                loss_diffusion = self.loss(x0, condition_cfg)
+
+                self.log("diffusion_loss", loss_diffusion, prog_bar=True)
+
+                if self.ema_update_schedule(batch_idx):
+                    self.ema_update()
+
+                loss += loss_diffusion
+
+            if "classifier" in self.optimizer_params.keys() and self.classifier is not None:
+                xt, t, eps = self.add_noise(x0)
+
+                loss_classifier = self.classifier.loss(xt, t, condition_cg)
+
+                self.log("classifier_loss", loss_classifier, prog_bar=True)
+
+                if self.classifier.ema_update_schedule(batch_idx):
+                    self.classifier.ema_update()
+
+                loss += loss_classifier
+
+            return loss
 
     def update_diffusion(
         self, x0: torch.Tensor, condition_cfg: Optional[torch.Tensor] = None, update_ema: bool = True, **kwargs
@@ -178,10 +248,17 @@ class DiffusionModel(L.LightningModule):
             log (dict),
                 The log dictionary.
         """
+        if not self.manual_optimizers:
+            if "diffusion" in self.optimizer_params.keys():
+                self.manual_optimizers["diffusion"] = self._get_optimizer(
+                    self.model.parameters(), self.optimizer_params["diffusion"]
+                )
+            else:
+                raise ValueError("No optimizer is defined for the diffusion model.")
         loss = self.loss(x0, condition_cfg, **kwargs)
         loss.backward()
-        self.optimizer.step()
-        self.optimizer.zero_grad()
+        self.manual_optimizers["diffusion"].step()
+        self.manual_optimizers["diffusion"].zero_grad()
         if update_ema:
             self.ema_update()
         return {"diffusion_loss": loss.item()}
@@ -189,9 +266,21 @@ class DiffusionModel(L.LightningModule):
     def update_classifier(
         self, x0: torch.Tensor, condition_cg: Optional[torch.Tensor] = None, update_ema: bool = True, **kwargs
     ):
+        if not self.manual_optimizers:
+            if "classifier" in self.optimizer_params.keys():
+                self.manual_optimizers["classifier"] = self._get_optimizer(
+                    self.classifier.model.parameters(), self.optimizer_params["classifier"]
+                )
+            else:
+                raise ValueError("No optimizer is defined for the classifier model.")
         xt, t, eps = self.add_noise(x0)
-        log = self.classifier.update(xt, t, condition_cg, update_ema, kwargs)
-        return {"classifier_loss": log["loss"]}
+        loss = self.classifier.loss(xt, t, condition_cg, **kwargs)
+        loss.backward()
+        self.manual_optimizers["classifier"].step()
+        self.manual_optimizers["classifier"].zero_grad()
+        if update_ema:
+            self.classifier.ema_update()
+        return {"classifier_loss": loss.item()}
 
     def sample(self, *args, **kwargs):
         raise NotImplementedError

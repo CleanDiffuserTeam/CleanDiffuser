@@ -75,6 +75,7 @@ class ContinuousEDM(DiffusionModel):
         classifier: Optional[BaseClassifier] = None,
         # ------------------ Training Params ---------------- #
         ema_rate: float = 0.995,
+        optimizer_params: Optional[dict] = None,
         # ------------------- Diffusion Params ------------------- #
         sigma_data: float = 0.5,
         sigma_min: float = 0.002,
@@ -85,7 +86,7 @@ class ContinuousEDM(DiffusionModel):
         x_max: Optional[torch.Tensor] = None,
         x_min: Optional[torch.Tensor] = None,
     ):
-        super().__init__(nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate)
+        super().__init__(nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate, optimizer_params)
 
         self.sigma_data, self.sigma_min, self.sigma_max = sigma_data, sigma_min, sigma_max
         self.rho, self.P_mean, self.P_std = rho, P_mean, P_std
@@ -238,19 +239,19 @@ class ContinuousEDM(DiffusionModel):
         with torch.set_grad_enabled(requires_grad):
             # fully conditioned prediction
             if w == 1.0:
-                pred = model["diffusion"](xt, t, condition)
+                pred = self.D(xt, t, condition, model)
                 pred_uncond = 0.0
 
             # unconditioned prediction
             elif w == 0.0:
                 pred = 0.0
-                pred_uncond = model["diffusion"](xt, t, None)
+                pred_uncond = self.D(xt, t, None, model)
 
             else:
                 if pred is None or pred_uncond is None:
                     condition = dict_apply(condition, concat_zeros, dim=0)
 
-                    pred_all = self.D(einops.repeat(xt, "b ... -> (2 b) ..."), t.repeat(2), condition)
+                    pred_all = self.D(einops.repeat(xt, "b ... -> (2 b) ..."), t.repeat(2), condition, model)
 
                     pred, pred_uncond = torch.chunk(pred_all, 2, dim=0)
 
@@ -400,7 +401,7 @@ class ContinuousEDM(DiffusionModel):
 
             # guided sampling
             pred, logp = self.guided_sampling(
-                xt, t, sigmas[i], model, condition_vec_cfg, w_cfg, condition_vec_cg, w_cg, requires_grad
+                xt, t, 0, sigmas[i], model, condition_vec_cfg, w_cfg, condition_vec_cg, w_cg, requires_grad
             )
 
             # clip the prediction
@@ -417,6 +418,7 @@ class ContinuousEDM(DiffusionModel):
                 pred, logp = self.guided_sampling(
                     x_next,
                     t / sample_step_schedule[i] * sample_step_schedule[i - 1],
+                    0,
                     sigmas[i - 1],
                     model,
                     condition_vec_cfg,

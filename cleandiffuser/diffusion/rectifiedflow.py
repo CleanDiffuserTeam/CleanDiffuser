@@ -85,15 +85,17 @@ class DiscreteRectifiedFlow(DiffusionModel):
         classifier: Optional[BaseClassifier] = None,
         # ------------------ Training Params ---------------- #
         ema_rate: float = 0.995,
+        optimizer_params: Optional[dict] = None,
         # ------------------- Diffusion Params ------------------- #
         x_max: Optional[torch.Tensor] = None,
         x_min: Optional[torch.Tensor] = None,
         diffusion_steps: int = 1000,
         discretization: Union[str, Callable] = "uniform",
     ):
-        super().__init__(nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate)
+        super().__init__(nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate, optimizer_params)
 
         assert classifier is None, "Rectified Flow does not support classifier-guidance."
+        self.diffusion_steps = diffusion_steps
 
         self.x_max = nn.Parameter(x_max, requires_grad=False) if x_max is not None else None
         self.x_min = nn.Parameter(x_min, requires_grad=False) if x_min is not None else None
@@ -197,9 +199,6 @@ class DiscreteRectifiedFlow(DiffusionModel):
                 "x1" is the data from source distribution and is optional.
             batch_idx (int): Batch index.
         """
-
-        assert self.update_list, "The update list should not be empty."
-
         assert (
             isinstance(batch, dict) and "x0" in batch.keys()
         ), "The batch should contain the key `x0` for the input data."
@@ -210,15 +209,14 @@ class DiscreteRectifiedFlow(DiffusionModel):
 
         loss = 0.0
 
-        if "diffusion" in self.update_list:
-            loss_diffusion = self.loss(x0, condition_cfg, x1=x1)
+        loss_diffusion = self.loss(x0, condition_cfg, x1=x1)
 
-            self.log("diffusion_loss", loss_diffusion, prog_bar=True)
+        self.log("diffusion_loss", loss_diffusion, prog_bar=True)
 
-            if self.ema_update_schedule(batch_idx):
-                self.ema_update()
+        if self.ema_update_schedule(batch_idx):
+            self.ema_update()
 
-            loss += loss_diffusion
+        loss += loss_diffusion
 
         return loss
 
@@ -443,11 +441,12 @@ class ContinuousRectifiedFlow(DiffusionModel):
         classifier: Optional[BaseClassifier] = None,
         # ------------------ Training Params ---------------- #
         ema_rate: float = 0.995,
+        optimizer_params: Optional[dict] = None,
         # ------------------- Diffusion Params ------------------- #
         x_max: Optional[torch.Tensor] = None,
         x_min: Optional[torch.Tensor] = None,
     ):
-        super().__init__(nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate)
+        super().__init__(nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate, optimizer_params)
 
         assert classifier is None, "Rectified Flow does not support classifier-guidance."
 
@@ -538,9 +537,6 @@ class ContinuousRectifiedFlow(DiffusionModel):
                 "x1" is the data from source distribution and is optional.
             batch_idx (int): Batch index.
         """
-
-        assert self.update_list, "The update list should not be empty."
-
         assert (
             isinstance(batch, dict) and "x0" in batch.keys()
         ), "The batch should contain the key `x0` for the input data."
@@ -551,15 +547,14 @@ class ContinuousRectifiedFlow(DiffusionModel):
 
         loss = 0.0
 
-        if "diffusion" in self.update_list:
-            loss_diffusion = self.loss(x0, condition_cfg, x1=x1)
+        loss_diffusion = self.loss(x0, condition_cfg, x1=x1)
 
-            self.log("diffusion_loss", loss_diffusion, prog_bar=True)
+        self.log("diffusion_loss", loss_diffusion, prog_bar=True)
 
-            if self.ema_update_schedule(batch_idx):
-                self.ema_update()
+        if self.ema_update_schedule(batch_idx):
+            self.ema_update()
 
-            loss += loss_diffusion
+        loss += loss_diffusion
 
         return loss
 
