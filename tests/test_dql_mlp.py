@@ -17,9 +17,8 @@ def test_dqlmlp_forward_no_condition():
     model = DQLMlp(obs_dim=10, act_dim=5, emb_dim=16)
     x = torch.randn(2, 5)  # batch size of 2, act_dim of 5
     noise = torch.randn(2)  # batch size of 2
-
-    with pytest.raises(TypeError):
-        model(x, noise)  # condition is required, should raise TypeError
+    output = model(x, noise)
+    assert output.shape == (2, 5)
 
 
 def test_dqlmlp_forward_with_different_shapes():

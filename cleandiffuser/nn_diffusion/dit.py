@@ -122,6 +122,8 @@ class DiT1d(BaseNNDiffusion):
         emb = self.map_noise(noise)
         if condition is not None:
             emb = emb + condition
+        else:
+            emb = emb + torch.zeros_like(emb)
         emb = self.map_emb(emb)
 
         for block in self.blocks:

@@ -52,9 +52,9 @@ def test_chi_transformer_no_condition(model):
 
     x = torch.randn(batch_size, Ta, act_dim)
     noise = torch.randn(batch_size)
+    output = model(x, noise)
 
-    with pytest.raises(TypeError):
-        model(x, noise)
+    assert output.shape == (batch_size, Ta, act_dim), "Output shape mismatch"
 
 def test_chi_transformer_forward_pass(model):
     batch_size = 4

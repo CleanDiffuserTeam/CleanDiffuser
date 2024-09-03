@@ -97,6 +97,8 @@ class PearceTransformer(BaseNNDiffusion):
     ):
         super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
 
+        self.To = To
+        self.emb_dim = emb_dim
         self.act_emb = nn.Sequential(
             nn.Linear(act_dim, emb_dim), nn.LeakyReLU(), nn.Linear(emb_dim, emb_dim))
 
@@ -118,7 +120,7 @@ class PearceTransformer(BaseNNDiffusion):
 
     def forward(self,
                 x: torch.Tensor, noise: torch.Tensor,
-                condition: torch.Tensor = None):
+                condition: Optional[torch.Tensor] = None):
         """
         Input:
             x:          (b, act_dim)
@@ -128,6 +130,9 @@ class PearceTransformer(BaseNNDiffusion):
         Output:
             y:          (b, act_dim)
         """
+        if condition is None:
+            condition = torch.zero((x.shape[0], self.To, self.emb_dim)).to(x.device)
+
         x_e, t_e = self.act_emb(x), self.map_noise(noise)
 
         x_input, t_input, c_input = self.act_to_input(x_e), self.t_to_input(t_e), self.cond_to_input(condition)

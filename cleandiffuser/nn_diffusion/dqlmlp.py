@@ -16,7 +16,8 @@ class DQLMlp(BaseNNDiffusion):
         timestep_emb_params: Optional[dict] = None
     ):
         super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
-        
+
+        self.obs_dim = obs_dim
         self.time_mlp = nn.Sequential(
             nn.Linear(emb_dim, emb_dim * 2), nn.Mish(), nn.Linear(emb_dim * 2, emb_dim))
         
@@ -29,7 +30,7 @@ class DQLMlp(BaseNNDiffusion):
         
     def forward(self,
                 x: torch.Tensor, noise: torch.Tensor,
-                condition: torch.Tensor = None):
+                condition: Optional[torch.Tensor] = None):
         """
         Input:
             x:          (b, act_dim)
@@ -39,6 +40,8 @@ class DQLMlp(BaseNNDiffusion):
         Output:
             y:          (b, act_dim)
         """
+        if condition is None:
+            condition = torch.zeros(x.shape[0], self.obs_dim).to(x.device)
         t = self.time_mlp(self.map_noise(noise))
         x = torch.cat([x, t, condition], -1)
         x = self.mid_layer(x)

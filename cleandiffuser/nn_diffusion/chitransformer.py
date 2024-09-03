@@ -74,6 +74,8 @@ class ChiTransformer(BaseNNDiffusion):
 
         T = Ta
         T_cond = 1 + To
+        self.To = To
+        self.obs_dim = obs_dim
 
         self.act_emb = nn.Linear(act_dim, d_model)
         self.pos_emb = nn.Parameter(torch.zeros(1, Ta, d_model))
@@ -124,7 +126,7 @@ class ChiTransformer(BaseNNDiffusion):
 
     def forward(self,
                 x: torch.Tensor, noise: torch.Tensor,
-                condition: torch.Tensor = None):
+                condition: Optional[torch.Tensor] = None):
         """
         Input:
             x:          (b, Ta, act_dim)
@@ -134,7 +136,8 @@ class ChiTransformer(BaseNNDiffusion):
         Output:
             y:          (b, Ta, act_dim)
         """
-
+        if condition is None:
+            condition = torch.zeros((x.shape[0], self.To, self.obs_dim)).to(x.device)  # (b, To, obs_dim)
         t_emb = self.map_noise(noise).unsqueeze(1)  # (b, 1, d_model)
 
         act_emb = self.act_emb(x)

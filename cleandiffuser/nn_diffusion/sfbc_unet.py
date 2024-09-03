@@ -65,6 +65,8 @@ class SfBCUNet(BaseNNDiffusion):
         c = self.t_layer(self.map_noise(noise))
         if condition is not None:
             c += condition
+        else:
+            c += torch.zeros_like(c)
 
         buffer = []
         for block in self.down_blocks:
