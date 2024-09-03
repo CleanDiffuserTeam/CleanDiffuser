@@ -1,23 +1,16 @@
+import concurrent.futures
 from typing import Dict, List, Optional
-import torch
-import numpy as np
-import copy
-import pathlib
+
 import h5py
+import numpy as np
+import torch
 import zarr
 from tqdm import tqdm
-import concurrent.futures
-from collections import defaultdict
-from cleandiffuser.dataset.imagecodecs import register_codecs, Jpeg2k
+
 from cleandiffuser.dataset.base_dataset import BaseDataset
+from cleandiffuser.dataset.dataset_utils import RotationTransformer, SequenceSampler, dict_apply
+from cleandiffuser.dataset.imagecodecs import Jpeg2k, register_codecs
 from cleandiffuser.dataset.replay_buffer import ReplayBuffer
-from cleandiffuser.dataset.dataset_utils import (
-    SequenceSampler,
-    EmptyNormalizer,
-    RotationTransformer,
-    dict_apply,
-    ImageNormalizer,
-)
 from cleandiffuser.utils import MinMaxNormalizer
 
 register_codecs()
@@ -190,13 +183,41 @@ class RobomimicImageDataset(BaseDataset):
     def __init__(
         self,
         dataset_dir,
-        shape_meta: dict,
-        n_obs_steps=None,
-        horizon=1,
-        pad_before=0,
-        pad_after=0,
-        abs_action=False,
-        rotation_rep="rotation_6d",
+        shape_meta: dict = {
+            "obs": {
+                "agentview_image": {"shape": [3, 84, 84], "type": "rgb"},
+                "robot0_eye_in_hand_image": {"shape": [3, 84, 84], "type": "rgb"},
+                "robot0_eef_pos": {
+                    "shape": [
+                        3,
+                    ],
+                    "type": "low_dim",
+                },
+                "robot0_eef_quat": {
+                    "shape": [
+                        4,
+                    ],
+                    "type": "low_dim",
+                },
+                "robot0_gripper_qpos": {
+                    "shape": [
+                        2,
+                    ],
+                    "type": "low_dim",
+                },
+            },
+            "action": {
+                "shape": [
+                    7,
+                ]
+            },
+        },
+        n_obs_steps: Optional[int] = None,
+        horizon: int = 1,
+        pad_before: int = 0,
+        pad_after: int = 0,
+        abs_action: bool = False,
+        rotation_rep: str = "rotation_6d",
     ):
         super().__init__()
         self.rotation_transformer = RotationTransformer(from_rep="axis_angle", to_rep=rotation_rep)
@@ -224,6 +245,7 @@ class RobomimicImageDataset(BaseDataset):
             # only take first k obs from images
             for key in rgb_keys + lowdim_keys:
                 key_first_k[key] = n_obs_steps
+
         self.sampler = SequenceSampler(
             replay_buffer=self.replay_buffer,
             sequence_length=horizon,
@@ -241,17 +263,17 @@ class RobomimicImageDataset(BaseDataset):
         self.pad_after = pad_after
         self.n_obs_steps = n_obs_steps
 
-        self.normalizer = self.get_normalizer()
+        self.normalizer = {"obs": {}, "action": None}
+        for key in self.lowdim_keys:
+            self.normalizer["obs"][key] = MinMaxNormalizer(self.replay_buffer[key][:])
+        for key in self.rgb_keys:
+            max_rgb_values = np.full(shape_meta["obs"][key]["shape"], fill_value=255, dtype=np.float32)
+            min_rgb_values = np.zeros(shape_meta["obs"][key]["shape"], dtype=np.float32)
+            self.normalizer["obs"][key] = MinMaxNormalizer(None, -3, max_rgb_values, min_rgb_values)
+        self.normalizer["action"] = MinMaxNormalizer(self.replay_buffer["action"][:])
 
     def get_normalizer(self):
-        normalizer = defaultdict(dict)
-        for key in self.lowdim_keys:
-            normalizer["obs"][key] = MinMaxNormalizer(self.replay_buffer[key][:])
-        for key in self.rgb_keys:
-            normalizer["obs"][key] = ImageNormalizer()
-        normalizer["action"] = MinMaxNormalizer(self.replay_buffer["action"][:])
-
-        return normalizer
+        return self.normalizer
 
     def __str__(self) -> str:
         return f"Keys: {self.replay_buffer.keys()} Steps: {self.replay_buffer.n_steps} Episodes: {self.replay_buffer.n_episodes}"
@@ -274,7 +296,7 @@ class RobomimicImageDataset(BaseDataset):
             # move channel last to channel first
             # T,H,W,C
             # convert uint8 image to float32
-            obs_dict[key] = np.moveaxis(sample[key][T_slice], -1, 1).astype(np.float32) / 255.0
+            obs_dict[key] = np.moveaxis(sample[key][T_slice], -1, 1).astype(np.float32)
             # T,C,H,W
             del sample[key]
             obs_dict[key] = self.normalizer["obs"][key].normalize(obs_dict[key])

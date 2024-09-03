@@ -1,6 +1,3 @@
-import math
-import os
-import random
 from typing import Callable, Dict, Union, List
 
 import numpy as np
@@ -8,16 +5,6 @@ import torch
 import torch.nn as nn
 
 from .typings import TensorDict
-
-
-def set_seed(seed: int):
-    """Set seed for reproducibility"""
-    random.seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
 
 
 def at_least_ndim(x: Union[np.ndarray, torch.Tensor, int, float], ndim: int, pad: int = 0):
@@ -153,7 +140,9 @@ def inverse_linear_noise_schedule(
 
 
 def cosine_noise_schedule(t_diffusion: torch.Tensor, s: float = 0.008):
-    t_diffusion[-1] = 0.9946
+    eps = t_diffusion[0]
+    t_diffusion = t_diffusion - eps
+    t_diffusion = (t_diffusion * 0.9946) + eps
     alpha = (np.pi / 2.0 * (t_diffusion + s) / (1 + s)).cos() / np.cos(np.pi / 2.0 * s / (1 + s))
     sigma = (1.0 - alpha**2).sqrt()
     return alpha, sigma

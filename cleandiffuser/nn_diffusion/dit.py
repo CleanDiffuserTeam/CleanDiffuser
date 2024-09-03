@@ -12,7 +12,7 @@ def modulate(x, shift, scale):
 
 
 class DiTBlock(nn.Module):
-    """ A DiT block with adaptive layer norm zero (adaLN-Zero) conditioning. """
+    """A DiT block with adaptive layer norm zero (adaLN-Zero) conditioning."""
 
     def __init__(self, hidden_size: int, n_heads: int, dropout: float = 0.0):
         super().__init__()
@@ -20,13 +20,16 @@ class DiTBlock(nn.Module):
         self.attn = nn.MultiheadAttention(hidden_size, n_heads, dropout, batch_first=True)
         self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
 
-        def approx_gelu(): return nn.GELU(approximate="tanh")
+        def approx_gelu():
+            return nn.GELU(approximate="tanh")
 
         self.mlp = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size * 4), approx_gelu(), nn.Dropout(dropout),
-            nn.Linear(hidden_size * 4, hidden_size))
-        self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(), nn.Linear(hidden_size, hidden_size * 6))
+            nn.Linear(hidden_size, hidden_size * 4),
+            approx_gelu(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_size * 4, hidden_size),
+        )
+        self.adaLN_modulation = nn.Sequential(nn.SiLU(), nn.Linear(hidden_size, hidden_size * 6))
 
     def forward(self, x: torch.Tensor, t: torch.Tensor):
         shift_msa, scale_msa, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(t).chunk(6, dim=1)
@@ -41,8 +44,7 @@ class FinalLayer1d(nn.Module):
         super().__init__()
         self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.linear = nn.Linear(hidden_size, out_dim)
-        self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(), nn.Linear(hidden_size, 2 * hidden_size))
+        self.adaLN_modulation = nn.Sequential(nn.SiLU(), nn.Linear(hidden_size, 2 * hidden_size))
 
     def forward(self, x: torch.Tensor, t: torch.Tensor):
         shift, scale = self.adaLN_modulation(t).chunk(2, dim=1)
@@ -60,21 +62,19 @@ class DiT1d(BaseNNDiffusion):
         depth: int = 12,
         dropout: float = 0.0,
         timestep_emb_type: str = "positional",
-        timestep_emb_params: Optional[dict] = None
+        timestep_emb_params: Optional[dict] = None,
     ):
         super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
         self.in_dim, self.emb_dim = in_dim, emb_dim
         self.d_model = d_model
 
         self.x_proj = nn.Linear(in_dim, d_model)
-        self.map_emb = nn.Sequential(
-            nn.Linear(emb_dim, d_model), nn.Mish(), nn.Linear(d_model, d_model), nn.Mish())
+        self.map_emb = nn.Sequential(nn.Linear(emb_dim, d_model), nn.Mish(), nn.Linear(d_model, d_model), nn.Mish())
 
         self.pos_emb = UntrainablePositionalEmbedding(d_model)
         self.pos_emb_cache = None
 
-        self.blocks = nn.ModuleList([
-            DiTBlock(d_model, n_heads, dropout) for _ in range(depth)])
+        self.blocks = nn.ModuleList([DiTBlock(d_model, n_heads, dropout) for _ in range(depth)])
         self.final_layer = FinalLayer1d(d_model, in_dim)
         self.initialize_weights()
 
@@ -103,9 +103,7 @@ class DiT1d(BaseNNDiffusion):
         nn.init.constant_(self.final_layer.linear.weight, 0)
         nn.init.constant_(self.final_layer.linear.bias, 0)
 
-    def forward(self,
-                x: torch.Tensor, noise: torch.Tensor,
-                condition: Optional[torch.Tensor] = None):
+    def forward(self, x: torch.Tensor, noise: torch.Tensor, condition: Optional[torch.Tensor] = None):
         """
         Input:
             x:          (b, horizon, in_dim)
@@ -132,22 +130,21 @@ class DiT1d(BaseNNDiffusion):
 
 class DiT1Ref(DiT1d):
     def __init__(
-            self,
-            in_dim: int,
-            emb_dim: int,
-            d_model: int = 384,
-            n_heads: int = 6,
-            depth: int = 12,
-            dropout: float = 0.0,
-            timestep_emb_type: str = "positional",
+        self,
+        in_dim: int,
+        emb_dim: int,
+        d_model: int = 384,
+        n_heads: int = 6,
+        depth: int = 12,
+        dropout: float = 0.0,
+        timestep_emb_type: str = "positional",
     ):
         super().__init__(in_dim, emb_dim, d_model, n_heads, depth, dropout, timestep_emb_type)
-        self.cross_attns = nn.ModuleList([
-            nn.MultiheadAttention(d_model, n_heads, batch_first=True) for _ in range(depth)])
+        self.cross_attns = nn.ModuleList(
+            [nn.MultiheadAttention(d_model, n_heads, batch_first=True) for _ in range(depth)]
+        )
 
-    def forward(self,
-                x: torch.Tensor, noise: torch.Tensor,
-                condition: Optional[torch.Tensor] = None):
+    def forward(self, x: torch.Tensor, noise: torch.Tensor, condition: Optional[torch.Tensor] = None):
         """
         Input:
             x:          (b, horizon, in_dim * 2), where the first half is the reference signal
@@ -163,8 +160,8 @@ class DiT1Ref(DiT1d):
         x_ref, x = torch.chunk(x, 2, -1)
         x_ref_bkp = x_ref.clone()
 
-        x_ref = self.x_proj(x_ref) + self.pos_emb_cache[None, ]
-        x = self.x_proj(x) + self.pos_emb_cache[None, ]
+        x_ref = self.x_proj(x_ref) + self.pos_emb_cache[None,]
+        x = self.x_proj(x) + self.pos_emb_cache[None,]
         emb = self.map_noise(noise)
 
         if condition is not None:
