@@ -51,7 +51,7 @@ class GaussianNormalizer(EmptyNormalizer):
 
     def __init__(
         self,
-        X: Optional[np.ndarray],
+        X: Optional[np.ndarray] = None,
         start_dim: int = -1,
         x_mean: Optional[np.ndarray] = None,
         x_std: Optional[np.ndarray] = None,
@@ -123,7 +123,7 @@ class MinMaxNormalizer(EmptyNormalizer):
 
     def __init__(
         self,
-        X: Optional[np.ndarray],
+        X: Optional[np.ndarray] = None,
         start_dim: int = -1,
         X_max: Optional[np.ndarray] = None,
         X_min: Optional[np.ndarray] = None,

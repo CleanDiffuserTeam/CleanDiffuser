@@ -108,10 +108,10 @@ class ReplayBuffer:
             if storage is None:
                 storage = zarr.MemoryStore()
             root = zarr.group(store=storage)
-        data = root.require_group('data', overwrite=False)
+        _ = root.require_group('data', overwrite=False)
         meta = root.require_group('meta', overwrite=False)
         if 'episode_ends' not in meta:
-            episode_ends = meta.zeros('episode_ends', shape=(0,), dtype=np.int64,
+            _ = meta.zeros('episode_ends', shape=(0,), dtype=np.int64,
                                       compressor=None, overwrite=False)
         return cls(root=root)
 
@@ -123,6 +123,10 @@ class ReplayBuffer:
                 'episode_ends': np.zeros((0,), dtype=np.int64)
             }
         }
+        return cls(root=root)
+    
+    @classmethod
+    def create_from_dict(cls, root):
         return cls(root=root)
 
     @classmethod

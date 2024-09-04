@@ -110,7 +110,7 @@ class PearceTransformer(BaseNNDiffusion):
             The parameters of the timestep embedding. Default: None
 
     Examples:
-        >>> model = PearsonTransformer(x_dim=10, emb_dim=16)
+        >>> model = PearceTransformer(x_dim=10, emb_dim=16, condition_horizon=2)
         >>> x = torch.randn((2, 10))
         >>> t = torch.randint(1000, (2,))
         >>> condition = torch.randn((2, 2, 16))
@@ -125,47 +125,44 @@ class PearceTransformer(BaseNNDiffusion):
         x_dim: int,
         emb_dim: int = 128,
         condition_horizon: int = 1,
-        d_model: int = 1024,
-        n_heads: int = 16,
+        d_model: int = 256,
+        nhead: int = 8,
         timestep_emb_type: str = "positional",
         timestep_emb_params: Optional[dict] = None,
     ):
         super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
-
+        self.emb_dim = emb_dim
+        self.condition_horizon = condition_horizon
         self.act_emb = nn.Sequential(nn.Linear(x_dim, emb_dim), nn.LeakyReLU(), nn.Linear(emb_dim, emb_dim))
 
-        trans_emb_dim = d_model // n_heads
+        self.act_to_input = nn.Linear(emb_dim, d_model)
+        self.t_to_input = nn.Linear(emb_dim, d_model)
+        self.cond_to_input = nn.Linear(emb_dim, d_model)
 
-        self.act_to_input = nn.Linear(emb_dim, trans_emb_dim)
-        self.t_to_input = nn.Linear(emb_dim, trans_emb_dim)
-        self.cond_to_input = nn.Linear(emb_dim, trans_emb_dim)
+        self.pos_embed = nn.Parameter(torch.randn((1, 2 + condition_horizon, d_model)), requires_grad=True)
 
-        self.pos_embed = TimeSiren(1, trans_emb_dim)
-
-        self.transformer_blocks = nn.Sequential(
-            TransformerEncoderBlock(trans_emb_dim, d_model, n_heads),
-            TransformerEncoderBlock(trans_emb_dim, d_model, n_heads),
-            TransformerEncoderBlock(trans_emb_dim, d_model, n_heads),
-            TransformerEncoderBlock(trans_emb_dim, d_model, n_heads),
+        self.transformer_blocks = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(
+                d_model=d_model,
+                nhead=nhead,
+                dim_feedforward=4 * d_model,
+                dropout=0.1,
+                activation="gelu",
+                batch_first=True,
+            ),
+            num_layers=4,
         )
 
-        self.final = nn.Linear(trans_emb_dim * (2 + condition_horizon), x_dim)
+        self.final = nn.Linear(d_model * (2 + condition_horizon), x_dim)
 
-    def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
+    def forward(self, x: torch.Tensor, t: torch.Tensor, condition: Optional[torch.Tensor] = None):
         x_e, t_e = self.act_emb(x), self.map_noise(t)
-
-        x_input, t_input, c_input = self.act_to_input(x_e), self.t_to_input(t_e), self.cond_to_input(condition)
-
-        x_input += self.pos_embed(torch.full((1, 1), 1.0, device=x.device))
-        t_input += self.pos_embed(torch.full((1, 1), 2.0, device=x.device))
-        c_input += self.pos_embed(
-            torch.arange(3, 3 + condition.shape[1], device=x.device, dtype=torch.float32)[None, :, None]
-        )
-
-        f = torch.cat([x_input.unsqueeze(1), t_input.unsqueeze(1), c_input], dim=1)
-        f = self.transformer_blocks(f.permute(1, 0, 2)).permute(1, 0, 2)
-
-        flat = torch.flatten(f, start_dim=1)
-
-        out = self.final(flat)
+        x_input, t_input = self.act_to_input(x_e), self.t_to_input(t_e)
+        if condition is None:
+            condition = torch.zeros((x.shape[0], self.condition_horizon, self.emb_dim), device=x.device)
+        c_input = self.cond_to_input(condition)
+        tfm_in = torch.cat([x_input.unsqueeze(1), t_input.unsqueeze(1), c_input], dim=1)
+        tfm_in += self.pos_embed
+        f = self.transformer_blocks(tfm_in).flatten(1)
+        out = self.final(f)
         return out
