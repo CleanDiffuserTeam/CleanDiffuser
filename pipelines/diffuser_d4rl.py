@@ -139,7 +139,7 @@ def pipeline(args):
             nn_diffusion, None, fix_mask, loss_weight, ema_rate=0.999, classifier=classifier
         )
         actor.load_state_dict(
-            torch.load(save_path / "diffusion-step=1000000.ckpt", map_location=f"cuda:{args.device_id}")["state_dict"]
+            torch.load(save_path / "diffusion-step=900000.ckpt", map_location=f"cuda:{args.device_id}")["state_dict"]
         )
         actor.to(f"cuda:{args.device_id}").eval()
 

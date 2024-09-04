@@ -3,8 +3,8 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from cleandiffuser.utils import UntrainablePositionalEmbedding
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
+from cleandiffuser.utils import UntrainablePositionalEmbedding
 
 
 def modulate(x, shift, scale):
@@ -53,9 +53,44 @@ class FinalLayer1d(nn.Module):
 
 
 class DiT1d(BaseNNDiffusion):
+    """Temporal Diffusion Transformer (DiT) backbone used in AlignDiff.
+
+    DiT for temporal diffusion models. It can be used for variable length sequences.
+
+    Args:
+        x_dim (int):
+            The dimension of the input. Input tensors are assumed to be in shape of (b, horizon, x_dim),
+            where `horizon` can be variable.
+        emb_dim (int):
+            The dimension of the timestep embedding and condition embedding.
+        d_model (int):
+            The dimension of the transformer model. Default: 384
+        n_heads (int):
+            The number of heads in the transformer model. Default: 6
+        depth (int):
+            The number of transformer layers. Default: 12
+        dropout (float):
+            The dropout rate. Default: 0.0
+        timestep_emb_type (str):
+            The type of the timestep embedding. Default: "positional"
+        timestep_emb_params (dict):
+            The parameters of the timestep embedding. Default: None
+
+    Examples:
+        >>> model = DiT1d(x_dim=10, emb_dim=16)
+        >>> x = torch.randn((2, 20, 10))
+        >>> t = torch.randint(1000, (2,))
+        >>> model(x, t).shape
+        torch.Size([2, 20, 10])
+        >>> x = torch.randn((2, 40, 10))
+        >>> condition = torch.randn((2, 16))
+        >>> model(x, t, condition).shape
+        torch.Size([2, 40, 10])
+    """
+
     def __init__(
         self,
-        in_dim: int,
+        x_dim: int,
         emb_dim: int,
         d_model: int = 384,
         n_heads: int = 6,
@@ -65,17 +100,14 @@ class DiT1d(BaseNNDiffusion):
         timestep_emb_params: Optional[dict] = None,
     ):
         super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
-        self.in_dim, self.emb_dim = in_dim, emb_dim
-        self.d_model = d_model
-
-        self.x_proj = nn.Linear(in_dim, d_model)
+        self.x_proj = nn.Linear(x_dim, d_model)
         self.map_emb = nn.Sequential(nn.Linear(emb_dim, d_model), nn.Mish(), nn.Linear(d_model, d_model), nn.Mish())
 
         self.pos_emb = UntrainablePositionalEmbedding(d_model)
         self.pos_emb_cache = None
 
         self.blocks = nn.ModuleList([DiTBlock(d_model, n_heads, dropout) for _ in range(depth)])
-        self.final_layer = FinalLayer1d(d_model, in_dim)
+        self.final_layer = FinalLayer1d(d_model, x_dim)
         self.initialize_weights()
 
     def initialize_weights(self):
@@ -104,15 +136,6 @@ class DiT1d(BaseNNDiffusion):
         nn.init.constant_(self.final_layer.linear.bias, 0)
 
     def forward(self, x: torch.Tensor, noise: torch.Tensor, condition: Optional[torch.Tensor] = None):
-        """
-        Input:
-            x:          (b, horizon, in_dim)
-            noise:      (b, )
-            condition:  (b, emb_dim) or None / No condition indicates zeros((b, emb_dim))
-
-        Output:
-            y:          (b, horizon, in_dim)
-        """
         if self.pos_emb_cache is None or self.pos_emb_cache.shape[0] != x.shape[1]:
             self.pos_emb_cache = self.pos_emb(torch.arange(x.shape[1], device=x.device))
 
@@ -126,50 +149,3 @@ class DiT1d(BaseNNDiffusion):
             x = block(x, emb)
         x = self.final_layer(x, emb)
         return x
-
-
-class DiT1Ref(DiT1d):
-    def __init__(
-        self,
-        in_dim: int,
-        emb_dim: int,
-        d_model: int = 384,
-        n_heads: int = 6,
-        depth: int = 12,
-        dropout: float = 0.0,
-        timestep_emb_type: str = "positional",
-    ):
-        super().__init__(in_dim, emb_dim, d_model, n_heads, depth, dropout, timestep_emb_type)
-        self.cross_attns = nn.ModuleList(
-            [nn.MultiheadAttention(d_model, n_heads, batch_first=True) for _ in range(depth)]
-        )
-
-    def forward(self, x: torch.Tensor, noise: torch.Tensor, condition: Optional[torch.Tensor] = None):
-        """
-        Input:
-            x:          (b, horizon, in_dim * 2), where the first half is the reference signal
-            noise:      (b, )
-            condition:  (b, emb_dim) or None / No condition indicates zeros((b, emb_dim))
-
-        Output:
-            y:          (b, horizon, in_dim)
-        """
-        if self.pos_emb_cache is None or self.pos_emb_cache.shape[0] != x.shape[1]:
-            self.pos_emb_cache = self.pos_emb(torch.arange(x.shape[1], device=x.device))
-
-        x_ref, x = torch.chunk(x, 2, -1)
-        x_ref_bkp = x_ref.clone()
-
-        x_ref = self.x_proj(x_ref) + self.pos_emb_cache[None,]
-        x = self.x_proj(x) + self.pos_emb_cache[None,]
-        emb = self.map_noise(noise)
-
-        if condition is not None:
-            emb = emb + condition
-        emb = self.map_emb(emb)
-
-        for cross_attn, block in zip(self.cross_attns, self.blocks):
-            x, _ = cross_attn(x, x_ref, x_ref)
-            x = block(x, emb)
-        x = self.final_layer(x, emb)
-        return torch.cat([x_ref_bkp, x], -1)

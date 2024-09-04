@@ -40,10 +40,11 @@ class PearceMlp(BaseNNDiffusion):
             The dimension of the input. It is referred to as the dimension of `action` in DBC.
         emb_dim (int):
             The dimension of the timestep embedding and condition embedding.
+        condition_horizon (int):
+            The horizon of the condition embedding.
+            The condition should be of shape (b, condition_horizon, emb_dim) and is referred to as `observation` in DBC.
         hidden_dim (int):
             The dimension of the hidden layer.
-        condition_horizon (int):
-            The horizon of the condition embedding. The condition should be of shape (b, condition_horizon, emb_dim) and is referred to as `observation` in DBC.
         timestep_emb_type (str):
             The type of the timestep embedding.
         timestep_emb_params (Optional[dict]):
@@ -64,8 +65,8 @@ class PearceMlp(BaseNNDiffusion):
         self,
         x_dim: int,
         emb_dim: int = 128,
-        hidden_dim: int = 512,
         condition_horizon: int = 1,
+        hidden_dim: int = 512,
         timestep_emb_type: str = "positional",
         timestep_emb_params: Optional[dict] = None,
     ):

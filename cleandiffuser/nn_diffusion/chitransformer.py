@@ -53,14 +53,54 @@ def init_weight(module):
 
 
 class ChiTransformer(BaseNNDiffusion):
-    """condition: (1 + To) | x: (Ta)"""
+    """Transformer diffusion backbone used in Diffusion Policy (DP).
+
+    A Transformer with specially designed attention masking.
+
+    Args:
+        x_dim (int):
+            The dimension of the input. It is referred to as the dimension of `action` in DP.
+            The input should be in shape of (b, x_horizon, x_dim).
+        x_horizon (int):
+            The horizon of the input.
+        condition_dim (int):
+            The dimension of the condition embedding. It is referred to as `observation` in DP.
+        condition_horizon (int):
+            The horizon of the condition embedding.
+        d_model (int):
+            The dimension of the transformer.
+        nhead (int):
+            The number of attention heads.
+        num_layers (int):
+            The number of transformer layers.
+        p_drop_emb (float):
+            The dropout rate of the embedding layer.
+        p_drop_attn (float):
+            The dropout rate of the attention layer.
+        n_cond_layers (int):
+            The number of layers that use the condition embedding.
+        timestep_emb_type (str):
+            The type of the timestep embedding.
+        timestep_emb_params (Optional[dict]):
+            The parameters of the timestep embedding.
+
+    Example:
+        >>> model = ChiTransformer(x_dim=10, x_horizon=16, condition_dim=5, condition_horizon=2)
+        >>> x = torch.randn(4, 16, 10)
+        >>> t = torch.randint(1000, (4,))
+        >>> condition = torch.randn(4, 2, 5)
+        >>> model(x, t, condition).shape
+        torch.Size([4, 16, 10])
+        >>> model(x, t, None).shape
+        torch.Size([4, 16, 10])
+    """
 
     def __init__(
         self,
-        act_dim: int,
-        obs_dim: int,
-        Ta: int,
-        To: int,
+        x_dim: int,
+        x_horizon: int,
+        condition_dim: int,
+        condition_horizon: int,
         d_model: int = 256,
         nhead: int = 4,
         num_layers: int = 8,
@@ -72,14 +112,14 @@ class ChiTransformer(BaseNNDiffusion):
     ):
         super().__init__(d_model, timestep_emb_type, timestep_emb_params)
 
-        T = Ta
-        T_cond = 1 + To
+        T = x_horizon
+        T_cond = 1 + condition_horizon
 
-        self.act_emb = nn.Linear(act_dim, d_model)
-        self.pos_emb = nn.Parameter(torch.zeros(1, Ta, d_model))
+        self.act_emb = nn.Linear(x_dim, d_model)
+        self.pos_emb = nn.Parameter(torch.zeros(1, x_horizon, d_model))
 
-        self.obs_emb = nn.Linear(obs_dim, d_model)
-        self.cond_pos_emb = nn.Parameter(torch.zeros(1, 1 + To, d_model))
+        self.obs_emb = nn.Linear(condition_dim, d_model)
+        self.cond_pos_emb = nn.Parameter(torch.zeros(1, 1 + condition_horizon, d_model))
 
         self.drop = nn.Dropout(p_drop_emb)
         self.cond_encoder = nn.Sequential(nn.Linear(d_model, 4 * d_model), nn.Mish(), nn.Linear(4 * d_model, d_model))
@@ -100,18 +140,18 @@ class ChiTransformer(BaseNNDiffusion):
         self.decoder = nn.TransformerDecoder(decoder_layer=decoder_layer, num_layers=num_layers)
 
         # attention mask
-        mask = (torch.triu(torch.ones(Ta, Ta)) == 1).transpose(0, 1)
+        mask = (torch.triu(torch.ones(x_horizon, x_horizon)) == 1).transpose(0, 1)
         mask = mask.float().masked_fill(mask == 0, float("-inf")).masked_fill(mask == 1, float(0.0))
         self.mask = nn.Parameter(mask, requires_grad=False)
 
-        t, s = torch.meshgrid(torch.arange(Ta), torch.arange(To + 1), indexing="ij")
+        t, s = torch.meshgrid(torch.arange(x_horizon), torch.arange(condition_horizon + 1), indexing="ij")
         mask = t >= (s - 1)
         mask = mask.float().masked_fill(mask == 0, float("-inf")).masked_fill(mask == 1, float(0.0))
         self.memory_mask = nn.Parameter(mask, requires_grad=False)
 
         # decoder head
         self.ln_f = nn.LayerNorm(d_model)
-        self.head = nn.Linear(d_model, act_dim)
+        self.head = nn.Linear(d_model, x_dim)
 
         # constant
         self.T = T
@@ -119,18 +159,8 @@ class ChiTransformer(BaseNNDiffusion):
 
         self.apply(init_weight)
 
-    def forward(self, x: torch.Tensor, noise: torch.Tensor, condition: torch.Tensor = None):
-        """
-        Input:
-            x:          (b, Ta, act_dim)
-            noise:      (b, )
-            condition:  (b, To, obs_dim)
-
-        Output:
-            y:          (b, Ta, act_dim)
-        """
-
-        t_emb = self.map_noise(noise).unsqueeze(1)  # (b, 1, d_model)
+    def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
+        t_emb = self.map_noise(t).unsqueeze(1)  # (b, 1, d_model)
 
         act_emb = self.act_emb(x)
         obs_emb = self.obs_emb(condition)

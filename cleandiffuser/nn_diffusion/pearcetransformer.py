@@ -1,8 +1,9 @@
+from typing import Optional
+
 import torch
 import torch.nn as nn
 
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
-from typing import Optional
 
 
 class TimeSiren(nn.Module):
@@ -40,9 +41,9 @@ class TransformerEncoderBlock(nn.Module):
 
     def split_qkv(self, qkv):
         assert qkv.shape[-1] == self.transformer_dim * 3
-        q = qkv[:, :, :self.transformer_dim]
-        k = qkv[:, :, self.transformer_dim: 2 * self.transformer_dim]
-        v = qkv[:, :, 2 * self.transformer_dim:]
+        q = qkv[:, :, : self.transformer_dim]
+        k = qkv[:, :, self.transformer_dim : 2 * self.transformer_dim]
+        v = qkv[:, :, 2 * self.transformer_dim :]
         return q, k, v
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
@@ -80,27 +81,60 @@ class TransformerEncoderBlock(nn.Module):
 class EmbeddingBlock(nn.Module):
     def __init__(self, in_dim: int, emb_dim: int):
         super().__init__()
-        self.model = nn.Sequential(
-            nn.Linear(in_dim, emb_dim), nn.LeakyReLU(),
-            nn.Linear(emb_dim, emb_dim))
+        self.model = nn.Sequential(nn.Linear(in_dim, emb_dim), nn.LeakyReLU(), nn.Linear(emb_dim, emb_dim))
 
     def forward(self, x):
         return self.model(x)
 
 
 class PearceTransformer(BaseNNDiffusion):
+    """Pearce Transformer diffusion model backbone.
+
+    A simple transformer encoder used in diffusion behavior clone (DBC).
+
+    Args:
+        x_dim (int):
+            The dimension of the input. It is referred to as the dimension of `action` in DBC.
+        emb_dim (int):
+            The dimension of the timestep embedding and condition embedding.
+        condition_horizon (int):
+            The horizon of the condition embedding.
+            The condition should be of shape (b, condition_horizon, emb_dim) and is referred to as `observation` in DBC.
+        d_model (int):
+            The dimension of the transformer.
+        n_heads (int):
+            The number of heads in the transformer.
+        timestep_emb_type (str):
+            The type of the timestep embedding.
+        timestep_emb_params (Optional[dict]):
+            The parameters of the timestep embedding. Default: None
+
+    Examples:
+        >>> model = PearsonTransformer(x_dim=10, emb_dim=16)
+        >>> x = torch.randn((2, 10))
+        >>> t = torch.randint(1000, (2,))
+        >>> condition = torch.randn((2, 2, 16))
+        >>> model(x, t, condition).shape
+        torch.Size([2, 10])
+        >>> model(x, t, None).shape
+        torch.Size([2, 10])
+    """
+
     def __init__(
-            self, act_dim: int, To: int = 1,
-            emb_dim: int = 128, trans_emb_dim: int = 64, nhead: int = 16,
-            timestep_emb_type: str = "positional",
-            timestep_emb_params: Optional[dict] = None
+        self,
+        x_dim: int,
+        emb_dim: int = 128,
+        condition_horizon: int = 1,
+        d_model: int = 1024,
+        n_heads: int = 16,
+        timestep_emb_type: str = "positional",
+        timestep_emb_params: Optional[dict] = None,
     ):
         super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
 
-        self.act_emb = nn.Sequential(
-            nn.Linear(act_dim, emb_dim), nn.LeakyReLU(), nn.Linear(emb_dim, emb_dim))
+        self.act_emb = nn.Sequential(nn.Linear(x_dim, emb_dim), nn.LeakyReLU(), nn.Linear(emb_dim, emb_dim))
 
-        transformer_dim = trans_emb_dim * nhead
+        trans_emb_dim = d_model // n_heads
 
         self.act_to_input = nn.Linear(emb_dim, trans_emb_dim)
         self.t_to_input = nn.Linear(emb_dim, trans_emb_dim)
@@ -109,33 +143,24 @@ class PearceTransformer(BaseNNDiffusion):
         self.pos_embed = TimeSiren(1, trans_emb_dim)
 
         self.transformer_blocks = nn.Sequential(
-            TransformerEncoderBlock(trans_emb_dim, transformer_dim, nhead),
-            TransformerEncoderBlock(trans_emb_dim, transformer_dim, nhead),
-            TransformerEncoderBlock(trans_emb_dim, transformer_dim, nhead),
-            TransformerEncoderBlock(trans_emb_dim, transformer_dim, nhead))
+            TransformerEncoderBlock(trans_emb_dim, d_model, n_heads),
+            TransformerEncoderBlock(trans_emb_dim, d_model, n_heads),
+            TransformerEncoderBlock(trans_emb_dim, d_model, n_heads),
+            TransformerEncoderBlock(trans_emb_dim, d_model, n_heads),
+        )
 
-        self.final = nn.Linear(trans_emb_dim * (2 + To), act_dim)
+        self.final = nn.Linear(trans_emb_dim * (2 + condition_horizon), x_dim)
 
-    def forward(self,
-                x: torch.Tensor, noise: torch.Tensor,
-                condition: torch.Tensor = None):
-        """
-        Input:
-            x:          (b, act_dim)
-            noise:      (b, )
-            condition:  (b, To, emb_dim)
-
-        Output:
-            y:          (b, act_dim)
-        """
-        x_e, t_e = self.act_emb(x), self.map_noise(noise)
+    def forward(self, x: torch.Tensor, t: torch.Tensor, condition: torch.Tensor = None):
+        x_e, t_e = self.act_emb(x), self.map_noise(t)
 
         x_input, t_input, c_input = self.act_to_input(x_e), self.t_to_input(t_e), self.cond_to_input(condition)
 
-        x_input += self.pos_embed(torch.zeros(1, 1, device=x.device) + 1.0)
-        t_input += self.pos_embed(torch.zeros(1, 1, device=x.device) + 2.0)
+        x_input += self.pos_embed(torch.full((1, 1), 1.0, device=x.device))
+        t_input += self.pos_embed(torch.full((1, 1), 2.0, device=x.device))
         c_input += self.pos_embed(
-            torch.arange(3, 3 + condition.shape[1], device=x.device, dtype=torch.float32)[None, :, None])
+            torch.arange(3, 3 + condition.shape[1], device=x.device, dtype=torch.float32)[None, :, None]
+        )
 
         f = torch.cat([x_input.unsqueeze(1), t_input.unsqueeze(1), c_input], dim=1)
         f = self.transformer_blocks(f.permute(1, 0, 2)).permute(1, 0, 2)
