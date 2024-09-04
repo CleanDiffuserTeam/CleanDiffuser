@@ -14,7 +14,7 @@ from cleandiffuser.dataset.d4rl_kitchen_dataset import D4RLKitchenDataset
 from cleandiffuser.dataset.d4rl_mujoco_dataset import D4RLMuJoCoDataset
 from cleandiffuser.diffusion import ContinuousDiffusionSDE
 from cleandiffuser.invdynamic import FancyMlpInvDynamic
-from cleandiffuser.nn_condition import MLPCondition
+from cleandiffuser.nn_condition import MLPCondition, FourierCondition
 from cleandiffuser.nn_diffusion import DiT1d
 
 RETURN_SCALE = {
@@ -99,13 +99,14 @@ def pipeline(args):
     nn_diffusion = DiT1d(
         in_dim=obs_dim, emb_dim=128, d_model=320, n_heads=10, depth=2, timestep_emb_type="untrainable_fourier"
     )
-    nn_condition = MLPCondition(
-        in_dim=1,
-        out_dim=128,
-        hidden_dims=[128],
-        act=torch.nn.SiLU(),
-        dropout=0.25,
-    )
+    # nn_condition = MLPCondition(
+    #     in_dim=1,
+    #     out_dim=128,
+    #     hidden_dims=[128],
+    #     act=torch.nn.SiLU(),
+    #     dropout=0.25,
+    # )
+    nn_condition = FourierCondition(in_dim=128, out_dim=128, hidden_dims=128, dropout=0.25)
 
     # --- Create Masks & Weights ---
     fix_mask = torch.zeros((args.task.horizon, obs_dim))
@@ -118,19 +119,19 @@ def pipeline(args):
         actor = ContinuousDiffusionSDE(nn_diffusion, nn_condition, fix_mask, loss_weight, ema_rate=0.999)
 
         dataloader = DataLoader(
-            ObsSequence_Wrapper(dataset, env_name), batch_size=64, shuffle=True, num_workers=4, persistent_workers=True
+            ObsSequence_Wrapper(dataset, env_name), batch_size=512, shuffle=True, num_workers=4, persistent_workers=True
         )
 
         callback = ModelCheckpoint(
-            dirpath=save_path, filename="diffusion-{step}", every_n_train_steps=args.save_interval
+            dirpath=save_path, filename="diffusion-{step}", every_n_train_steps=args.save_interval, save_top_k=-1
         )
 
         trainer = L.Trainer(
             accelerator="gpu",
-            devices=[args.device_id],
+            devices=[0, 1, 2, 3],
             max_steps=args.diffusion_training_steps,
             deterministic=True,
-            log_every_n_steps=1000,
+            log_every_n_steps=200,
             default_root_dir=save_path,
             callbacks=[callback],
         )

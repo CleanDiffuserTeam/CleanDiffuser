@@ -12,7 +12,7 @@ invdyn_hidden_dim: 512
 # Training
 diffusion_training_steps: 1000000
 invdyn_training_steps: 200000
-save_interval: 100000
+save_interval: 50000
 
 # Inference
 diffusion_ckpt: 1000000

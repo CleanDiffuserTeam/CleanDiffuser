@@ -18,19 +18,13 @@ class BaseNNDiffusion(nn.Module):
      which are inputted as a tensor dictionary, or a single condition, directly inputted as a tensor.
     """
 
-    def __init__(
-        self, emb_dim: int, 
-        timestep_emb_type: str = "positional",
-        timestep_emb_params: Optional[dict] = None
-    ):
+    def __init__(self, emb_dim: int, timestep_emb_type: str = "positional", timestep_emb_params: Optional[dict] = None):
         assert timestep_emb_type in SUPPORTED_TIMESTEP_EMBEDDING.keys()
         super().__init__()
         timestep_emb_params = timestep_emb_params or {}
         self.map_noise = SUPPORTED_TIMESTEP_EMBEDDING[timestep_emb_type](emb_dim, **timestep_emb_params)
 
-    def forward(self,
-                x: torch.Tensor, noise: torch.Tensor,
-                condition: Optional[torch.Tensor] = None):
+    def forward(self, x: torch.Tensor, noise: torch.Tensor, condition: Optional[torch.Tensor] = None):
         """
         Input:
             x:          (b, horizon, in_dim)
@@ -41,4 +35,3 @@ class BaseNNDiffusion(nn.Module):
             y:          (b, horizon, in_dim)
         """
         raise NotImplementedError
-

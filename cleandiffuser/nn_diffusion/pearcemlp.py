@@ -24,46 +24,67 @@ class FCBlock(nn.Module):
     def __init__(self, in_feats, out_feats):
         super().__init__()
         # one layer of non-linearities (just a useful building block to use below)
-        self.model = nn.Sequential(
-            nn.Linear(in_feats, out_feats),
-            GroupNorm1d(out_feats, 8, 4),
-            nn.GELU())
+        self.model = nn.Sequential(nn.Linear(in_feats, out_feats), GroupNorm1d(out_feats, 8, 4), nn.GELU())
 
     def forward(self, x):
         return self.model(x)
 
 
 class PearceMlp(BaseNNDiffusion):
+    """Pearce MLP diffusion model backbone.
+
+    A well-designed mlp used in diffusion behavior clone (DBC).
+
+    Args:
+        x_dim (int):
+            The dimension of the input. It is referred to as the dimension of `action` in DBC.
+        emb_dim (int):
+            The dimension of the timestep embedding and condition embedding.
+        hidden_dim (int):
+            The dimension of the hidden layer.
+        condition_horizon (int):
+            The horizon of the condition embedding. The condition should be of shape (b, condition_horizon, emb_dim) and is referred to as `observation` in DBC.
+        timestep_emb_type (str):
+            The type of the timestep embedding.
+        timestep_emb_params (Optional[dict]):
+            The parameters of the timestep embedding. Default: None
+
+    Examples:
+        >>> model = PearsonMlp(x_dim=10, emb_dim=16, hidden_dim=256, condition_horizon=2)
+        >>> x = torch.randn((2, 10))
+        >>> t = torch.randint(1000, (2,))
+        >>> condition = torch.randn((2, 2, 16))  # Should be of shape (b, condition_horizon, emb_dim)
+        >>> model(x, t, condition).shape
+        torch.Size([2, 10])
+        >>> model(x, t, None).shape
+        torch.Size([2, 10])
+    """
+
     def __init__(
-            self, act_dim: int, To: int = 1, timestep_emb_type: str = "positional",
-            emb_dim: int = 128, hidden_dim: int = 512, timestep_emb_params: Optional[dict] = None,
+        self,
+        x_dim: int,
+        emb_dim: int = 128,
+        hidden_dim: int = 512,
+        condition_horizon: int = 1,
+        timestep_emb_type: str = "positional",
+        timestep_emb_params: Optional[dict] = None,
     ):
         super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
 
-        self.act_emb = nn.Sequential(
-            nn.Linear(act_dim, emb_dim), nn.LeakyReLU(), nn.Linear(emb_dim, emb_dim))
+        self.act_emb = nn.Sequential(nn.Linear(x_dim, emb_dim), nn.LeakyReLU(), nn.Linear(emb_dim, emb_dim))
 
-        self.fcs = nn.ModuleList([
-            FCBlock(emb_dim * (2 + To), hidden_dim),
-            FCBlock(hidden_dim + act_dim + 1, hidden_dim),
-            FCBlock(hidden_dim + act_dim + 1, hidden_dim),
-            nn.Linear(hidden_dim + act_dim + 1, act_dim)])
+        self.fcs = nn.ModuleList(
+            [
+                FCBlock(emb_dim * (2 + condition_horizon), hidden_dim),
+                FCBlock(hidden_dim + x_dim + 1, hidden_dim),
+                FCBlock(hidden_dim + x_dim + 1, hidden_dim),
+                nn.Linear(hidden_dim + x_dim + 1, x_dim),
+            ]
+        )
 
-    def forward(self,
-                x: torch.Tensor, noise: torch.Tensor,
-                condition: torch.Tensor = None):
-        """
-        Input:
-            x:          (b, act_dim)
-            noise:      (b, )
-            condition:  (b, To, emb_dim)
-
-        Output:
-            y:          (b, act_dim)
-        """
-        x_e, t_e = self.act_emb(x), self.map_noise(noise)
-        t = noise.unsqueeze(-1)
-
+    def forward(self, x: torch.Tensor, t: torch.Tensor, condition: Optional[torch.Tensor] = None):
+        x_e, t_e = self.act_emb(x), self.map_noise(t)
+        t = t.unsqueeze(-1)
         if condition is not None:
             nn1 = self.fcs[0](torch.cat([x_e, t_e, torch.flatten(condition, 1)], -1))
         else:
@@ -71,5 +92,4 @@ class PearceMlp(BaseNNDiffusion):
         nn2 = self.fcs[1](torch.cat([nn1 / 1.414, x, t], -1)) + nn1 / 1.414
         nn3 = self.fcs[2](torch.cat([nn2 / 1.414, x, t], -1)) + nn2 / 1.414
         out = self.fcs[3](torch.cat([nn3, x, t], -1))
-
         return out

@@ -10,7 +10,7 @@ seed: 0
 # Training
 diffusion_training_steps: 1000000
 classifier_training_steps: 200000
-save_interval: 100000
+save_interval: 20000
 
 # Inference
 ckpt: latest
