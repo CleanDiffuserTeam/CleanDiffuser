@@ -1,17 +1,14 @@
-import warnings
 from typing import Optional, Union
 
 import einops
-import numpy as np
 import torch
 import torch.nn as nn
 
 from cleandiffuser.classifier import BaseClassifier
+from cleandiffuser.diffusion.basic import DiffusionModel
 from cleandiffuser.nn_condition import BaseNNCondition
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
 from cleandiffuser.utils import TensorDict, at_least_ndim, concat_zeros, dict_apply
-
-from .basic import DiffusionModel
 
 
 class ContinuousEDM(DiffusionModel):
@@ -288,9 +285,9 @@ class ContinuousEDM(DiffusionModel):
         prior: torch.Tensor,
         # ----------------- sampling ----------------- #
         solver: str = "euler",  # euler or heun
-        n_samples: int = 1,
         sample_steps: int = 5,
-        sample_step_schedule: Optional[str] = None,
+        sampling_schedule: None = None,
+        sampling_schedule_params: None = None,
         use_ema: bool = True,
         temperature: float = 1.0,
         # ------------------ guidance ------------------ #
@@ -359,45 +356,44 @@ class ContinuousEDM(DiffusionModel):
             The log dictionary.
         """
         assert solver in ["euler", "heun"], f"Solver {solver} is not supported. Use 'euler' or 'heun' instead."
-        if sample_step_schedule is not None:
-            warnings.warn("EDM does not support custom `sample_step_schedule`. Use the default schedule instead.")
 
         # ===================== Initialization =====================
-        log = {
-            "sample_history": np.empty((n_samples, sample_steps + 1, *prior.shape)) if preserve_history else None,
-        }
+        n_samples = prior.shape[0]
+        log = {"sample_history": []}
 
         model = self.model if not use_ema else self.model_ema
 
         prior = prior.to(self.device)
         if isinstance(warm_start_reference, torch.Tensor) and warm_start_forward_level > 0.0:
+            warm_start_reference = warm_start_reference.to(self.device)
             fwd_sigma = self.sigma_min + (self.sigma_max - self.sigma_min) * warm_start_forward_level
             xt = warm_start_reference + fwd_sigma * torch.randn_like(warm_start_reference)
         else:
             fwd_sigma = self.sigma_max
             xt = torch.randn_like(prior) * self.sigma_max * temperature
         xt = xt * (1.0 - self.fix_mask) + prior * self.fix_mask
+
         if preserve_history:
-            log["sample_history"][:, 0] = xt.cpu().numpy()
+            log["sample_history"].append(xt.cpu().numpy())
 
         with torch.set_grad_enabled(requires_grad):
             condition_vec_cfg = model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
             condition_vec_cg = condition_cg
 
         # ===================== Sampling Schedule ====================
-        sample_step_schedule = (
+        t_schedule = (
             self.sigma_min ** (1 / self.rho)
             + torch.arange(sample_steps + 1, device=self.device)
             / sample_steps
             * (fwd_sigma ** (1 / self.rho) - self.sigma_min ** (1 / self.rho))
         ) ** self.rho
 
-        sigmas = sample_step_schedule
+        sigmas = t_schedule
 
         # ===================== Denoising Loop ========================
         loop_steps = [1] * diffusion_x_sampling_steps + list(range(1, sample_steps + 1))
         for i in reversed(loop_steps):
-            t = torch.full((n_samples,), sample_step_schedule[i], dtype=torch.float32, device=self.device)
+            t = torch.full((n_samples,), t_schedule[i], dtype=torch.float32, device=self.device)
 
             # guided sampling
             pred, logp = self.guided_sampling(
@@ -410,14 +406,14 @@ class ContinuousEDM(DiffusionModel):
 
             # one-step update
             dot_x = (xt - pred) / at_least_ndim(sigmas[i], xt.dim())
-            delta_t = sample_step_schedule[i] - sample_step_schedule[i - 1]
+            delta_t = t_schedule[i] - t_schedule[i - 1]
             x_next = xt - dot_x * delta_t
             x_next = x_next * (1.0 - self.fix_mask) + prior * self.fix_mask
 
             if solver == "heun" and i > 1:
                 pred, logp = self.guided_sampling(
                     x_next,
-                    t / sample_step_schedule[i] * sample_step_schedule[i - 1],
+                    t / t_schedule[i] * t_schedule[i - 1],
                     0,
                     sigmas[i - 1],
                     model,
@@ -436,7 +432,7 @@ class ContinuousEDM(DiffusionModel):
             xt = x_next
 
             if preserve_history:
-                log["sample_history"][:, sample_steps - i + 1] = xt.cpu().numpy()
+                log["sample_history"].append(xt.cpu().numpy())
 
         # ================= Post-processing =================
         if self.classifier is not None:
@@ -448,4 +444,26 @@ class ContinuousEDM(DiffusionModel):
         if self.clip_pred:
             xt = xt.clip(self.x_min, self.x_max)
 
+        log["sampling_schedule"] = t_schedule
+        log["sigma"] = sigmas
+
         return xt, log
+
+
+if __name__ == "__main__":
+    from cleandiffuser.nn_diffusion import MlpNNDiffusion
+
+    device = "cuda:0"
+
+    nn_diffusion = MlpNNDiffusion(10, 16).to(device)
+
+    prior = torch.zeros((2, 10))
+    warm_start_reference = torch.zeros((2, 10))
+    diffusion = ContinuousEDM(nn_diffusion).to(device)
+
+    y, log = diffusion.sample(
+        prior,
+        sample_steps=20,
+        warm_start_reference=warm_start_reference,
+        warm_start_forward_level=0.64,
+    )

@@ -47,7 +47,7 @@ class MlpNNDiffusion(BaseNNDiffusion):
         timestep_emb_params: Optional[dict] = None,
     ):
         super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
-        hidden_dims = [hidden_dims] if not isinstance(hidden_dims, list) else hidden_dims
+        hidden_dims = [hidden_dims] if isinstance(hidden_dims, (int, float)) else hidden_dims
         self.mlp = Mlp(x_dim + emb_dim, hidden_dims, x_dim, activation)
 
     def forward(self, x: torch.Tensor, t: torch.Tensor, condition: Optional[torch.Tensor] = None):

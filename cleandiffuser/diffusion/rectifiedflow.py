@@ -1,23 +1,20 @@
 from typing import Callable, Optional, Union
 
 import einops
-import numpy as np
 import torch
 import torch.nn as nn
 
 from cleandiffuser.classifier import BaseClassifier
+from cleandiffuser.diffusion.basic import DiffusionModel
 from cleandiffuser.nn_condition import BaseNNCondition
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
 from cleandiffuser.utils import (
-    SUPPORTED_DISCRETIZATIONS,
-    SUPPORTED_SAMPLING_STEP_SCHEDULE,
     TensorDict,
     at_least_ndim,
     concat_zeros,
     dict_apply,
+    get_sampling_scheduler,
 )
-
-from .basic import DiffusionModel
 
 
 class DiscreteRectifiedFlow(DiffusionModel):
@@ -100,19 +97,6 @@ class DiscreteRectifiedFlow(DiffusionModel):
         self.x_max = nn.Parameter(x_max, requires_grad=False) if x_max is not None else None
         self.x_min = nn.Parameter(x_min, requires_grad=False) if x_min is not None else None
 
-        # ================= Discretization =================
-        # - Map the continuous range [0., 1.] to the discrete range [0, T-1]
-        if isinstance(discretization, str):
-            if discretization in SUPPORTED_DISCRETIZATIONS.keys():
-                t_diffusion = SUPPORTED_DISCRETIZATIONS[discretization](diffusion_steps, eps=0.0)
-            else:
-                raise ValueError(f"Discretization {discretization} is not supported.")
-        elif callable(discretization):
-            t_diffusion = discretization(diffusion_steps)
-        else:
-            raise ValueError("discretization must be a callable or a string")
-        self.t_diffusion = nn.Parameter(t_diffusion, requires_grad=False)
-
     @property
     def supported_solvers(self):
         return ["euler"]
@@ -141,10 +125,10 @@ class DiscreteRectifiedFlow(DiffusionModel):
             t (torch.Tensor): Diffusion timestep.
             eps (torch.Tensor): Noise.
         """
-        t = torch.randint(self.diffusion_steps, (x0.shape[0],), device=self.device) if t is None else t
+        t = torch.randint(1, self.diffusion_steps + 1, (x0.shape[0],), device=self.device) if t is None else t
         eps = torch.randn_like(x0) if eps is None else eps
 
-        t_c = at_least_ndim(self.t_diffusion[t], x0.dim())
+        t_c = t / self.diffusion_steps
 
         xt = t_c * eps + (1 - t_c) * x0
         xt = xt * (1.0 - self.fix_mask) + x0 * self.fix_mask
@@ -229,9 +213,9 @@ class DiscreteRectifiedFlow(DiffusionModel):
         x1: Optional[torch.Tensor] = None,
         # ----------------- sampling ----------------- #
         solver: str = "euler",
-        n_samples: int = 1,
         sample_steps: int = 5,
-        sample_step_schedule: Union[str, Callable] = "uniform",
+        sampling_schedule: str = "linear",
+        sampling_schedule_params: Optional[dict] = None,
         use_ema: bool = True,
         temperature: float = 1.0,
         # ------------------ guidance ------------------ #
@@ -298,19 +282,21 @@ class DiscreteRectifiedFlow(DiffusionModel):
         assert w_cg == 0.0 and condition_cg is None, "Rectified Flow does not support classifier-guidance."
 
         # ===================== Initialization =====================
-        log = {
-            "sample_history": np.empty((n_samples, sample_steps + 1, *prior.shape)) if preserve_history else None,
-        }
+        n_samples = prior.shape[0]
+        log = {"sample_history": []}
 
         model = self.model if not use_ema else self.model_ema
 
+        sampling_schedule_params = sampling_schedule_params or {}
+        sampling_schedule_params["T"] = self.diffusion_steps
+
         prior = prior.to(self.device)
         if isinstance(warm_start_reference, torch.Tensor) and 0 < warm_start_forward_level < 1:
+            warm_start_reference = warm_start_reference.to(self.device)
             diffusion_steps = int(warm_start_forward_level * self.diffusion_steps)
-            t_c = at_least_ndim(self.t_diffusion[diffusion_steps], prior.dim())
+            t_c = at_least_ndim(diffusion_steps / self.diffusion_steps, prior.dim())
             x1 = torch.randn_like(prior) * t_c + warm_start_reference * (1 - t_c)
         else:
-            diffusion_steps = self.diffusion_steps
             if x1 is None:
                 x1 = torch.randn_like(prior) * temperature
             else:
@@ -318,31 +304,22 @@ class DiscreteRectifiedFlow(DiffusionModel):
 
         xt = x1
         xt = xt * (1.0 - self.fix_mask) + prior * self.fix_mask
+
         if preserve_history:
-            log["sample_history"][:, 0] = xt.cpu().numpy()
+            log["sample_history"].append(xt.cpu().numpy())
 
         with torch.set_grad_enabled(requires_grad):
             condition_vec_cfg = model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
 
-        # ===================== Sampling Schedule ====================
-        if isinstance(sample_step_schedule, str):
-            if sample_step_schedule in SUPPORTED_SAMPLING_STEP_SCHEDULE.keys():
-                sample_step_schedule = SUPPORTED_SAMPLING_STEP_SCHEDULE[sample_step_schedule](
-                    diffusion_steps, sample_steps
-                )
-            else:
-                raise ValueError(f"Sampling step schedule {sample_step_schedule} is not supported.")
-        elif callable(sample_step_schedule):
-            sample_step_schedule = sample_step_schedule(diffusion_steps, sample_steps)
-        else:
-            raise ValueError("sample_step_schedule must be a callable or a string")
+        sampling_scheduler = get_sampling_scheduler(sampling_schedule, **sampling_schedule_params)
+        t_schedule = sampling_scheduler(sample_steps, device=self.device, **sampling_schedule_params)
 
         # ===================== Denoising Loop ========================
         loop_steps = [1] * diffusion_x_sampling_steps + list(range(1, sample_steps + 1))
         for i in reversed(loop_steps):
-            t = torch.full((n_samples,), sample_step_schedule[i], dtype=torch.long, device=self.device)
+            t = torch.full((n_samples,), t_schedule[i], dtype=torch.long, device=self.device)
 
-            start_t, end_t = self.t_diffusion[sample_step_schedule[i]], self.t_diffusion[sample_step_schedule[i - 1]]
+            start_t, end_t = t_schedule[i] / self.diffusion_steps, t_schedule[i - 1] / self.diffusion_steps
             delta_t = start_t - end_t
 
             # velocity
@@ -371,11 +348,13 @@ class DiscreteRectifiedFlow(DiffusionModel):
             # fix the known portion, and preserve the sampling history
             xt = xt * (1.0 - self.fix_mask) + prior * self.fix_mask
             if preserve_history:
-                log["sample_history"][:, sample_steps - i + 1] = xt.cpu().numpy()
+                log["sample_history"].append(xt.cpu().numpy())
 
         # ================= Post-processing =================
         if self.clip_pred:
             xt = xt.clip(self.x_min, self.x_max)
+
+        log["t_schedule"] = t_schedule
 
         return xt, log
 
@@ -567,9 +546,9 @@ class ContinuousRectifiedFlow(DiffusionModel):
         x1: Optional[torch.Tensor] = None,
         # ----------------- sampling ----------------- #
         solver: str = "euler",
-        n_samples: int = 1,
         sample_steps: int = 5,
-        sample_step_schedule: Union[str, Callable] = "uniform_continuous",
+        sampling_schedule: str = "linear",
+        sampling_schedule_params: Optional[dict] = None,
         use_ema: bool = True,
         temperature: float = 1.0,
         # ------------------ guidance ------------------ #
@@ -636,14 +615,16 @@ class ContinuousRectifiedFlow(DiffusionModel):
         assert w_cg == 0.0 and condition_cg is None, "Rectified Flow does not support classifier-guidance."
 
         # ===================== Initialization =====================
-        log = {
-            "sample_history": np.empty((n_samples, sample_steps + 1, *prior.shape)) if preserve_history else None,
-        }
+        n_samples = prior.shape[0]
+        log = {"sample_history": []}
 
         model = self.model if not use_ema else self.model_ema
 
+        sampling_schedule_params = sampling_schedule_params or {}
+
         prior = prior.to(self.device)
         if isinstance(warm_start_reference, torch.Tensor) and 0.0 < warm_start_forward_level < 1.0:
+            warm_start_reference = warm_start_reference.to(self.device)
             t_c = torch.ones_like(prior) * warm_start_forward_level
             x1 = torch.randn_like(prior) * t_c + warm_start_reference * (1 - t_c)
         else:
@@ -655,34 +636,20 @@ class ContinuousRectifiedFlow(DiffusionModel):
         xt = x1
         xt = xt * (1.0 - self.fix_mask) + prior * self.fix_mask
         if preserve_history:
-            log["sample_history"][:, 0] = xt.cpu().numpy()
+            log["sample_history"].append(xt.cpu().numpy())
 
         with torch.set_grad_enabled(requires_grad):
             condition_vec_cfg = model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
 
-        # ===================== Sampling Schedule ====================
-        if isinstance(warm_start_reference, torch.Tensor) and warm_start_forward_level > 0.0:
-            final_t = warm_start_forward_level
-        else:
-            final_t = 1.0
-        if isinstance(sample_step_schedule, str):
-            if sample_step_schedule in SUPPORTED_SAMPLING_STEP_SCHEDULE.keys():
-                sample_step_schedule = SUPPORTED_SAMPLING_STEP_SCHEDULE[sample_step_schedule](
-                    [0.0, final_t], sample_steps
-                )
-            else:
-                raise ValueError(f"Sampling step schedule {sample_step_schedule} is not supported.")
-        elif callable(sample_step_schedule):
-            sample_step_schedule = sample_step_schedule([0.0, final_t], sample_steps)
-        else:
-            raise ValueError("sample_step_schedule must be a callable or a string")
+        sampling_scheduler = get_sampling_scheduler(sampling_schedule, **sampling_schedule_params)
+        t_schedule = sampling_scheduler(sample_steps, device=self.device, **sampling_schedule_params)
 
         # ===================== Denoising Loop ========================
         loop_steps = [1] * diffusion_x_sampling_steps + list(range(1, sample_steps + 1))
         for i in reversed(loop_steps):
-            t = torch.full((n_samples,), sample_step_schedule[i], dtype=torch.float32, device=self.device)
+            t = torch.full((n_samples,), t_schedule[i], dtype=torch.float32, device=self.device)
 
-            delta_t = sample_step_schedule[i] - sample_step_schedule[i - 1]
+            delta_t = t_schedule[i] - t_schedule[i - 1]
 
             # velocity
             with torch.set_grad_enabled(requires_grad):
@@ -716,4 +683,36 @@ class ContinuousRectifiedFlow(DiffusionModel):
         if self.clip_pred:
             xt = xt.clip(self.x_min, self.x_max)
 
+        log["t_schedule"] = t_schedule
+
         return xt, log
+
+
+if __name__ == "__main__":
+    from cleandiffuser.nn_diffusion import MlpNNDiffusion
+
+    device = "cuda:0"
+
+    nn_diffusion = MlpNNDiffusion(10, 16).to(device)
+
+    prior = torch.zeros((2, 10))
+    warm_start_reference = torch.zeros((2, 10))
+    # diffusion = DiscreteRectifiedFlow(nn_diffusion).to(device)
+
+    # y, log = diffusion.sample(
+    #     prior,
+    #     sample_steps=20,
+    #     sampling_schedule="quad",
+    #     warm_start_reference=warm_start_reference,
+    #     warm_start_forward_level=0.64,
+    # )
+
+    diffusion = ContinuousRectifiedFlow(nn_diffusion).to(device)
+
+    y, log = diffusion.sample(
+        prior,
+        sample_steps=20,
+        sampling_schedule="linear",
+        warm_start_reference=warm_start_reference,
+        warm_start_forward_level=0.64,
+    )

@@ -1,24 +1,21 @@
 from typing import Callable, Dict, Optional, Union
 
 import einops
-import numpy as np
 import torch
 import torch.nn as nn
 
 from cleandiffuser.classifier import BaseClassifier
+from cleandiffuser.diffusion.basic import DiffusionModel
 from cleandiffuser.nn_condition import BaseNNCondition
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
 from cleandiffuser.utils import (
-    SUPPORTED_DISCRETIZATIONS,
-    SUPPORTED_NOISE_SCHEDULES,
-    SUPPORTED_SAMPLING_STEP_SCHEDULE,
     TensorDict,
     at_least_ndim,
     concat_zeros,
     dict_apply,
+    get_noise_scheduler,
+    get_sampling_scheduler,
 )
-
-from .basic import DiffusionModel
 
 SUPPORTED_SOLVERS = [
     "ddpm",
@@ -302,7 +299,6 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
         x_min: Optional[torch.Tensor] = None,
         predict_noise: bool = True,
         diffusion_steps: int = 1000,
-        discretization: Union[str, Callable] = "uniform",
         noise_schedule: Union[str, Dict[str, Callable]] = "cosine",
         noise_schedule_params: Optional[dict] = None,
     ):
@@ -324,34 +320,10 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
 
         self.diffusion_steps = diffusion_steps
 
-        # ================= Discretization =================
-        # - Map the continuous range [epsilon, 1.] to the discrete range [0, T-1]
-        # `t_diffusion` is a tensor with shape (T,), recording the `t` for each discrete step.
-        if isinstance(discretization, str):
-            if discretization in SUPPORTED_DISCRETIZATIONS.keys():
-                t_diffusion = SUPPORTED_DISCRETIZATIONS[discretization](diffusion_steps, epsilon)
-            else:
-                raise ValueError(f"Discretization {discretization} is not supported.")
-        elif callable(discretization):
-            t_diffusion = discretization(diffusion_steps, epsilon)
-        else:
-            raise ValueError("discretization must be a callable or a string")
-        self.t_diffusion = nn.Parameter(t_diffusion, requires_grad=False)
+        self.noise_scheduler = get_noise_scheduler(noise_schedule, **(noise_schedule_params or {}))
 
-        # ================= Noise Schedule =================
-        # - The noise schedule `alpha` and `sigma` for each discrete step.
-        # - Both `alpha` and `sigma` are tensors with shape (T,)
-        if isinstance(noise_schedule, str):
-            if noise_schedule in SUPPORTED_NOISE_SCHEDULES.keys():
-                alpha, sigma = SUPPORTED_NOISE_SCHEDULES[noise_schedule]["forward"](
-                    t_diffusion, **(noise_schedule_params or {})
-                )
-            else:
-                raise ValueError(f"Noise schedule {noise_schedule} is not supported.")
-        elif isinstance(noise_schedule, dict):
-            alpha, sigma = noise_schedule["forward"](self.t_diffusion, **(noise_schedule_params or {}))
-        else:
-            raise ValueError("noise_schedule must be a dict of callable or a string")
+        alpha, sigma = self.noise_scheduler.t_to_schedule(torch.linspace(0, 1, self.diffusion_steps + 1))
+
         self.alpha = nn.Parameter(alpha, requires_grad=False)
         self.sigma = nn.Parameter(sigma, requires_grad=False)
         self.logSNR = nn.Parameter(torch.log(self.alpha / self.sigma), requires_grad=False)
@@ -379,7 +351,7 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
             eps (torch.Tensor):
                 The noise. shape: (batch_size, *x_shape).
         """
-        t = torch.randint(self.diffusion_steps, (x0.shape[0],), device=self.device) if t is None else t
+        t = torch.randint(1, self.diffusion_steps + 1, (x0.shape[0],), device=self.device) if t is None else t
         eps = torch.randn_like(x0) if eps is None else eps
 
         alpha, sigma = at_least_ndim(self.alpha[t], x0.dim()), at_least_ndim(self.sigma[t], x0.dim())
@@ -397,9 +369,9 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
         prior: torch.Tensor,
         # ----------------- sampling ----------------- #
         solver: str = "ddpm",
-        n_samples: int = 1,
         sample_steps: int = 5,
-        sample_step_schedule: Union[str, Callable] = "uniform",
+        sampling_schedule: str = "linear",
+        sampling_schedule_params: Optional[dict] = None,
         use_ema: bool = True,
         temperature: float = 1.0,
         # ------------------ guidance ------------------ #
@@ -471,44 +443,39 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
         assert solver in SUPPORTED_SOLVERS, f"Solver {solver} is not supported."
 
         # ===================== Initialization =====================
-        log = {
-            "sample_history": np.empty((n_samples, sample_steps + 1, *prior.shape)) if preserve_history else None,
-        }
+        n_samples = prior.shape[0]
+        log = {"sample_history": []}
 
         model = self.model if not use_ema else self.model_ema
 
+        sampling_schedule_params = sampling_schedule_params or {}
+        sampling_schedule_params["T"] = self.diffusion_steps
+        sampling_schedule_params["noise_scheduler"] = self.noise_scheduler
+
         prior = prior.to(self.device)
         if isinstance(warm_start_reference, torch.Tensor) and 0 < warm_start_forward_level < 1:
+            warm_start_reference = warm_start_reference.to(self.device)
             diffusion_steps = int(warm_start_forward_level * self.diffusion_steps)
             fwd_alpha, fwd_sigma = self.alpha[diffusion_steps], self.sigma[diffusion_steps]
             xt = warm_start_reference * fwd_alpha + fwd_sigma * torch.randn_like(warm_start_reference)
+            sampling_schedule_params["t_max"] = warm_start_forward_level
         else:
-            diffusion_steps = self.diffusion_steps
             xt = torch.randn_like(prior) * temperature
         xt = xt * (1.0 - self.fix_mask) + prior * self.fix_mask
+
         if preserve_history:
-            log["sample_history"][:, 0] = xt.cpu().numpy()
+            log["sample_history"].append(xt.cpu().numpy())
 
         with torch.set_grad_enabled(requires_grad):
             condition_vec_cfg = model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
             condition_vec_cg = condition_cg
 
-        # ===================== Sampling Schedule ====================
-        if isinstance(sample_step_schedule, str):
-            if sample_step_schedule in SUPPORTED_SAMPLING_STEP_SCHEDULE.keys():
-                sample_step_schedule = SUPPORTED_SAMPLING_STEP_SCHEDULE[sample_step_schedule](
-                    diffusion_steps, sample_steps
-                )
-            else:
-                raise ValueError(f"Sampling step schedule {sample_step_schedule} is not supported.")
-        elif callable(sample_step_schedule):
-            sample_step_schedule = sample_step_schedule(diffusion_steps, sample_steps)
-        else:
-            raise ValueError("sample_step_schedule must be a callable or a string")
+        sampling_scheduler = get_sampling_scheduler(sampling_schedule, **sampling_schedule_params)
+        t_schedule = sampling_scheduler(sample_steps, device=self.device, **sampling_schedule_params)
 
-        alphas = self.alpha[sample_step_schedule]
-        sigmas = self.sigma[sample_step_schedule]
-        logSNRs = self.logSNR[sample_step_schedule]
+        alphas = self.alpha[t_schedule.long()]
+        sigmas = self.sigma[t_schedule.long()]
+        logSNRs = self.logSNR[t_schedule.long()]
         hs = torch.zeros_like(logSNRs)
         hs[1:] = logSNRs[:-1] - logSNRs[1:]  # hs[0] is not correctly calculated, but it will not be used.
         stds = torch.zeros((sample_steps + 1,), device=self.device)
@@ -519,7 +486,7 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
         # ===================== Denoising Loop ========================
         loop_steps = [1] * diffusion_x_sampling_steps + list(range(1, sample_steps + 1))
         for i in reversed(loop_steps):
-            t = torch.full((n_samples,), sample_step_schedule[i], dtype=prior.dtype, device=self.device)
+            t = torch.full((n_samples,), t_schedule[i], dtype=prior.dtype, device=prior.device)
 
             # guided sampling
             pred, logp = self.guided_sampling(
@@ -593,7 +560,7 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
             # fix the known portion, and preserve the sampling history
             xt = xt * (1.0 - self.fix_mask) + prior * self.fix_mask
             if preserve_history:
-                log["sample_history"][:, sample_steps - i + 1] = xt.cpu().numpy()
+                log["sample_history"].append(xt.cpu().numpy())
 
         # ================= Post-processing =================
         if self.classifier is not None:
@@ -604,6 +571,11 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
 
         if self.clip_pred:
             xt = xt.clip(self.x_min, self.x_max)
+
+        log["sampling_schedule"] = t_schedule
+        log["alpha"] = alphas
+        log["sigma"] = sigmas
+        log["logSNR"] = logSNRs
 
         return xt, log
 
@@ -703,23 +675,7 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
 
         self.save_hyperparameters(ignore=["nn_diffusion", "nn_condition", "classifier"])
 
-        # ==================== Continuous Time-step Range ====================
-        self.t_diffusion = [epsilon, 1.0]
-        if noise_schedule == "cosine":
-            self.t_diffusion[1] = 0.9946
-
-        # ===================== Noise Schedule ======================
-        if isinstance(noise_schedule, str):
-            if noise_schedule in SUPPORTED_NOISE_SCHEDULES.keys():
-                self.noise_schedule_funcs = SUPPORTED_NOISE_SCHEDULES[noise_schedule]
-                self.noise_schedule_params = noise_schedule_params
-            else:
-                raise ValueError(f"Noise schedule {noise_schedule} is not supported.")
-        elif isinstance(noise_schedule, dict):
-            self.noise_schedule_funcs = noise_schedule
-            self.noise_schedule_params = noise_schedule_params
-        else:
-            raise ValueError("noise_schedule must be a callable or a string")
+        self.noise_scheduler = get_noise_scheduler(noise_schedule, **(noise_schedule_params or {}))
 
     # ==================== Training: Score Matching ======================
 
@@ -744,13 +700,10 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
             eps: torch.Tensor,
                 The noise. shape: (batch_size, *x_shape).
         """
-        t = t or (
-            torch.rand((x0.shape[0],), device=self.device) * (self.t_diffusion[1] - self.t_diffusion[0])
-            + self.t_diffusion[0]
-        )
-        eps = eps or torch.randn_like(x0)
+        t = torch.rand((x0.shape[0],), device=self.device) if t is None else t
+        eps = torch.randn_like(x0) if eps is None else eps
 
-        alpha, sigma = self.noise_schedule_funcs["forward"](t, **(self.noise_schedule_params or {}))
+        alpha, sigma = self.noise_scheduler.t_to_schedule(t)
         alpha, sigma = at_least_ndim(alpha, x0.dim()), at_least_ndim(sigma, x0.dim())
 
         xt = alpha * x0 + sigma * eps
@@ -766,9 +719,9 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
         prior: torch.Tensor,
         # ----------------- sampling ----------------- #
         solver: str = "ddpm",
-        n_samples: int = 1,
         sample_steps: int = 5,
-        sample_step_schedule: Union[str, Callable] = "uniform_continuous",
+        sampling_schedule: str = "linear",
+        sampling_schedule_params: Optional[dict] = None,
         use_ema: bool = True,
         temperature: float = 1.0,
         # ------------------ guidance ------------------ #
@@ -840,48 +793,37 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
         assert solver in SUPPORTED_SOLVERS, f"Solver {solver} is not supported."
 
         # ===================== Initialization =====================
-        log = {
-            "sample_history": np.empty((n_samples, sample_steps + 1, *prior.shape)) if preserve_history else None,
-        }
+        n_samples = prior.shape[0]
+        log = {"sample_history": []}
 
         model = self.model if not use_ema else self.model_ema
 
+        sampling_schedule_params = sampling_schedule_params or {}
+        sampling_schedule_params["noise_scheduler"] = self.noise_scheduler
+
         prior = prior.to(self.device)
         if isinstance(warm_start_reference, torch.Tensor) and 0 < warm_start_forward_level < 1:
-            warm_start_forward_level = self.t_diffusion[0] + warm_start_forward_level * (
-                self.t_diffusion[1] - self.t_diffusion[0]
-            )
-            fwd_alpha, fwd_sigma = self.noise_schedule_funcs["forward"](
-                torch.tensor([self.t_diffusion[1]], device=self.device) * warm_start_forward_level,
-                **(self.noise_schedule_params or {}),
+            warm_start_reference = warm_start_reference.to(self.device)
+            fwd_alpha, fwd_sigma = self.noise_scheduler.t_to_schedule(
+                torch.tensor([warm_start_forward_level], device=prior.device)
             )
             xt = warm_start_reference * fwd_alpha + fwd_sigma * torch.randn_like(warm_start_reference)
-            t_diffusion = [self.t_diffusion[0], warm_start_forward_level]
+            sampling_schedule_params["t_max"] = warm_start_forward_level
         else:
             xt = torch.randn_like(prior) * temperature
-            t_diffusion = self.t_diffusion
         xt = xt * (1.0 - self.fix_mask) + prior * self.fix_mask
+
         if preserve_history:
-            log["sample_history"][:, 0] = xt.cpu().numpy()
+            log["sample_history"].append(xt.cpu().numpy())
 
         with torch.set_grad_enabled(requires_grad):
             condition_vec_cfg = model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
             condition_vec_cg = condition_cg
 
-        # ===================== Sampling Schedule ====================
-        if isinstance(sample_step_schedule, str):
-            if sample_step_schedule in SUPPORTED_SAMPLING_STEP_SCHEDULE.keys():
-                sample_step_schedule = SUPPORTED_SAMPLING_STEP_SCHEDULE[sample_step_schedule](t_diffusion, sample_steps)
-            else:
-                raise ValueError(f"Sampling step schedule {sample_step_schedule} is not supported.")
-        elif callable(sample_step_schedule):
-            sample_step_schedule = sample_step_schedule(t_diffusion, sample_steps)
-        else:
-            raise ValueError("sample_step_schedule must be a callable or a string")
+        sampling_scheduler = get_sampling_scheduler(sampling_schedule, **sampling_schedule_params)
+        t_schedule = sampling_scheduler(sample_steps, **sampling_schedule_params, device=self.device)
 
-        alphas, sigmas = self.noise_schedule_funcs["forward"](
-            sample_step_schedule, **(self.noise_schedule_params or {})
-        )
+        alphas, sigmas = self.noise_scheduler.t_to_schedule(t_schedule)
         logSNRs = torch.log(alphas / sigmas)
         hs = torch.zeros_like(logSNRs)
         hs[1:] = logSNRs[:-1] - logSNRs[1:]  # hs[0] is not correctly calculated, but it will not be used.
@@ -893,7 +835,7 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
         # ===================== Denoising Loop ========================
         loop_steps = [1] * diffusion_x_sampling_steps + list(range(1, sample_steps + 1))
         for i in reversed(loop_steps):
-            t = torch.full((n_samples,), sample_step_schedule[i], device=self.device)
+            t = torch.full((n_samples,), t_schedule[i], device=self.device)
 
             # guided sampling
             pred, logp = self.guided_sampling(
@@ -967,7 +909,7 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
             # fix the known portion, and preserve the sampling history
             xt = xt * (1.0 - self.fix_mask) + prior * self.fix_mask
             if preserve_history:
-                log["sample_history"][:, sample_steps - i + 1] = xt.cpu().numpy()
+                log["sample_history"].append(xt.cpu().numpy())
 
         # ================= Post-processing =================
         if self.classifier is not None and w_cg != 0.0:
@@ -979,4 +921,39 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
         if self.clip_pred:
             xt = xt.clip(self.x_min, self.x_max)
 
+        log["sampling_schedule"] = t_schedule
+        log["alpha"] = alphas
+        log["sigma"] = sigmas
+        log["logSNR"] = logSNRs
+
         return xt, log
+
+
+if __name__ == "__main__":
+    from cleandiffuser.nn_diffusion import MlpNNDiffusion
+
+    device = "cuda:0"
+
+    nn_diffusion = MlpNNDiffusion(10, 16).to(device)
+
+    prior = torch.zeros((2, 10))
+    warm_start_reference = torch.zeros((2, 10))
+    diffusion = DiscreteDiffusionSDE(nn_diffusion, noise_schedule="cosine").to(device)
+
+    y, log = diffusion.sample(
+        prior,
+        sample_steps=20,
+        sampling_schedule="uniform_logsnr",
+        warm_start_reference=warm_start_reference,
+        warm_start_forward_level=0.64,
+    )
+
+    # diffusion = ContinuousDiffusionSDE(
+    #     nn_diffusion, noise_schedule="cosine").to(device)
+
+    # y, log = diffusion.sample(
+    #     prior, sample_steps=20,
+    #     sampling_schedule="linear",
+    #     warm_start_reference=warm_start_reference,
+    #     warm_start_forward_level=0.64
+    # )
