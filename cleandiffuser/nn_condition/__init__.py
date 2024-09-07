@@ -5,3 +5,4 @@ from .pearce_obs_condition import PearceObsCondition
 from .multi_image_condition import MultiImageObsCondition
 from .early_conv_vit import EarlyConvViTMultiViewImageCondition
 from .resnets import ResNet18ImageCondition, ResNet18MultiViewImageCondition
+from .r3m_condition import R3MImageCondition
