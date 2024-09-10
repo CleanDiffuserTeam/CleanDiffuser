@@ -2,43 +2,39 @@ from typing import Optional
 
 import torch
 import torchvision.transforms as T
-from r3m import load_r3m
+from vip import load_vip
 
 from cleandiffuser.nn_condition import BaseNNCondition
 
 
-class R3MImageCondition(BaseNNCondition):
-    """Pre-trained R3M model for image condition from https://github.com/facebookresearch/r3m.
+class VIPImageCondition(BaseNNCondition):
+    """Pre-trained VIP model for image condition from https://github.com/facebookresearch/vip.
 
-    R3M first resizes the image to 224x224 and then encodes it with pre-trained resnet models.
-    It expects the image to be in the range [0, 255].
+    VIP first resizes the image to 224x224 and then encodes it with pre-trained resnet50 models.
+    It expects the image to be in the range [0, 255]. VIP outputs representations of size 1024.
 
-    **Note:** You have to install `r3m` before using this module. Please refer to https://github.com/facebookresearch/r3m for installation instructions.
+    **Note:** You have to install `vip` before using this module. Please refer to https://github.com/facebookresearch/vip for installation instructions.
 
     Args:
-        modelid (str):
-            Pre-trained model name. One of "resnet18", "resnet34", "resnet50".
-            Both "resnet18" and "resnet34" output representations of size 512, while "resnet50" outputs 2048.
         freeze (bool):
             Whether to freeze the model. Default is True.
 
     Example:
-        >>> nn_condition = R3MImageCondition(modelid="resnet50")
+        >>> nn_condition = VIPImageCondition()
         >>> image = torch.randint(0, 256, (2, 3, 400, 400), dtype=torch.uint8)
         >>> nn_condition(image).shape
-        torch.Size([2, 2048])
+        torch.Size([2, 1024])
         >>> image = torch.randint(0, 256, (2, 5, 6, 3, 200, 200), dtype=torch.uint8)
         >>> nn_condition(image).shape
-        torch.Size([2, 5, 6, 2048])
+        torch.Size([2, 5, 6, 1024])
     """
 
     def __init__(
         self,
-        modelid: str = "resnet50",  # resnet18, resnet34, resnet50
         freeze: bool = True,
     ):
         super().__init__()
-        rep = load_r3m(modelid)
+        rep = load_vip("resnet50")
 
         self.model = rep.module
 
