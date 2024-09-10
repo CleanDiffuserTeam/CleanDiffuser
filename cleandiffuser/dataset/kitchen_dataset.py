@@ -118,23 +118,24 @@ class KitchenDataset(BaseDataset):
 
             else:
                 print("Abs action dataset found. Loading...")
-                with h5py.File(data_directory / "kitchen_abs_action_dataset.hdf5", "r") as f:
-                    dataset = {
-                        "data": {
-                            "state": np.array(f["state"], dtype=np.float32),
-                            "action": np.array(f["action"], dtype=np.float32),
-                        },
-                        "meta": {"episode_ends": np.array(f["episode_ends"], dtype=np.int64)},
-                    }
-                    self.replay_buffer = ReplayBuffer.create_from_dict(root=dataset)
-                    self.state_normalizer = MinMaxNormalizer(
-                        X_min=np.array(f["state_normalizer_min"], dtype=np.float32),
-                        X_max=np.array(f["state_normalizer_max"], dtype=np.float32),
-                    )
-                    self.action_normalizer = MinMaxNormalizer(
-                        X_min=np.array(f["action_normalizer_min"], dtype=np.float32),
-                        X_max=np.array(f["action_normalizer_max"], dtype=np.float32),
-                    )
+                
+            with h5py.File(data_directory / "kitchen_abs_action_dataset.hdf5", "r") as f:
+                dataset = {
+                    "data": {
+                        "state": np.array(f["state"], dtype=np.float32),
+                        "action": np.array(f["action"], dtype=np.float32),
+                    },
+                    "meta": {"episode_ends": np.array(f["episode_ends"], dtype=np.int64)},
+                }
+                self.replay_buffer = ReplayBuffer.create_from_dict(root=dataset)
+                self.state_normalizer = MinMaxNormalizer(
+                    X_min=np.array(f["state_normalizer_min"], dtype=np.float32),
+                    X_max=np.array(f["state_normalizer_max"], dtype=np.float32),
+                )
+                self.action_normalizer = MinMaxNormalizer(
+                    X_min=np.array(f["action_normalizer_min"], dtype=np.float32),
+                    X_max=np.array(f["action_normalizer_max"], dtype=np.float32),
+                )
 
         else:
             data_directory = pathlib.Path(dataset_dir)

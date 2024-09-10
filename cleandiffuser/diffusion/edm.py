@@ -364,7 +364,7 @@ class ContinuousEDM(DiffusionModel):
         model = self.model if not use_ema else self.model_ema
 
         prior = prior.to(self.device)
-        if isinstance(warm_start_reference, torch.Tensor) and warm_start_forward_level > 0.0:
+        if isinstance(warm_start_reference, torch.Tensor) and 0.0 < warm_start_forward_level < 1.0:
             warm_start_reference = warm_start_reference.to(self.device)
             fwd_sigma = self.sigma_min + (self.sigma_max - self.sigma_min) * warm_start_forward_level
             xt = warm_start_reference + fwd_sigma * torch.randn_like(warm_start_reference)

@@ -122,7 +122,7 @@ def pipeline(args):
             log_every_n_steps=200,
             default_root_dir=save_path,
             callbacks=[callback],
-            strategy="ddp_find_unused_parameters_true"
+            strategy="ddp_find_unused_parameters_true",
         )
 
         trainer.fit(actor, dataloader)
@@ -135,9 +135,7 @@ def pipeline(args):
 
         classifier = OptimalityClassifier(nn_classifier, ema_rate=0.999)
 
-        actor = ContinuousDiffusionSDE(
-            nn_diffusion, None, fix_mask, loss_weight, ema_rate=0.999, classifier=classifier
-        )
+        actor = ContinuousDiffusionSDE(nn_diffusion, None, fix_mask, loss_weight, ema_rate=0.999, classifier=classifier)
         actor.load_state_dict(
             torch.load(save_path / "diffusion-step=900000.ckpt", map_location=f"cuda:{args.device_id}")["state_dict"]
         )

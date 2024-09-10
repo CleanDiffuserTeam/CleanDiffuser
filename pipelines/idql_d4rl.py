@@ -85,13 +85,13 @@ def pipeline(args):
         actor = ContinuousDiffusionSDE(
             nn_diffusion,
             nn_condition,
-            ema_rate=0.9999,
+            ema_rate=0.999,
             x_max=+1.0 * torch.ones((act_dim,)),
             x_min=-1.0 * torch.ones((act_dim,)),
         )
 
         dataloader = DataLoader(
-            BC_Wrapper(dataset), batch_size=2048, shuffle=True, num_workers=4, persistent_workers=True
+            BC_Wrapper(dataset), batch_size=512, shuffle=True, num_workers=4, persistent_workers=True
         )
 
         callback = ModelCheckpoint(
@@ -100,7 +100,7 @@ def pipeline(args):
 
         trainer = L.Trainer(
             accelerator="gpu",
-            devices=[args.device_id],
+            devices=[0, 1, 2, 3],
             max_steps=args.bc_training_steps,
             deterministic=True,
             log_every_n_steps=1000,
@@ -115,7 +115,7 @@ def pipeline(args):
         iql = IQL(obs_dim, act_dim, tau=args.task.iql_tau, discount=0.99, hidden_dim=256)
 
         dataloader = DataLoader(
-            IQL_Wrapper(dataset), batch_size=256, shuffle=True, num_workers=4, persistent_workers=True
+            IQL_Wrapper(dataset), batch_size=512, shuffle=True, num_workers=4, persistent_workers=True
         )
 
         callback = ModelCheckpoint(dirpath=save_path, filename="iql-{step}", every_n_train_steps=args.save_interval)
