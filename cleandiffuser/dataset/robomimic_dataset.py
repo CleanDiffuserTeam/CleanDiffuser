@@ -183,35 +183,7 @@ class RobomimicImageDataset(BaseDataset):
     def __init__(
         self,
         dataset_dir,
-        shape_meta: dict = {
-            "obs": {
-                "agentview_image": {"shape": [3, 84, 84], "type": "rgb"},
-                "robot0_eye_in_hand_image": {"shape": [3, 84, 84], "type": "rgb"},
-                "robot0_eef_pos": {
-                    "shape": [
-                        3,
-                    ],
-                    "type": "low_dim",
-                },
-                "robot0_eef_quat": {
-                    "shape": [
-                        4,
-                    ],
-                    "type": "low_dim",
-                },
-                "robot0_gripper_qpos": {
-                    "shape": [
-                        2,
-                    ],
-                    "type": "low_dim",
-                },
-            },
-            "action": {
-                "shape": [
-                    7,
-                ]
-            },
-        },
+        shape_meta: Optional[dict] = None,
         n_obs_steps: Optional[int] = None,
         horizon: int = 1,
         pad_before: int = 0,
@@ -220,6 +192,28 @@ class RobomimicImageDataset(BaseDataset):
         rotation_rep: str = "rotation_6d",
     ):
         super().__init__()
+
+        if shape_meta is None:
+            shape_meta = {
+                "obs": {
+                    "agentview_image": {"shape": [3, 84, 84], "type": "rgb"},
+                    "robot0_eye_in_hand_image": {"shape": [3, 84, 84], "type": "rgb"},
+                    "robot0_eef_pos": {
+                        "shape": [3],
+                        "type": "low_dim",
+                    },
+                    "robot0_eef_quat": {
+                        "shape": [4],
+                        "type": "low_dim",
+                    },
+                    "robot0_gripper_qpos": {
+                        "shape": [2],
+                        "type": "low_dim",
+                    },
+                },
+                "action": {"shape": [7 if not abs_action else 10]},
+            }
+
         self.rotation_transformer = RotationTransformer(from_rep="axis_angle", to_rep=rotation_rep)
 
         self.replay_buffer = _convert_robomimic_to_replay(
@@ -390,7 +384,7 @@ def _convert_robomimic_to_replay(
                     "robot0_gripper_qpos": {
                         "shape": [2, ], "type": "low_dim"},
                 }
-                "act": {"shape": [7, ]},
+                "act": {"shape": [7, ]},  # 10 for `abs_action`
             }
 
         dataset_path (str):
@@ -405,7 +399,6 @@ def _convert_robomimic_to_replay(
             Maximum number of inflight tasks. Defaults to None
 
     """
-
     import multiprocessing
 
     if n_workers is None:
@@ -460,7 +453,9 @@ def _convert_robomimic_to_replay(
                 this_data = _convert_actions(
                     raw_actions=this_data, abs_action=abs_action, rotation_transformer=rotation_transformer
                 )
-                assert this_data.shape == (n_steps,) + tuple(shape_meta["action"]["shape"])
+                assert this_data.shape == (n_steps,) + tuple(
+                    shape_meta["action"]["shape"]
+                ), f"{this_data.shape} != {(n_steps,) + tuple(shape_meta['action']['shape'])}"
             else:
                 assert this_data.shape == (n_steps,) + tuple(shape_meta["obs"][key]["shape"])
             _ = data_group.array(
