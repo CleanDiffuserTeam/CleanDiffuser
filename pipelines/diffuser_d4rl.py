@@ -1,3 +1,8 @@
+"""
+WARNING: This pipeline has not been fully tested. The results may not be accurate.
+You may tune the hyperparameters in the config file before using it.
+"""
+
 from pathlib import Path
 
 import d4rl
@@ -80,7 +85,7 @@ def pipeline(args):
 
     # --- Create Diffusion Model ---
     nn_diffusion = DiT1d(
-        in_dim=obs_dim + act_dim, emb_dim=128, d_model=320, n_heads=10, depth=2, timestep_emb_type="untrainable_fourier"
+        x_dim=obs_dim + act_dim, emb_dim=128, d_model=320, n_heads=10, depth=2, timestep_emb_type="untrainable_fourier"
     )
     nn_classifier = HalfJannerUNet1d(
         horizon=args.task.horizon,
@@ -97,7 +102,7 @@ def pipeline(args):
     loss_weight[0, obs_dim:] = 10.0
 
     # --- Diffusion Training ---
-    if args.mode == "diffusion_training":
+    if args.mode == "training":
         classifier = OptimalityClassifier(nn_classifier, ema_rate=0.999)
 
         actor = ContinuousDiffusionSDE(nn_diffusion, None, fix_mask, loss_weight, ema_rate=0.999, classifier=classifier)
@@ -137,7 +142,7 @@ def pipeline(args):
 
         actor = ContinuousDiffusionSDE(nn_diffusion, None, fix_mask, loss_weight, ema_rate=0.999, classifier=classifier)
         actor.load_state_dict(
-            torch.load(save_path / "diffusion-step=900000.ckpt", map_location=f"cuda:{args.device_id}")["state_dict"]
+            torch.load(save_path / f"diffusion-step={args.ckpt}.ckpt", map_location=f"cuda:{args.device_id}")["state_dict"]
         )
         actor.to(f"cuda:{args.device_id}").eval()
 
@@ -161,7 +166,6 @@ def pipeline(args):
                     sample_steps=args.sampling_steps,
                     condition_cg=None,
                     w_cg=args.task.w_cg,
-                    sample_step_schedule="quad_continuous",
                 )
 
                 logp = log["log_p"]

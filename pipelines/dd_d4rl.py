@@ -1,6 +1,11 @@
+"""
+WARNING: This pipeline has not been fully tested. The results may not be accurate.
+You may tune the hyperparameters in the config file before using it.
+"""
+
 from pathlib import Path
 
-import d4rl
+import d4rl  # noqa: F401
 import gym
 import hydra
 import numpy as np
@@ -14,7 +19,7 @@ from cleandiffuser.dataset.d4rl_kitchen_dataset import D4RLKitchenDataset
 from cleandiffuser.dataset.d4rl_mujoco_dataset import D4RLMuJoCoDataset
 from cleandiffuser.diffusion import ContinuousDiffusionSDE
 from cleandiffuser.invdynamic import FancyMlpInvDynamic
-from cleandiffuser.nn_condition import MLPCondition, FourierCondition
+from cleandiffuser.nn_condition import FourierCondition
 from cleandiffuser.nn_diffusion import DiT1d
 
 RETURN_SCALE = {
@@ -74,7 +79,7 @@ class InvDyn_Wrapper(torch.utils.data.Dataset):
         path_idx, start, end = self.indices[idx]
         obs = self.seq_obs[path_idx, start:end]
         act = self.seq_act[path_idx, start:end]
-        return obs[:, :-1], act[:, :-1], obs[:, 1:]
+        return obs[:-1], act[:-1], obs[1:]
 
 
 @hydra.main(config_path="../configs/dd", config_name="d4rl", version_base=None)
@@ -97,15 +102,8 @@ def pipeline(args):
 
     # --- Create Diffusion Model ---
     nn_diffusion = DiT1d(
-        in_dim=obs_dim, emb_dim=128, d_model=320, n_heads=10, depth=2, timestep_emb_type="untrainable_fourier"
+        x_dim=obs_dim, emb_dim=128, d_model=320, n_heads=10, depth=2, timestep_emb_type="untrainable_fourier"
     )
-    # nn_condition = MLPCondition(
-    #     in_dim=1,
-    #     out_dim=128,
-    #     hidden_dims=[128],
-    #     act=torch.nn.SiLU(),
-    #     dropout=0.25,
-    # )
     nn_condition = FourierCondition(in_dim=128, out_dim=128, hidden_dims=128, dropout=0.25)
 
     # --- Create Masks & Weights ---
@@ -145,17 +143,17 @@ def pipeline(args):
         )
 
         dataloader = DataLoader(
-            InvDyn_Wrapper(dataset), batch_size=64, shuffle=True, num_workers=4, persistent_workers=True
+            InvDyn_Wrapper(dataset), batch_size=512, shuffle=True, num_workers=4, persistent_workers=True
         )
 
         callback = ModelCheckpoint(dirpath=save_path, filename="invdyn-{step}", every_n_train_steps=args.save_interval)
 
         trainer = L.Trainer(
             accelerator="gpu",
-            devices=[args.device_id],
+            devices=[0, 1, 2, 3],
             max_steps=args.invdyn_training_steps,
             deterministic=True,
-            log_every_n_steps=1000,
+            log_every_n_steps=200,
             default_root_dir=save_path,
             callbacks=[callback],
         )

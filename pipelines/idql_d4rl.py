@@ -1,7 +1,12 @@
+"""
+WARNING: This pipeline has not been fully tested. The results may not be accurate.
+You may tune the hyperparameters in the config file before using it.
+"""
+
 from pathlib import Path
 
 import d4rl
-import einops
+import einops 
 import gym
 import hydra
 import numpy as np
@@ -103,7 +108,7 @@ def pipeline(args):
             devices=[0, 1, 2, 3],
             max_steps=args.bc_training_steps,
             deterministic=True,
-            log_every_n_steps=1000,
+            log_every_n_steps=200,
             default_root_dir=save_path,
             callbacks=[callback],
         )
@@ -122,10 +127,10 @@ def pipeline(args):
 
         trainer = L.Trainer(
             accelerator="gpu",
-            devices=[args.device_id],
+            devices=[0, 1, 2, 3],
             max_steps=args.iql_training_steps,
             deterministic=True,
-            log_every_n_steps=1000,
+            log_every_n_steps=200,
             default_root_dir=save_path,
             callbacks=[callback],
         )

@@ -2,8 +2,8 @@ defaults:
   - _self_
   - task: halfcheetah-medium-expert-v2
 
-pipeline_name: sfbc_d4rl_mujoco
-mode: bc_training
+pipeline_name: sfbc_d4rl
+mode: bc_training  # bc_training
 seed: 0
 device: cuda:0
 
@@ -19,15 +19,15 @@ actor_learning_rate: 0.0003
 hidden_dim: 256
 
 # BC Training
-bc_gradient_steps: 1000000
+bc_training_steps: 10000
 batch_size: 32
 log_interval: 1000
-save_interval: 100000
+save_interval: 10000
 
 # Critic Training
 critic_learning_rate: 0.001
-critic_gradient_steps: 50000
-eval_actor_ckpt: latest
+critic_training_steps: 10000
+eval_actor_ckpt: 10000
 eval_actor_solver: ddpm
 eval_actor_sampling_steps: 5
 eval_actor_temperature: 1.0
@@ -40,7 +40,7 @@ ckpt: latest
 solver: ddpm
 sampling_steps: 5
 num_envs: 50
-num_episodes: 3
+num_episodes: 1
 num_candidates: 50
 temperature: 1.0
 top_k_average: 4

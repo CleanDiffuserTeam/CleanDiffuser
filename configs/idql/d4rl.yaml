@@ -4,20 +4,20 @@ defaults:
 
 pipeline_name: idql_d4rl
 device_id: 0
-mode: bc_training
+mode: bc_training  # bc_training -> iql_training (optional) -> inference
 seed: 0
 
 # Environment
 normalize_reward: True
 
 # Training
-bc_training_steps: 2000000
-iql_training_steps: 1000000
-save_interval: 200000
+bc_training_steps: 10000
+iql_training_steps: 10000
+save_interval: 10000
 
 # Inference
-bc_ckpt: 1800000
-iql_ckpt: 1000000
+bc_ckpt: 10000
+iql_ckpt: 10000
 solver: ddpm
 iql_from_pretrain: True
 sampling_steps: 5

@@ -4,16 +4,16 @@ defaults:
 
 pipeline_name: diffuser_d4rl
 device_id: 0
-mode: diffusion_training
+mode: training  # training -> inference
 seed: 0
 
 # Training
-diffusion_training_steps: 1000000
-classifier_training_steps: 200000
-save_interval: 20000
+diffusion_training_steps: 10000
+classifier_training_steps: 10000
+save_interval: 10000
 
 # Inference
-ckpt: latest
+ckpt: 10000
 solver: ddpm
 sampling_steps: 5
 num_envs: 50
