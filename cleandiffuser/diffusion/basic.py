@@ -229,6 +229,17 @@ class DiffusionModel(L.LightningModule):
 
             return loss
 
+    def configure_manual_optimizers(self):
+        if not self.manual_optimizers:
+            if "diffusion" in self.optimizer_params.keys():
+                self.manual_optimizers["diffusion"] = self._get_optimizer(
+                    self.model.parameters(), self.optimizer_params["diffusion"]
+                )
+            if "classifier" in self.optimizer_params.keys() and self.classifier is not None:
+                self.manual_optimizers["classifier"] = self._get_optimizer(
+                    self.classifier.parameters(), self.optimizer_params["classifier"]
+                )
+
     def update_diffusion(
         self, x0: torch.Tensor, condition_cfg: Optional[torch.Tensor] = None, update_ema: bool = True, **kwargs
     ):
