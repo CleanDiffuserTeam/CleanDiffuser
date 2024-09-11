@@ -5,7 +5,7 @@ You may tune the hyperparameters in the config file before using it.
 
 from pathlib import Path
 
-import d4rl
+import d4rl  # noqa: F401
 import einops
 import gym
 import hydra
