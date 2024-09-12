@@ -59,7 +59,7 @@ if __name__ == "__main__":
     actor = ContinuousDiffusionSDE(
         nn_diffusion,
         nn_condition,
-        ema_rate=0.9999,
+        ema_rate=0.999,
         x_max=torch.full((act_dim,), 1.0),
         x_min=torch.full((act_dim,), -1.0),
     )
@@ -78,7 +78,7 @@ if __name__ == "__main__":
 
         trainer = L.Trainer(
             accelerator="gpu",
-            devices=[2],
+            devices=[0, 1, 2, 3],
             max_steps=500_000,
             deterministic=True,
             log_every_n_steps=500,

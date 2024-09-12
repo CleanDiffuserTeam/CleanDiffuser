@@ -2,7 +2,6 @@ from typing import Optional
 
 import torch
 import torchvision.transforms as T
-from transformers import AutoModel
 
 from cleandiffuser.nn_condition import BaseNNCondition
 
@@ -52,6 +51,8 @@ class DINOv2ImageCondition(BaseNNCondition):
         freeze: bool = True,
     ):
         super().__init__()
+        from transformers import AutoModel
+
         self._do_rescale = do_rescale
         self._only_pooler_output = only_pooler_output
         self.model = AutoModel.from_pretrained(pretrained_model_name_or_path)

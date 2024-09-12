@@ -1,9 +1,16 @@
+"""
+WARNING: This pipeline has not been fully tested. The results may not be accurate.
+You may tune the hyperparameters in the config file before using it.
+"""
+
 from pathlib import Path
 from typing import Dict
 
 import d4rl
 import gym
+import h5py
 import hydra
+import numpy as np
 import pytorch_lightning as L
 import torch
 import torch.utils
@@ -11,8 +18,6 @@ import torch.utils.data
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-import h5py
-import numpy as np
 
 from cleandiffuser.dataset.d4rl_antmaze_dataset import D4RLAntmazeTDDataset
 from cleandiffuser.dataset.d4rl_kitchen_dataset import D4RLKitchenTDDataset
@@ -97,12 +102,6 @@ def pipeline(args):
     they are equally important in the training.
     So we set the loss-weight according to the dimension of the data.
     """
-    loss_weight = torch.empty((x_dim,))
-    loss_weight[: 2 * obs_dim] = x_dim / obs_dim
-    loss_weight[2 * obs_dim : 2 * obs_dim + 1] = x_dim / 1
-    loss_weight[2 * obs_dim + 1 : 2 * obs_dim + 1 + act_dim] = x_dim / act_dim
-    loss_weight[-1] = x_dim
-    loss_weight = loss_weight / loss_weight.mean()
     x_max = torch.empty((x_dim,))
     x_min = torch.empty((x_dim,))
     x_max[: 2 * obs_dim + 1] = torch.inf
@@ -112,31 +111,24 @@ def pipeline(args):
     x_min[-1] = 0
 
     # --- Create Diffusion Model ---
-    # nn_diffusion = IDQLMlp(
-    #     x_dim=x_dim, emb_dim=128, hidden_dim=1024, n_blocks=6, dropout=0.1,
-    #     timestep_emb_type="untrainable_fourier")
-    nn_diffusion = TransitionTransformer(obs_dim, act_dim, 128, 256, 4, 2, "untrainable_fourier")
+    nn_diffusion = TransitionTransformer(obs_dim, act_dim, 128, 384, 12, 4, "untrainable_fourier")
 
     # --- SynthER Training ---
     if args.mode == "synther_training":
-        synther = ContinuousDiffusionSDE(
-            nn_diffusion, loss_weight=loss_weight, ema_rate=0.9999, x_max=x_max, x_min=x_min
-        )
+        synther = ContinuousDiffusionSDE(nn_diffusion, ema_rate=0.999, x_max=x_max, x_min=x_min)
 
         dataloader = DataLoader(
-            Transition_Wrapper(dataset), batch_size=256, shuffle=True, num_workers=4, persistent_workers=True
+            Transition_Wrapper(dataset), batch_size=512, shuffle=True, num_workers=4, persistent_workers=True
         )
 
         callback = ModelCheckpoint(dirpath=save_path, filename="synther-{step}", every_n_train_steps=args.save_interval)
 
         trainer = L.Trainer(
             accelerator="gpu",
-            devices=[
-                args.device_id,
-            ],
+            devices=[0, 1, 2, 3],
             max_steps=args.diffusion_training_steps,
             deterministic=True,
-            log_every_n_steps=1000,
+            log_every_n_steps=200,
             default_root_dir=save_path,
             callbacks=[callback],
         )
@@ -145,19 +137,16 @@ def pipeline(args):
 
     # --- Dataset Upsampling ---
     elif args.mode == "dataset_upsampling":
-        synther = ContinuousDiffusionSDE.load_from_checkpoint(
-            checkpoint_path=save_path / "synther-step=300000.ckpt",
-            nn_diffusion=nn_diffusion,
-            loss_weight=loss_weight,
-            ema_rate=0.9999,
-            x_max=x_max,
-            x_min=x_min,
-            map_location=device,
+        synther = ContinuousDiffusionSDE(nn_diffusion, ema_rate=0.999, x_max=x_max, x_min=x_min)
+        synther.load_state_dict(
+            torch.load(save_path / f"synther-step={args.diffusion_training_steps}.ckpt", map_location=device)[
+                "state_dict"
+            ]
         )
-        synther.eval()
+        synther.eval().to(device)
 
         ori_size = dataset.size
-        syn_size = 5000000 - ori_size
+        syn_size = args.upsampling_size - ori_size
         max_batch_size = 5000
 
         syn_obs = torch.empty((syn_size, obs_dim))
@@ -170,7 +159,7 @@ def pipeline(args):
         print(f"Original dataset size: {ori_size}")
         print(f"Synthetic dataset size: {syn_size}")
         print(f"Batch size: {max_batch_size}")
-        print(f"Begin upsampling...")
+        print("Begin upsampling...")
 
         prior, ptr = torch.zeros((max_batch_size, x_dim)), 0
         for i in tqdm(range(0, syn_size, max_batch_size)):
@@ -180,8 +169,7 @@ def pipeline(args):
                 prior[:batch_size],
                 solver=args.solver,
                 n_samples=batch_size,
-                sample_steps=args.sampling_steps,
-                sample_step_schedule="quad_continuous",
+                sample_steps=20,
             )
             transition.cpu()
 
@@ -216,7 +204,7 @@ def pipeline(args):
 
         dataloader = DataLoader(
             Upsampling_Wrapper(dataset, upsampling_dataset),
-            batch_size=256,
+            batch_size=512,
             shuffle=True,
             num_workers=4,
             persistent_workers=True,
@@ -226,23 +214,23 @@ def pipeline(args):
 
         trainer = L.Trainer(
             accelerator="gpu",
-            devices=[
-                args.device_id,
-            ],
+            devices=[0, 1, 2, 3],
             max_steps=args.td3bc_training_steps,
             deterministic=True,
-            log_every_n_steps=1000,
+            log_every_n_steps=200,
             default_root_dir=save_path,
             callbacks=[callback],
+            strategy="ddp_find_unused_parameters_true",
         )
 
         trainer.fit(td3bc, dataloader)
 
     elif args.mode == "inference":
-        td3bc = TD3BC.load_from_checkpoint(
-            checkpoint_path=save_path / "td3bc-step=800000.ckpt", obs_dim=obs_dim, act_dim=act_dim
+        td3bc = TD3BC(obs_dim, act_dim)
+        td3bc.load_state_dict(
+            torch.load(save_path / f"td3bc-step={args.td3bc_ckpt}.ckpt", map_location=device)["state_dict"]
         )
-        td3bc.eval()
+        td3bc.eval().to(device)
 
         env_eval = gym.vector.make(args.task.env_name, args.num_envs)
         normalizer = dataset.get_normalizer()
@@ -274,8 +262,6 @@ def pipeline(args):
         episode_rewards = [list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards]
         episode_rewards = np.array(episode_rewards)
         print(np.mean(episode_rewards, -1), np.std(episode_rewards, -1))
-
-        pass
 
 
 if __name__ == "__main__":

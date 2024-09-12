@@ -2,7 +2,6 @@ from typing import Optional
 
 import torch
 import torchvision.transforms as T
-from r3m import load_r3m
 
 from cleandiffuser.nn_condition import BaseNNCondition
 
@@ -38,6 +37,8 @@ class R3MImageCondition(BaseNNCondition):
         freeze: bool = True,
     ):
         super().__init__()
+        from r3m import load_r3m
+
         rep = load_r3m(modelid)
 
         self.model = rep.module

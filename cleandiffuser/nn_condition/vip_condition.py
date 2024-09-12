@@ -2,7 +2,6 @@ from typing import Optional
 
 import torch
 import torchvision.transforms as T
-from vip import load_vip
 
 from cleandiffuser.nn_condition import BaseNNCondition
 
@@ -34,6 +33,8 @@ class VIPImageCondition(BaseNNCondition):
         freeze: bool = True,
     ):
         super().__init__()
+        from vip import load_vip
+
         rep = load_vip("resnet50")
 
         self.model = rep.module

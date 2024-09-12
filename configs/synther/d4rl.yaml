@@ -3,7 +3,7 @@ defaults:
   - task: halfcheetah-medium-expert-v2
 
 pipeline_name: synther_d4rl
-mode: synther_training
+mode: synther_training  # synther_training -> dataset_upsampling -> td3bc_training -> inference
 seed: 0
 device_id: 0
 
@@ -17,19 +17,20 @@ sampling_steps: 20
 predict_noise: True
 ema_rate: 0.999
 diffusion_learning_rate: 0.0003
+diffusion_upsampling_ckpt: 10000
+upsampling_size: 2000000
 
 # Diffusion Training
-diffusion_training_steps: 1000000
-td3bc_training_steps: 1000000
+diffusion_training_steps: 2000
+td3bc_training_steps: 2000
 batch_size: 256
-log_interval: 1000
-save_interval: 100000
+save_interval: 2000
 
 # RL Training
-rl_gradient_steps: 1000000
+rl_gradient_steps: 2000
 
 # Inference
-ckpt: latest
+td3bc_ckpt: 2000
 num_envs: 50
 num_episodes: 3
 use_ema: True

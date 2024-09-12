@@ -1,0 +1,29 @@
+defaults:
+  - _self_
+  - task: halfcheetah-medium-expert-v2
+
+pipeline_name: adaptdiffuser_d4rl
+device_id: 0
+mode: training  # training -> finetune -> inference
+seed: 0
+
+# Training
+diffusion_training_steps: 2000
+classifier_training_steps: 2000
+save_interval: 2000
+
+# Finetune
+diffusion_ckpt: 2000
+
+# Inference
+ckpt: 1000
+solver: ddpm
+sampling_steps: 5
+num_envs: 50
+num_episodes: 1
+num_candidates: 64
+
+# hydra
+hydra:
+  job:
+    chdir: false
