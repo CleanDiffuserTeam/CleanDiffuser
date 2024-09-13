@@ -313,6 +313,7 @@ class DiscreteRectifiedFlow(DiffusionModel):
 
         sampling_scheduler = get_sampling_scheduler(sampling_schedule, **sampling_schedule_params)
         t_schedule = sampling_scheduler(sample_steps, device=self.device, **sampling_schedule_params)
+        t_schedule[1:] = t_schedule[1:].clamp(1, None)
 
         # ===================== Denoising Loop ========================
         loop_steps = [1] * diffusion_x_sampling_steps + list(range(1, sample_steps + 1))

@@ -45,14 +45,14 @@ class BaseClassifier(L.LightningModule):
 
     def update(self, x: torch.Tensor, t: torch.Tensor, y: torch.Tensor, update_ema: bool = True):
         loss = self.loss(x, t, y)
-        self.optim.zero_grad()
+        self.optimizer.zero_grad()
         loss.backward()
         if isinstance(self.grad_clip_norm, float):
             grad_norm = torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), self.grad_clip_norm).item()
         else:
             grad_norm = None
-        self.optim.step()
+        self.optimizer.step()
         if update_ema:
             self.ema_update()
         return {"loss": loss.item(), "grad_norm": grad_norm}

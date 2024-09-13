@@ -472,6 +472,7 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
 
         sampling_scheduler = get_sampling_scheduler(sampling_schedule, **sampling_schedule_params)
         t_schedule = sampling_scheduler(sample_steps, device=self.device, **sampling_schedule_params)
+        t_schedule[1:] = t_schedule[1:].clamp(1, None)
 
         alphas = self.alpha[t_schedule.long()]
         sigmas = self.sigma[t_schedule.long()]
@@ -700,7 +701,7 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
             eps: torch.Tensor,
                 The noise. shape: (batch_size, *x_shape).
         """
-        t = torch.rand((x0.shape[0],), device=self.device) if t is None else t
+        t = torch.rand((x0.shape[0],), device=x0.device) if t is None else t
         eps = torch.randn_like(x0) if eps is None else eps
 
         alpha, sigma = self.noise_scheduler.t_to_schedule(t)

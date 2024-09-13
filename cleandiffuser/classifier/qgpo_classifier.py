@@ -12,9 +12,12 @@ class QGPOClassifier(BaseClassifier):
     Assuming nn_classifier is a NN used to predict y through x and t, i.e, pred_y = nn_classifier(x, t),
     logp is defined as - temperature * MSE(nn_classifier(x, t), y).
     """
+    
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.model.parameters(), lr=1e-3)
 
     def loss(self, x: torch.Tensor, t: torch.Tensor, y: Dict[str, torch.Tensor]):
-        """ In-support Contrastive Energy Prediction Loss in https://arxiv.org/pdf/2304.12824
+        """In-support Contrastive Energy Prediction Loss in https://arxiv.org/pdf/2304.12824
 
         Args:
             x: torch.Tensor,
@@ -37,7 +40,7 @@ class QGPOClassifier(BaseClassifier):
 
         f = self.model(x, t.unsqueeze(1).repeat(1, k), obs.unsqueeze(1).repeat(1, k, 1))
 
-        loss = - (soft_label * F.log_softmax(f, 1)).sum(1).mean()
+        loss = -(soft_label * F.log_softmax(f, 1)).sum(1).mean()
 
         with torch.no_grad():
             f_max = f.max(1)[0].mean().item()
@@ -48,16 +51,12 @@ class QGPOClassifier(BaseClassifier):
 
     def update(self, x: torch.Tensor, noise: torch.Tensor, y: Dict[str, torch.Tensor], update_ema: bool = True):
         loss, log = self.loss(x, noise, y)
-        self.optim.zero_grad()
+        self.optimizer.zero_grad()
         loss.backward()
-        if isinstance(self.grad_clip_norm, float):
-            grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip_norm).item()
-        else:
-            grad_norm = None
-        self.optim.step()
+        self.optimizer.step()
         if update_ema:
             self.ema_update()
-        log.update({"loss": loss.item(), "grad_norm": grad_norm})
+        log.update({"loss": loss.item()})
         return log
 
     def logp(self, x: torch.Tensor, t: torch.Tensor, c: torch.Tensor):
