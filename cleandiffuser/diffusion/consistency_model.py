@@ -211,6 +211,7 @@ class ContinuousConsistencyModel(DiffusionModel):
 
         self.edm = edm
         if edm is not None:
+            self.edm.to(self.device)
             self.prepare_distillation()
 
     def prepare_distillation(self):
@@ -230,7 +231,7 @@ class ContinuousConsistencyModel(DiffusionModel):
             raise ValueError(f"Properties {differences} are different between the EDM and the Consistency Model.")
         self.model.load_state_dict(self.edm.model.state_dict())
         self.model_ema.load_state_dict(self.edm.model_ema.state_dict())
-        self.distillation_sigmas = self.training_noise_schedule(self.distillation_N)
+        self.distillation_sigmas = nn.Parameter(self.training_noise_schedule(self.distillation_N), requires_grad=False)
 
     @property
     def supported_solvers(self):
@@ -279,7 +280,7 @@ class ContinuousConsistencyModel(DiffusionModel):
     ):
         assert self.edm is not None, "No pre-trained EDM model is provided."
 
-        idx = torch.randint(self.distillation_N, (x0.shape[0],), device=self.device)
+        idx = torch.randint(self.distillation_N, (x0.shape[0],))
         t_m, t_n = self.distillation_sigmas[idx + 1], self.distillation_sigmas[idx]
         x_m, t_m, eps = self.edm.add_noise(x0, t_m, None)
 
@@ -330,6 +331,8 @@ class ContinuousConsistencyModel(DiffusionModel):
 
         cm_loss_weight = at_least_ndim(1 / (sigma_m - sigma_n), x0.dim())
 
+        self.cur_logger.incremental_update_k()
+
         return (unweighted_loss * cm_loss_weight).mean(), unweighted_loss.mean().item()
 
     def loss(self, x0: torch.Tensor, condition: Optional[Union[torch.Tensor, TensorDict]] = None):
@@ -342,6 +345,7 @@ class ContinuousConsistencyModel(DiffusionModel):
         else:
             loss, unweighted_loss = self.consistency_training_loss(x0, condition)
             self.log("unweighted_loss", unweighted_loss, prog_bar=True)
+            self.log("Nk", self.cur_logger.Nk)
             return loss
 
     def sample(
@@ -405,18 +409,26 @@ class ContinuousConsistencyModel(DiffusionModel):
         sigmas = t_schedule
 
         # ===================== Denoising Loop ========================
-
-        t = torch.full((n_samples,), sigmas[-1], dtype=xt.dtype, device=self.device)
-        pred_x = self.f(xt, t, condition_vec_cfg, model)
-        pred_x = pred_x * (1.0 - self.fix_mask) + prior * self.fix_mask
-
-        loop_steps = [1] * diffusion_x_sampling_steps + list(range(1, sample_steps))
-
-        for i in reversed(loop_steps):
-            t = torch.full((n_samples,), sigmas[i], dtype=xt.dtype, device=self.device)
-            xt = pred_x + (at_least_ndim(t, xt.dim()) ** 2 - self.sigma_min**2).sqrt() * torch.randn_like(xt)
-
+        with torch.set_grad_enabled(requires_grad):
+            t = torch.full((n_samples,), sigmas[-1], dtype=xt.dtype, device=xt.device)
             pred_x = self.f(xt, t, condition_vec_cfg, model)
             pred_x = pred_x * (1.0 - self.fix_mask) + prior * self.fix_mask
+
+            loop_steps = [1] * diffusion_x_sampling_steps + list(range(1, sample_steps))
+
+            if preserve_history:
+                log["sample_history"].append(pred_x.cpu().numpy())
+
+            for i in reversed(loop_steps):
+                t = torch.full((n_samples,), sigmas[i], dtype=xt.dtype, device=self.device)
+                xt = pred_x + (at_least_ndim(t, xt.dim()) ** 2 - self.sigma_min**2).sqrt() * torch.randn_like(xt)
+
+                pred_x = self.f(xt, t, condition_vec_cfg, model)
+                pred_x = pred_x * (1.0 - self.fix_mask) + prior * self.fix_mask
+
+                if preserve_history:
+                    log["sample_history"].append(pred_x.cpu().numpy())
+
+        log["sigmas"] = sigmas
 
         return pred_x, log

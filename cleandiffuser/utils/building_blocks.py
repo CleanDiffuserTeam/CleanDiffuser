@@ -243,6 +243,7 @@ class MultiHeadAttention(nn.Module):
 
 
 def generate_causal_mask(length: int, device: torch.device = "cpu"):
+    """Generate a causal mask, where 1 means visible and 0 means invisible."""
     mask = torch.tril(torch.ones(length, length, device=device), diagonal=0)
     return mask
 
