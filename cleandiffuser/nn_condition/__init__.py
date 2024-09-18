@@ -8,3 +8,5 @@ from .resnets import ResNet18ImageCondition, ResNet18MultiViewImageCondition
 from .r3m_condition import R3MImageCondition
 from .vip_condition import VIPImageCondition
 from .dinov2_condition import DINOv2ImageCondition
+from .pointnet import PointNetCondition
+from .dp3_pointcloud_condition import DP3PointCloudCondition

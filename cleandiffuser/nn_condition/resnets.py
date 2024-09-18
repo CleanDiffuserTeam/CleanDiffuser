@@ -258,6 +258,9 @@ class ResNet18MultiViewImageCondition(BaseNNCondition):
         use_spatial_softmax (bool):
             Whether to use SpatialSoftmax instead of average pooling. Default is True.
 
+        flatten (bool):
+            Whether to flatten the output. Default is False.
+
         dropout (float):
             Condition Dropout rate. Default is 0.0.
 
@@ -281,12 +284,14 @@ class ResNet18MultiViewImageCondition(BaseNNCondition):
         use_group_norm: bool = True,
         group_channels: int = 16,
         use_spatial_softmax: bool = True,
+        flatten: bool = False,
         dropout: float = 0.0,
     ):
         super().__init__()
         self.dropout = dropout
         self.n_views = n_views
         self.image_sz, self.in_channel = image_sz, in_channel
+        self.flatten = flatten
 
         self.resnet18 = nn.ModuleList(
             [
@@ -321,7 +326,10 @@ class ResNet18MultiViewImageCondition(BaseNNCondition):
 
             emb.append((this_condition * mask).reshape(*other_dims, -1))
 
-        return torch.stack(emb, 1)
+        emb = torch.stack(emb, 1)
+        if self.flatten:
+            emb = emb.flatten(1)
+        return emb
 
 
 if __name__ == "__main__":

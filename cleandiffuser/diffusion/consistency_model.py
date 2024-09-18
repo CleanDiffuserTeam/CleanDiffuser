@@ -58,22 +58,22 @@ class CMCurriculumLogger:
         P_mean: float = -1.1,
         P_std: float = 2.0,
     ):
-        self.Kprime = np.ceil(curriculum_cycle / (np.log2(np.ceil(s1 / s0)) + 1))
+        self.Kprime = np.floor(curriculum_cycle / (np.log2(np.floor(s1 / s0)) + 1))
         self.Nk = s0
         self.s0, self.s1 = s0, s1
         self.curriculum_cycle = curriculum_cycle
         self.sigma_min, self.sigma_max, self.rho = sigma_min, sigma_max, rho
         self.P_mean, self.P_std = P_mean, P_std
 
-        self.ceil_k_div_Kprime, self.k = None, None
+        self.floor_k_div_Kprime, self.k = None, None
 
         self.update_k(0)
 
     def update_k(self, k):
         self.k = min(k, self.curriculum_cycle)
-        if np.ceil(k / self.Kprime) != self.ceil_k_div_Kprime:
-            self.ceil_k_div_Kprime = np.ceil(k / self.Kprime)
-            self.Nk = int(min(self.s0 * (2**self.ceil_k_div_Kprime), self.s1))
+        if np.floor(k / self.Kprime) != self.floor_k_div_Kprime:
+            self.floor_k_div_Kprime = np.floor(k / self.Kprime)
+            self.Nk = int(min(self.s0 * (2**self.floor_k_div_Kprime), self.s1))
 
             self.sigmas = (
                 self.sigma_min ** (1 / self.rho)
@@ -422,6 +422,7 @@ class ContinuousConsistencyModel(DiffusionModel):
             for i in reversed(loop_steps):
                 t = torch.full((n_samples,), sigmas[i], dtype=xt.dtype, device=self.device)
                 xt = pred_x + (at_least_ndim(t, xt.dim()) ** 2 - self.sigma_min**2).sqrt() * torch.randn_like(xt)
+                xt = xt * (1.0 - self.fix_mask) + prior * self.fix_mask
 
                 pred_x = self.f(xt, t, condition_vec_cfg, model)
                 pred_x = pred_x * (1.0 - self.fix_mask) + prior * self.fix_mask

@@ -201,9 +201,7 @@ class EarlyConvViTMultiViewImageCondition(BaseNNCondition):
         tokens = torch.cat(tokens, dim=1)
 
         if self.mask_cache is None or tokens.shape[1] != self.mask_cache.shape[1]:
-            self.mask_cache = torch.tril(
-                torch.ones(tokens.shape[1], tokens.shape[1], device=condition["lowdim"].device), diagonal=0
-            )
+            self.mask_cache = torch.tril(torch.ones(tokens.shape[1], tokens.shape[1], device=tokens.device), diagonal=0)
 
         return self.tfm(tokens, self.mask_cache)[0][:, -1]
 
