@@ -26,9 +26,12 @@
 ·
 </p>
 
-**CleanDiffuser** is an easy-to-use modularized Diffusion Model library tailored for decision-making, which comprehensively integrates different types of diffusion algorithmic branches. CleanDiffuser offers a variety of advanced *diffusion models*, *network structures*, diverse *conditions*, and *algorithm pipelines* in a simple and user-friendly manner. Inheriting the design philosophy of [CleanRL](https://github.com/vwxyzjn/cleanrl) and [Diffusers](https://github.com/huggingface/diffusers), CleanDiffuser emphasizes **usability, simplicity, and customizability**. We hope that CleanDiffuser will serve as a foundational tool library, providing long-term support for Diffusion Model research in the decision-making community, facilitating the application of research for scientists and practitioners alike. The highlight features of CleanDiffuser are:
+> **Note:** This is `lightning` branch. We've completely rewritten the codebase using *PyTorch Lightning*, restructuring all the classes as `LightningModule`. This lets us train models with `Trainer` and tap into advanced deep learning techniques like parallel training and mixed precision - all with just a few lines of code.
+We've also optimized the codebase structure, squashed some bugs, and made the code more readable and user-friendly. **We strongly recommend using this branch for a better experience.** However, this branch is still a work in progress. Many algorithms in `pipelines` haven't been migrated yet, and there might be some bugs lurking in corner cases. If you spot any issues, please open an issue or submit a pull request. We're working hard to polish up this branch and merge it into main as soon as possible!
 
-- 🚀 Amazing features specially tailored for decision-making tasks
+**CleanDiffuser** is an easy-to-use modularized Diffusion Model library designed for decision-making, which comprehensively integrates different types of diffusion algorithmic branches. CleanDiffuser offers a variety of advanced *diffusion models*, *network structures*, diverse *conditions*, and *algorithm pipelines* in a simple and user-friendly manner. Inheriting the design philosophy of [CleanRL](https://github.com/vwxyzjn/cleanrl) and [Diffusers](https://github.com/huggingface/diffusers), CleanDiffuser emphasizes **usability, simplicity, and customizability**. We hope that CleanDiffuser will serve as a foundational tool library, providing long-term support for Diffusion Model research in the decision-making community, facilitating the application of research for scientists and practitioners alike. The highlight features of CleanDiffuser are:
+
+- 🚀 Amazing features specially designed for decision-making tasks
 - 🍧 Support for multiple advanced diffusion models and network architectures
 - 🧩 Build decoupled modules into integrated pipelines easily like building blocks
 - 📈 Wandb logging and Hydra configuration
@@ -117,66 +120,14 @@ dev/
 <!-- TUTORIALS -->
 ## 🍷 Tutorials
 
-We will make every effort to provide detailed `tutorials` for beginners in the field of **Diffusion Models in Decision Making**, which is also beneficial for learning the core components of CleanDiffuser and expanding them into new algorithms. **Our vision is not only to offer a benchmark for the community but more importantly, to enable everyone to implement and innovate diffusion algorithms more easily based on CleanDiffuser.**  
-
-> **Note:** In the `tutorials`, we generally only explain and demonstrate individual mechanisms or components, rather than a complete algorithm, and therefore ignore the extra tricks and take just a few minutes of training time. This may cause performance drop, which is normal!
-
-We have now provided the following tutorials and are continuously updating more:
-
-```bash
-# Build the DiffusionBC algorithm with minimal code
-python tutorials/1_a_minimal_DBC_implementation.py
-# Customize classifier-free guidance
-python tutorials/2_classifier-free_guidance.py
-# Customize classifier guidance
-python tutorials/3_classifier_guidance.py
-# Customize diffusion network backbone
-python tutorials/4_customize_your_diffusion_network_backbone.py
-
-# Special. Consistency Policies
-python tutorials/sp_consistency_policy.py 
-```
-
-If you wish to reproduce the results of the paper perfectly, we recommend using the full implementation in `pipelines`.
+After refactoring with *PyTorch Lightning*, we can now train models and use cutting-edge deep learning techniques like parallel training and mixed precision in a much more streamlined way. To help you get started, we've put together some notebook tutorials in `notebooks` folder.
 
 <!-- USAGE EXAMPLES -->
 ## 💻 Pipelines
 
-The `cleandiffuser` folder contains the core components of the CleanDiffuser codebase, including `Diffusion Models`, `Network Architectures`, and `Guided Sampling`. It also provides unified `Env and Dataset Interfaces`.
-
-In CleanDiffuser, we can combine independent modules to algorithms pipelines like building blocks. In the `pipelines` folder, we provide all the algorithms currently implemented in CleanDiffuser. By linking with the Hydra configurations in the `configs` folder, you can reproduce the results presented in the papers:
-
-You can simply run each algorithm with the default environment and configuration without any additional setup, for example:
-
-```bash
-# DiffusionPolicy with Chi_UNet in lift-ph
-python pipelines/dp_pusht.py
-# Diffuser in halfcheetah-medium-expert-v2
-python pipelines/diffuser_d4rl_mujoco.py
-```
-
-Thanks to Hydra, CleanDiffuser also supports flexible running of algorithms through CLI or directly modifying the corresponding configuration files. We provide some examples:
-
-```bash
-# Load PushT config
-python pipelines/dp_pusht.py --config-path=../configs/dp/pusht/dit --config-name=pusht
-# Load PushT config and overwrite some hyperparameters
-python pipelines/dp_pusht.py --config-path=../configs/dp/pusht/dit --config-name=pusht dataset_path=path/to/dataset seed=42 device=cuda:0
-# Train Diffuser in hopper-medium-v2 task
-python pipelines/diffuser_d4rl_mujoco.py task=hopper-medium-v2 
-```
-
-In CleanDiffuser, we provide a mode option to switch between **training** `(mode=train)` or **inference** `(mode=inference)` of the model:
-
-```bash
-# Imitation learning environment
-python pipelines/dp_pusht.py mode=inference model_path=path/to/checkpoint
-# Reinforcement learning environment
-python pipelines/diffuser_d4rl_mujoco.py mode=inference ckpt=latest
-```
+We're sorry that not all the algorithms in `pipelines` have been fully migrated yet. Some have been moved over, but they haven't been properly tested. If you need to use these algorithms, we'd suggest sticking with the main branch for now.
 
 <!-- ## 💫 Feature -->
-
 
 
 <!-- Implemented Components -->
