@@ -76,7 +76,7 @@ class HalfJannerUNet1d(BaseNNDiffusion):
             ]))
 
             if not is_last:
-                horizon = horizon // 2
+                horizon = (horizon - 1) // 2 + 1
 
         mid_dim = dims[-1]
         mid_dim_2 = mid_dim // 2
@@ -85,12 +85,12 @@ class HalfJannerUNet1d(BaseNNDiffusion):
         self.mid_block1 = nn.ModuleList([
             ResidualBlock(mid_dim, mid_dim_2, model_dim, kernel_size=5, norm_type=norm_type),
             Downsample1d(mid_dim_2)])
-        horizon = horizon // 2
+        horizon = (horizon - 1) // 2 + 1
 
         self.mid_block2 = nn.ModuleList([
             ResidualBlock(mid_dim_2, mid_dim_3, model_dim, kernel_size=5, norm_type=norm_type),
             Downsample1d(mid_dim_3)])
-        horizon = horizon // 2
+        horizon = (horizon - 1) // 2 + 1
 
         fc_dim = mid_dim_3 * max(horizon, 1)
 
