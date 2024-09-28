@@ -54,7 +54,7 @@ class PearceMlp(BaseNNDiffusion):
 
     def forward(self,
                 x: torch.Tensor, noise: torch.Tensor,
-                condition: torch.Tensor = None):
+                condition: Optional[torch.Tensor] = None):
         """
         Input:
             x:          (b, act_dim)
@@ -70,7 +70,7 @@ class PearceMlp(BaseNNDiffusion):
         if condition is not None:
             nn1 = self.fcs[0](torch.cat([x_e, t_e, torch.flatten(condition, 1)], -1))
         else:
-            condition = torch.zeros(x.shape[0], self.To, self.emb_dim)
+            condition = torch.zeros(x.shape[0], self.To, self.emb_dim).to(x.device)
             nn1 = self.fcs[0](torch.cat([x_e, t_e, torch.flatten(condition, 1)], -1))
         nn2 = self.fcs[1](torch.cat([nn1 / 1.414, x, t], -1)) + nn1 / 1.414
         nn3 = self.fcs[2](torch.cat([nn2 / 1.414, x, t], -1)) + nn2 / 1.414

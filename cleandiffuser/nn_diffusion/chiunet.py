@@ -126,7 +126,7 @@ class ChiUNet1d(BaseNNDiffusion):
 
     def forward(self,
                 x: torch.Tensor, noise: torch.Tensor,
-                condition: torch.Tensor = None):
+                condition: Optional[torch.Tensor] = None):
         """
         Input:
             x:          (b, Ta, act_dim)

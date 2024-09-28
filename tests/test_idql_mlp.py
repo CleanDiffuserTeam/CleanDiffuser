@@ -30,8 +30,8 @@ def test_idqlmlp_forward_no_condition():
     model = IDQLMlp(obs_dim=10, act_dim=5, emb_dim=64, hidden_dim=256, n_blocks=3, dropout=0.1)
     x = torch.randn(2, 5)
     noise = torch.randn(2)
-    with pytest.raises(AssertionError):
-        model(x, noise, condition=None)
+    output = model(x, noise)
+    assert output.shape == (2, 5)
 
 def test_idqlmlp_layer_shapes():
     model = IDQLMlp(obs_dim=10, act_dim=5, emb_dim=64, hidden_dim=256, n_blocks=3, dropout=0.1)
