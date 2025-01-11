@@ -128,7 +128,7 @@ default_root_dir = (
 )
 training_steps = 500_000
 save_every_n_steps = 50_000
-ckpt_file = "epoch=137-step=50000.ckpt"
+ckpt_file = "epoch=275-step=100000.ckpt"
 sampling_steps = 20
 
 
