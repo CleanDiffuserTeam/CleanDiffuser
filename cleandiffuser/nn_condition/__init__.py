@@ -10,3 +10,4 @@ from .vip_condition import VIPImageCondition
 from .dinov2_condition import DINOv2ImageCondition
 from .pointnet import PointNetCondition
 from .dp3_pointcloud_condition import DP3PointCloudCondition
+from .vision_transformer import ViTCondition

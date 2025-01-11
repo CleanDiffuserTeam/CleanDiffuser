@@ -1,5 +1,7 @@
-from typing import Callable, Dict, Union, List
+import random
+from typing import Callable, Dict, List, Union
 
+import numba
 import numpy as np
 import torch
 import torch.nn as nn
@@ -76,6 +78,53 @@ def concat_zeros(x: torch.Tensor, dim: int = 0):
     return torch.cat([x, torch.zeros_like(x)], dim=dim)
 
 
+@numba.jit(nopython=True)
+def create_indices(
+    episode_ends: np.ndarray,
+    sequence_length: int,
+    pad_before: int = 0,
+    pad_after: int = 0,
+) -> np.ndarray:
+    pad_before = min(max(pad_before, 0), sequence_length - 1)
+    pad_after = min(max(pad_after, 0), sequence_length - 1)
+
+    indices = list()
+    for i in range(len(episode_ends)):
+        start_idx = 0  # episode start index
+        if i > 0:
+            start_idx = episode_ends[i - 1]
+        end_idx = episode_ends[i]  # episode end index
+        episode_length = end_idx - start_idx  # episode length
+
+        min_start = -pad_before
+        max_start = episode_length - sequence_length + pad_after
+
+        # range stops one idx before end
+        for idx in range(min_start, max_start + 1):
+            buffer_start_idx = max(idx, 0) + start_idx
+            buffer_end_idx = min(idx + sequence_length, episode_length) + start_idx
+            start_offset = buffer_start_idx - (idx + start_idx)
+            end_offset = (idx + sequence_length + start_idx) - buffer_end_idx
+            sample_start_idx = 0 + start_offset
+            sample_end_idx = sequence_length - end_offset
+
+            assert start_offset >= 0
+            assert end_offset >= 0
+            assert (sample_end_idx - sample_start_idx) == (buffer_end_idx - buffer_start_idx)
+
+            indices.append(
+                [
+                    buffer_start_idx,
+                    buffer_end_idx,
+                    sample_start_idx,
+                    sample_end_idx,
+                    end_idx,
+                ]
+            )
+    indices = np.array(indices)
+    return indices
+
+
 def get_mask(
     x: Union[torch.Tensor, TensorDict],
     prob: float = 0.0,
@@ -134,7 +183,9 @@ def inverse_linear_noise_schedule(
     assert (logSNR is not None) or (alpha is not None and sigma is not None)
     lmbda = (alpha / sigma).log() if logSNR is None else logSNR
     t_diffusion = (
-        2 * (1 + (-2 * lmbda).exp()).log() / (beta0 + (beta0**2 + 2 * (beta1 - beta0) * (1 + (-2 * lmbda).exp()).log()))
+        2
+        * (1 + (-2 * lmbda).exp()).log()
+        / (beta0 + (beta0**2 + 2 * (beta1 - beta0) * (1 + (-2 * lmbda).exp()).log()))
     )
     return t_diffusion
 
@@ -160,7 +211,9 @@ def inverse_cosine_noise_schedule(
         2
         * (1 + s)
         / np.pi
-        * torch.arccos((-0.5 * (1 + (-2 * lmbda).exp()).log() + np.log(np.cos(np.pi * s / 2 / (s + 1)))).exp())
+        * torch.arccos(
+            (-0.5 * (1 + (-2 * lmbda).exp()).log() + np.log(np.cos(np.pi * s / 2 / (s + 1)))).exp()
+        )
         - s
     )
     return t_diffusion
@@ -197,9 +250,9 @@ def quad_sampling_step_schedule(T: int = 1000, sampling_steps: int = 10, n: int 
 def quad_sampling_step_schedule_continuous(trange=None, sampling_steps: int = 10, n: int = 1.5):
     if trange is None:
         trange = [1e-3, 1.0]
-    schedule = (trange[1] - trange[0]) * (torch.linspace(0, 1, sampling_steps + 1, dtype=torch.float32) ** n) + trange[
-        0
-    ]
+    schedule = (trange[1] - trange[0]) * (
+        torch.linspace(0, 1, sampling_steps + 1, dtype=torch.float32) ** n
+    ) + trange[0]
     return schedule
 
 
@@ -547,3 +600,10 @@ def loop_dataloader(dl):
     while True:
         for b in dl:
             yield b
+
+
+def set_seed(seed: int):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
