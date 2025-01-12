@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import gym
-import h5py
 import numpy as np
 import pytorch_lightning as L
 import torch
@@ -42,7 +41,7 @@ class MultiViewResnetWithLowdimObsCondition(IdentityCondition):
     Examples:
         >>> nn_condition = MultiViewResnetWithLowdimObsCondition()
         >>> condition = {
-            "image": torch.randn((5, 2, 2, 3, 64, 64)),  # (b, n_views, To, C, H, W)
+            "image": torch.randn((5, 2, 2, 3, 64, 64)),  # (b, To, n_views, C, H, W)
             "lowdim": torch.randn((5, 2, 7)),  # (b, To, lowdim)
         }
         >>> nn_condition(condition).shape
@@ -126,9 +125,9 @@ devices = [1]  # List of GPU ids to train on, cuda:0 for default
 default_root_dir = (
     Path(__file__).parents[2] / f"results/diffusion_policy/robomimic_img_{task}_{quality}/"
 )
-training_steps = 500_000
+training_steps = 500_000  # for hard tasks like transport, 500k steps may not be enough
 save_every_n_steps = 50_000
-ckpt_file = "epoch=275-step=100000.ckpt"
+ckpt_file = "step=500000.ckpt"
 sampling_steps = 20
 
 
@@ -210,10 +209,10 @@ if __name__ == "__main__":
         lowdim = lowdim.repeat(1, To, 1)  # repeat padding for the first observation
 
         image = torch.tensor(obs["image"] / 255.0, device=device, dtype=torch.float32)[
-            None, :, None
+            None, None, :
         ]
         image = center_crop(image)
-        image = image.repeat(1, 1, To, 1, 1, 1)
+        image = image.repeat(1, To, 1, 1, 1, 1)
 
         frames = []
         while not np.all(all_done):
@@ -242,7 +241,7 @@ if __name__ == "__main__":
                         next_obs["image"] / 255.0, device=device, dtype=torch.float32
                     )[None,]
                     this_image = center_crop(this_image)
-                    image[:, :, i - num_act_exec + To] = this_image
+                    image[:, i - num_act_exec + To] = this_image
 
                 if np.all(all_done):
                     break

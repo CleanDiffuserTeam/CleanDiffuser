@@ -61,6 +61,7 @@ item = dataset[0]
 # language_embedding: (32, 768) t5-base embedding
 # language_mask: (32,) padding mask
 ```
+> Note: Like other CleanDiffuser-provided datasets, the `actions` are normalized to [-1, 1] in dataset. Don't forget to denormalize them before using by `dataset.normalizers["actions"].unnormalize(pred_action)`.
 
 ## 2. Gym Environment Wrapper
 

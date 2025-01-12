@@ -18,6 +18,12 @@ class RobomimicEnv(gym.Env):
         use_image_obs: bool = True,
     ):
         super().__init__()
+        self._third_person_camera_name = "agentview"
+        if "transport" in str(dataset_path):
+            self._third_person_camera_name = "shouldercamera0"
+        elif "tool_hang" in str(dataset_path):
+            self._third_person_camera_name = "sideview"
+
         self.max_episode_steps = 1100
         if (
             "lift" in str(dataset_path)
@@ -46,7 +52,7 @@ class RobomimicEnv(gym.Env):
         if is_dual_arm:
             obs_dict["low_dim"].extend(["robot1_eef_pos", "robot1_eef_quat", "robot1_gripper_qpos"])
         if use_image_obs:
-            obs_dict["rgb"] = ["agentview_image", "robot0_eye_in_hand_image"]
+            obs_dict["rgb"] = [self._third_person_camera_name + "_image", "robot0_eye_in_hand_image"]
             if is_dual_arm:
                 obs_dict["rgb"].extend(["robot1_eye_in_hand_image"])
 
@@ -76,7 +82,7 @@ class RobomimicEnv(gym.Env):
             else spaces.Box(low=0, high=255, shape=(2, 3, 84, 84), dtype=np.uint8)
         )
         self.observation_space = observation_space
-    
+
     def seed(self, seed=None):
         np.random.seed(seed=seed)
         self._seed = seed
@@ -103,7 +109,10 @@ class RobomimicEnv(gym.Env):
         lowdim = np.concatenate(lowdim_list, axis=0)
 
         if self.use_image_obs:
-            image_list = [raw_obs["agentview_image"], raw_obs["robot0_eye_in_hand_image"]]
+            image_list = [
+                raw_obs[self._third_person_camera_name + "_image"],
+                raw_obs["robot0_eye_in_hand_image"],
+            ]
             if self.is_dual_arm:
                 image_list.extend([raw_obs["robot1_eye_in_hand_image"]])
             image = np.stack(image_list, axis=0)
@@ -134,8 +143,10 @@ class RobomimicEnv(gym.Env):
         mode: str = "rgb_array",
         height: int = 256,
         width: int = 256,
-        render_camera_name: str = "agentview",
+        render_camera_name: str = None,
     ):
+        if render_camera_name is None:
+            render_camera_name = self._third_person_camera_name
         return self.env.render(
             mode=mode, height=height, width=width, camera_name=render_camera_name
         )

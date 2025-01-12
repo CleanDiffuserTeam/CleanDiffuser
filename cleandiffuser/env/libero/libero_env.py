@@ -25,6 +25,7 @@ class LiberoEnv(gym.Env):
         require_point_cloud: bool = False,
         num_points: int = 8192,
         camera_names: list = ["agentview", "robot0_eye_in_hand"],
+        max_episode_steps: int = 400,
         seed: int = 0,
     ):
         super().__init__()
@@ -35,6 +36,9 @@ class LiberoEnv(gym.Env):
         self._image_size = image_size
         self._camera_names = camera_names
         self._num_points = num_points
+        
+        self._max_episode_steps = max_episode_steps
+        self._episode_steps = 0
 
         root_path = Path(os.path.dirname(libero.libero.__file__))
 
@@ -207,10 +211,13 @@ class LiberoEnv(gym.Env):
             init_state_id = np.random.randint(self.num_init_states)
         self.env.reset()
         obs = self.set_init_state(self._init_states[init_state_id])
+        self._episode_steps = 0
         return obs
 
     def step(self, action):
         _, reward, done, info = self.env.step(action)
         obs = self.get_observations()
         info["task_description"] = self.task_description
+        self._episode_steps += 1
+        done = done or self._episode_steps >= self._max_episode_steps
         return obs, reward, done, info

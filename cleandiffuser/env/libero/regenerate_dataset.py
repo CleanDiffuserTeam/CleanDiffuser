@@ -69,7 +69,7 @@ BOUNDING_BOX = o3d.geometry.AxisAlignedBoundingBox(
 
 LIBERO_PATH = Path(os.path.dirname(libero.libero.__file__)).parents[0]
 DATASET_PATH = LIBERO_PATH / "datasets"
-BENCHMARKS = ["libero_spatial"]
+BENCHMARKS = ["libero_goal"]
 SAVE_DATA_PATH = Path(__file__).parents[3] / "dev/libero"
 
 # create save directory

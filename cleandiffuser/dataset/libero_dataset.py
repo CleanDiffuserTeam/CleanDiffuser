@@ -27,9 +27,9 @@ ACTION_MINMAX = {
         ),
     },
     "libero_spatial": {
-        "max": np.array([0.9375, 0.9375, 0.9375, 0.3558, 0.375, 0.375, 1.0], dtype=np.float32),
+        "max": np.array([0.9375, 0.9375, 0.9375, 0.1972, 0.3365, 0.375, 1.0], dtype=np.float32),
         "min": np.array(
-            [-0.9375, -0.9375, -0.9375, -0.2583, -0.375, -0.2872, -1.0], dtype=np.float32
+            [-0.9375, -0.9375, -0.9375, -0.1886, -0.3675, -0.36, -1.0], dtype=np.float32
         ),
     },
     "libero_object": {
@@ -118,6 +118,7 @@ class LiberoDataset(torch.utils.data.Dataset):
                 action, ((0, self.To + self.Ta - 1 - sample_end_idx), (0, 0)), mode="edge"
             )
         assert action.shape[0] == self.Ta, f"{action.shape[0]} != {self.Ta}"
+        action = self.normalizers["action"].normalize(action)
 
         observation = dict()
         for obs_name in self._obs_meta:
@@ -130,7 +131,7 @@ class LiberoDataset(torch.utils.data.Dataset):
 
                 elif "depth" in obs_name:
                     # from mm to m, reshape to (C, H, W)
-                    x = (x.astype(np.float32) / 1000.)[None]
+                    x = (x.astype(np.float32) / 1000.0)[None]
                     x = np.pad(x, ((sample_start_idx, 0), *[(0, 0)] * 3), mode="edge")
 
                 elif "pointcloud" in obs_name:

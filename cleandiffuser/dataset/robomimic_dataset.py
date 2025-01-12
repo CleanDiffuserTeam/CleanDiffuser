@@ -92,7 +92,7 @@ class RobomimicDataset(torch.utils.data.Dataset):
             )
         >>> dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
         >>> batch = next(iter(dataloader))
-        >>> image = batch["image"]  # (32, 2, 2, 3, 84, 84) (b, n_views, To, 3, 84, 84) uint8
+        >>> image = batch["image"]  # (32, 2, 2, 3, 84, 84) (b, To, n_views, 3, 84, 84) uint8
         >>> lowdim = batch["lowdim"]  # (32, 2, 9) (b, To, lowdim_dim)
         >>> action = batch["action"]  # (32, 16, 10) (b, Ta, act_dim)
     """
