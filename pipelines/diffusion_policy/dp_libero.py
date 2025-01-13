@@ -166,9 +166,9 @@ devices = [3]  # List of GPU ids to train on, cuda:0 for default
 default_root_dir = Path(__file__).parents[2] / f"results/diffusion_policy/{task_suite}/"
 training_steps = 500_000
 save_every_n_steps = 10_000
-ckpt_file = "epoch=40-step=20000-v1.ckpt"
+ckpt_file = "epoch=180-step=90000.ckpt"
 env_name = "libero-goal-v0"
-task_id = 0
+task_id = 8
 sampling_steps = 20
 
 if __name__ == "__main__":
@@ -217,7 +217,6 @@ if __name__ == "__main__":
 
     # -- Training ---
     if mode == "training":
-        policy.load_state_dict(torch.load(default_root_dir / ckpt_file)["state_dict"], strict=False)
         callback = ModelCheckpoint(
             dirpath=default_root_dir,
             every_n_train_steps=save_every_n_steps,
@@ -234,7 +233,7 @@ if __name__ == "__main__":
     # -- rendering --
     elif mode == "rendering":
         import imageio
-
+        
         device = f"cuda:{devices[0]}"
         lang_encoder = T5LanguageEncoder(
             pretrained_model_name_or_path=t5_pretrained_model_name_or_path, device=device
@@ -248,6 +247,7 @@ if __name__ == "__main__":
             require_point_cloud=False,
             seed=seed,
         )
+        print(env.task_description)
         normalizer = dataset.get_normalizer()
         center_crop = T.Compose([T.CenterCrop(200), T.Resize(224)])
 

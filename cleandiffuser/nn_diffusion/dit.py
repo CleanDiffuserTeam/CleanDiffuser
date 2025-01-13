@@ -361,7 +361,7 @@ class DiT1dWithACICrossAttention(BaseNNDiffusion):
         self.pos_emb = nn.Parameter(torch.randn(1, x_seq_len, d_model) * 0.02)
 
         self.blocks = nn.ModuleList(
-            [DiTBlockWithCrossAttention(d_model, n_heads, dropout) for _ in range(depth)]
+            [DiTBlockWithCrossAttentionPostNorm(d_model, n_heads, dropout) for _ in range(depth)]
         )
         self.final_layer = nn.Sequential(
             nn.LayerNorm(d_model),
@@ -415,5 +415,78 @@ class DiT1dWithACICrossAttention(BaseNNDiffusion):
             x = block(x, emb, seq_condition, seq_condition_mask)
 
         x = self.final_layer(x)
+
+        return x
+
+
+class DiTBlockWithCrossAttentionPostNorm(nn.Module):
+    """A DiT block with adaptive layer norm zero (adaLN-Zero) conditioning."""
+
+    def __init__(self, hidden_size: int, n_heads: int, dropout: float = 0.0):
+        super().__init__()
+
+        # Self Attention Layer
+        self.sa_norm = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.sa_attn = nn.MultiheadAttention(hidden_size, n_heads, dropout, batch_first=True)
+
+        # Cross Attention Layer
+        self.ca_norm = nn.LayerNorm(hidden_size, elementwise_affine=True, eps=1e-6)
+        self.ca_attn = nn.MultiheadAttention(hidden_size, n_heads, dropout, batch_first=True)
+
+        # Feed Forward Layer
+        self.ffn_norm = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size * 4),
+            nn.GELU(approximate="tanh"),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_size * 4, hidden_size),
+            nn.Dropout(dropout),
+        )
+
+        # adaLN
+        self.adaLN_modulation = nn.Sequential(nn.SiLU(), nn.Linear(hidden_size, hidden_size * 6))
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        vec_condition: torch.Tensor,
+        seq_condition: torch.Tensor,
+        seq_condition_mask: Optional[torch.Tensor] = None,
+    ):
+        (
+            shift_sa,
+            scale_sa,
+            gate_sa,
+            # shift_ca,
+            # scale_ca,
+            # gate_ca,
+            shift_ffn,
+            scale_ffn,
+            gate_ffn,
+        ) = self.adaLN_modulation(vec_condition.unsqueeze(-2)).chunk(6, dim=-1)  # (b, 1, 1)
+
+        x = x + gate_sa * self.sa_attn(x, x, x)[0]
+        x = self.sa_norm(x) * (1 + scale_sa) + shift_sa
+
+        x = (
+            x
+            + self.ca_attn(x, seq_condition, seq_condition, key_padding_mask=seq_condition_mask)[0]
+        )
+        x = self.ca_norm(x)
+
+        x = x + gate_ffn * self.mlp(x)
+        x = self.ffn_norm(x) * (1 + scale_ffn) + shift_ffn
+
+        # h = self.sa_norm(x) * (1 + scale_sa) + shift_sa
+        # x = x + gate_sa * self.sa_attn(h, h, h)[0]
+
+        # h = self.ca_norm(x)
+        # x = (
+        #     x
+        #     + self.ca_attn(h, seq_condition, seq_condition, key_padding_mask=seq_condition_mask)[0]
+        # )
+
+        # h = self.ffn_norm(x) * (1 + scale_ffn) + shift_ffn
+        # x = x + gate_ffn * self.mlp(h)
 
         return x
