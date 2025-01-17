@@ -4,6 +4,7 @@ from typing import Optional
 
 import gym
 import numpy as np
+import torch
 from gym import spaces
 from robosuite.utils.camera_utils import get_camera_intrinsic_matrix, get_real_depth_map
 
@@ -27,6 +28,8 @@ class LiberoEnv(gym.Env):
         camera_names: list = ["agentview", "robot0_eye_in_hand"],
         max_episode_steps: int = 400,
         seed: int = 0,
+        enable_pytorch3d_fps: bool = False,
+        pointcloud_process_device: str = "cpu",
     ):
         super().__init__()
         self._require_point_cloud = require_point_cloud
@@ -36,9 +39,21 @@ class LiberoEnv(gym.Env):
         self._image_size = image_size
         self._camera_names = camera_names
         self._num_points = num_points
-        
+
         self._max_episode_steps = max_episode_steps
         self._episode_steps = 0
+
+        if enable_pytorch3d_fps:
+            try:
+                from pytorch3d.ops import sample_farthest_points
+
+                self._fps = sample_farthest_points
+                self._pointcloud_process_device = pointcloud_process_device
+            except ImportError:
+                raise ImportError("Pytorch3d not installed. Please install pytorch3d.")
+        else:
+            self._fps = None
+            self._pointcloud_process_device = None
 
         root_path = Path(os.path.dirname(libero.libero.__file__))
 
@@ -180,9 +195,16 @@ class LiberoEnv(gym.Env):
                 )
                 o3d_cloud = o3d_cloud.crop(self._pcd_bb)
                 o3d_cloud = o3d_cloud.voxel_down_sample(voxel_size=voxel_size)
-                o3d_cloud = o3d_cloud.farthest_point_down_sample(num_samples=self._num_points)
 
-                pointcloud = np.asarray(o3d_cloud.points)
+                if self._fps is not None:
+                    pointcloud = np.asarray(o3d_cloud.points)
+                    pointcloud = torch.tensor(pointcloud, device=self._pointcloud_process_device)
+                    pointcloud = self._fps(pointcloud[None], K=self._num_points)[0]
+                    pointcloud = pointcloud[0].cpu().numpy()
+                else:
+                    o3d_cloud = o3d_cloud.farthest_point_down_sample(num_samples=self._num_points)
+                    pointcloud = np.asarray(o3d_cloud.points)
+
                 if pointcloud.shape[0] < self._num_points:
                     pointcloud = np.concatenate(
                         [

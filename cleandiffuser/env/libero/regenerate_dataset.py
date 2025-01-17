@@ -60,8 +60,8 @@ class T5LanguageEncoder:
         return self.encode(sentences)
 
 
-DEVICE = "cuda:0"
-PATH_TO_T5 = "google-t5/t5-base"
+DEVICE = "cuda:1"
+PATH_TO_T5 = "/home/dzb/pretrained/t5-base"
 IMAGE_SIZE = 224
 BOUNDING_BOX = o3d.geometry.AxisAlignedBoundingBox(
     min_bound=(-1.0, -1.0, 0.0), max_bound=(1.0, 1.0, 1.6)
@@ -69,7 +69,7 @@ BOUNDING_BOX = o3d.geometry.AxisAlignedBoundingBox(
 
 LIBERO_PATH = Path(os.path.dirname(libero.libero.__file__)).parents[0]
 DATASET_PATH = LIBERO_PATH / "datasets"
-BENCHMARKS = ["libero_goal"]
+BENCHMARKS = ["libero_10"]
 SAVE_DATA_PATH = Path(__file__).parents[3] / "dev/libero"
 
 # create save directory
@@ -271,13 +271,14 @@ for bm in BENCHMARKS:
                         chunks=(1, gripper_state.shape[-1]),
                         compressor=compressor,
                     )
-                    zarr_data.require_dataset(
-                        "states",
-                        shape=(0, demo_data["states"].shape[-1]),
-                        dtype=np.float32,
-                        chunks=(1, demo_data["states"].shape[-1]),
-                        compressor=compressor,
-                    )
+                    if bm not in ["libero_90", "libero_10"]:
+                        zarr_data.require_dataset(
+                            "states",
+                            shape=(0, demo_data["states"].shape[-1]),
+                            dtype=np.float32,
+                            chunks=(1, demo_data["states"].shape[-1]),
+                            compressor=compressor,
+                        )
                     zarr_data.require_dataset(
                         "actions",
                         shape=(0, demo_data["actions"].shape[-1]),
@@ -325,7 +326,8 @@ for bm in BENCHMARKS:
             zarr_data["eef_states"].append(eef_states)
             zarr_data["gripper_states"].append(gripper_states)
 
-            zarr_data["states"].append(np.array(demo_data["states"], dtype=np.float32))
+            if bm not in ["libero_90", "libero_10"]:
+                zarr_data["states"].append(np.array(demo_data["states"], dtype=np.float32))
             zarr_data["actions"].append(np.array(demo_data["actions"], dtype=np.float32))
             zarr_data["rewards"].append(np.array(demo_data["rewards"], dtype=np.float32))
 

@@ -157,6 +157,79 @@ class DiT1d(BaseNNDiffusion):
         return x
 
 
+class DiT1dV2(BaseNNDiffusion):
+    def __init__(
+        self,
+        x_dim: int,
+        x_seq_len: int,
+        emb_dim: int,
+        d_model: int = 384,
+        n_heads: int = 6,
+        depth: int = 12,
+        dropout: float = 0.0,
+        timestep_emb_type: str = "positional",
+        timestep_emb_params: Optional[dict] = None,
+    ):
+        super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
+        self.d_model = d_model
+        self.x_proj = nn.Linear(x_dim, d_model)
+        self.t_proj = nn.Sequential(
+            nn.Linear(emb_dim, d_model), nn.SiLU(), nn.Linear(d_model, d_model)
+        )
+        self.cond_proj = nn.Sequential(nn.Linear(emb_dim, d_model), nn.LayerNorm(d_model))
+
+        # learnable positional embedding
+        self.pos_emb = nn.Parameter(torch.randn(1, x_seq_len, d_model) * 0.02)
+
+        self.blocks = nn.ModuleList([DiTBlock(d_model, n_heads, dropout) for _ in range(depth)])
+        self.final_layer = nn.Sequential(
+            nn.LayerNorm(d_model),
+            nn.Linear(d_model, d_model),
+            nn.GELU(approximate="tanh"),
+            nn.Linear(d_model, x_dim),
+        )
+        self.initialize_weights()
+
+    def initialize_weights(self):
+        # Initialize transformer layers:
+        def _basic_init(module):
+            if isinstance(module, nn.Linear):
+                torch.nn.init.xavier_uniform_(module.weight)
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0)
+
+        self.apply(_basic_init)
+
+        # Initialize time step embedding MLP:
+        nn.init.normal_(self.t_proj[0].weight, std=0.02)
+        nn.init.normal_(self.t_proj[2].weight, std=0.02)
+
+        # Zero-out adaLN modulation layers in DiT blocks:
+        for block in self.blocks:
+            nn.init.constant_(block.adaLN_modulation[-1].weight, 0)
+            nn.init.constant_(block.adaLN_modulation[-1].bias, 0)
+
+        # Zero-out output layers:
+        nn.init.constant_(self.final_layer[3].weight, 0)
+        nn.init.constant_(self.final_layer[3].bias, 0)
+
+    def forward(self, x: torch.Tensor, t: torch.Tensor, condition: Optional[torch.Tensor] = None):
+        t_emb = self.t_proj(self.map_noise(t))
+        x_emb = self.x_proj(x) + self.pos_emb
+
+        if condition is None:
+            cond_emb = torch.zeros_like(t_emb)
+        else:
+            cond_emb = self.cond_proj(condition) + t_emb
+
+        for block in self.blocks:
+            x_emb = block(x_emb, cond_emb)
+
+        x_emb = self.final_layer(x_emb)
+
+        return x_emb
+
+
 class DiTBlockWithCrossAttention(nn.Module):
     """A DiT block with adaptive layer norm zero (adaLN-Zero) conditioning."""
 
@@ -242,7 +315,7 @@ class DiT1dWithCrossAttention(BaseNNDiffusion):
         self.pos_emb = nn.Parameter(torch.randn(1, x_seq_len, d_model) * 0.02)
 
         self.blocks = nn.ModuleList(
-            [DiTBlockWithCrossAttention(d_model, n_heads, dropout) for _ in range(depth)]
+            [DiTBlockWithCrossAttentionPostNorm(d_model, n_heads, dropout) for _ in range(depth)]
         )
         self.final_layer = nn.Sequential(
             nn.LayerNorm(d_model),
@@ -280,6 +353,7 @@ class DiT1dWithCrossAttention(BaseNNDiffusion):
     ):
         vec_condition = condition["vec_condition"]
         seq_condition = condition["seq_condition"]
+        seq_condition_mask = condition["seq_condition_mask"]
 
         x = self.x_proj(x) + self.pos_emb
         emb = self.t_proj(self.map_noise(t))
@@ -288,7 +362,7 @@ class DiT1dWithCrossAttention(BaseNNDiffusion):
             emb = emb + vec_condition
 
         for block in self.blocks:
-            x = block(x, emb, seq_condition)
+            x = block(x, emb, seq_condition, seq_condition_mask)
 
         x = self.final_layer(x)
 

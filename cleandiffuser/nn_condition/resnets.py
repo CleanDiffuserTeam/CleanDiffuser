@@ -1,10 +1,11 @@
 from typing import Optional
 
 import numpy as np
+import timm
 import torch
 import torch.nn as nn
 
-from cleandiffuser.nn_condition import BaseNNCondition
+from cleandiffuser.nn_condition import BaseNNCondition, IdentityCondition
 from cleandiffuser.utils import get_mask
 
 
@@ -72,12 +73,16 @@ class SpatialSoftmax(nn.Module):
 
     def __init__(self, temperature=None, normalise=True):
         super().__init__()
-        self.temperature = nn.Parameter(torch.ones(1)) if temperature is None else torch.tensor([temperature])
+        self.temperature = (
+            nn.Parameter(torch.ones(1)) if temperature is None else torch.tensor([temperature])
+        )
         self.normalise = normalise
 
     def forward(self, x):
         n, c, h, w = x.size()
-        spatial_softmax_per_map = nn.functional.softmax(x.view(n * c, h * w) / self.temperature, dim=1)
+        spatial_softmax_per_map = nn.functional.softmax(
+            x.view(n * c, h * w) / self.temperature, dim=1
+        )
         spatial_softmax = spatial_softmax_per_map.view(n, c, h, w)
 
         # calculate image coordinate maps
@@ -130,7 +135,9 @@ class ResNet18(nn.Module):
         )
 
         self.mlp = nn.Sequential(
-            nn.Linear(np.prod(self.cnn_output_shape), emb_dim), nn.SiLU(), nn.Linear(emb_dim, emb_dim)
+            nn.Linear(np.prod(self.cnn_output_shape), emb_dim),
+            nn.SiLU(),
+            nn.Linear(emb_dim, emb_dim),
         )
 
     @property
@@ -143,7 +150,9 @@ class ResNet18(nn.Module):
 
     @property
     def cnn_output_shape(self):
-        example = torch.zeros((1, self.in_channel, self.image_sz, self.image_sz), device=self.device, dtype=self.dtype)
+        example = torch.zeros(
+            (1, self.in_channel, self.image_sz, self.image_sz), device=self.device, dtype=self.dtype
+        )
         return self.cnn(example).shape
 
     def forward(self, x):
@@ -205,7 +214,13 @@ class ResNet18ImageCondition(BaseNNCondition):
         self.image_sz, self.in_channel = image_sz, in_channel
 
         self.resnet18 = ResNet18(
-            image_sz, in_channel, emb_dim, act_fn, use_group_norm, group_channels, use_spatial_softmax
+            image_sz,
+            in_channel,
+            emb_dim,
+            act_fn,
+            use_group_norm,
+            group_channels,
+            use_spatial_softmax,
         )
 
     @property
@@ -295,7 +310,15 @@ class ResNet18MultiViewImageCondition(BaseNNCondition):
 
         self.resnet18 = nn.ModuleList(
             [
-                ResNet18(image_sz, in_channel, emb_dim, act_fn, use_group_norm, group_channels, use_spatial_softmax)
+                ResNet18(
+                    image_sz,
+                    in_channel,
+                    emb_dim,
+                    act_fn,
+                    use_group_norm,
+                    group_channels,
+                    use_spatial_softmax,
+                )
                 for _ in range(n_views)
             ]
         )
@@ -316,7 +339,9 @@ class ResNet18MultiViewImageCondition(BaseNNCondition):
 
             other_dims = this_condition.shape[:-3]
 
-            this_condition = this_condition.reshape(-1, self.in_channel, self.image_sz, self.image_sz)
+            this_condition = this_condition.reshape(
+                -1, self.in_channel, self.image_sz, self.image_sz
+            )
 
             this_condition = self.resnet18[n](this_condition)
 
@@ -332,17 +357,74 @@ class ResNet18MultiViewImageCondition(BaseNNCondition):
         return emb
 
 
-if __name__ == "__main__":
-    x1 = torch.randn((32, 3, 64, 64))
-    x2 = torch.randn((32, 4, 3, 64, 64))
-    x3 = torch.randn((32, 4, 5, 3, 64, 64))
+class ResNetImageCondition(IdentityCondition):
+    """Resnet image condition.
 
-    m1 = ResNet18ImageCondition(image_sz=64, in_channel=3, emb_dim=256)
-    m2 = ResNet18MultiViewImageCondition(image_sz=64, in_channel=3, emb_dim=256, n_views=4)
+    Use timm ResNet implementations for image encoding.
+    These models can be either pretrained or not.
+    Full configuration can be found in https://github.com/huggingface/pytorch-image-models/blob/main/timm/models/resnet.py.
+
+    Args:
+        model_name (str):
+            Name of the ResNet model, e.g., 'resnet18', 'resnet50', etc.
+        pretrained (bool):
+            Whether to load the pretrained model. Default is False.
+            If True, the model will be loaded with the pretrained weights.
+            And do not forget to normalize the input image with the same normalization as the pretrained model.
+        freeze (bool):
+            Whether to freeze the model. It is useful when you want to use the model as a pretrained feature extractor.
+        flatten (bool):
+            Whether to flatten the output. Default is False.
+        dropout (float):
+            Classifier-free guidance condition dropout rate. Default is 0.0.
+        **kwargs:
+            Other keyword arguments to pass to the `timm.create_model` function.
+    """
+
+    def __init__(
+        self,
+        model_name: str = "resnet18",
+        pretrained: bool = False,
+        freeze: bool = False,
+        flatten: bool = False,
+        dropout: float = 0.0,
+        **kwargs,
+    ):
+        super().__init__(dropout)
+        self.flatten = flatten
+        self.resnet = timm.create_model(model_name, pretrained=pretrained, **kwargs)
+        if freeze:
+            self.resnet = self.resnet.requires_grad_(False).eval()
+
+        # freeze the last linear classification layer since we don't need it
+        self.resnet.fc.requires_grad_(False)
+
+    def forward(self, condition: torch.Tensor, mask: Optional[torch.Tensor] = None):
+        leading_dims = condition.shape[:-3]
+        condition = condition.reshape(-1, *condition.shape[-3:])
+        img_feat = self.resnet.forward_features(condition)
+        img_feat = self.resnet.global_pool(img_feat)
+        img_feat = img_feat.reshape(*leading_dims, -1)
+        if self.flatten:
+            img_feat = img_feat.flatten(1)
+        return super().forward(img_feat, mask)
+
+
+if __name__ == "__main__":
+    # Learn from scratch
+    x1 = torch.rand((32, 2, 3, 224, 224))
+    m1 = ResNetImageCondition(model_name="resnet18", pretrained=False)
 
     print(m1(x1).shape)
-    print(m1(x2).shape)
-    print(m1(x3).shape)
+
+    # Pretrained (don't forget to use imagenet normalization)
+    import torchvision.transforms as T
+    from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
+
+    transform = T.Normalize(mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD)
+
+    x2 = torch.rand((32, 2, 3, 224, 224))
+    x2 = transform(x2)
+    m2 = ResNetImageCondition(model_name="resnet18", pretrained=True, freeze=True)
 
     print(m2(x2).shape)
-    print(m2(x3).shape)

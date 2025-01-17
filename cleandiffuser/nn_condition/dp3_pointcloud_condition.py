@@ -1,11 +1,10 @@
-from typing import Optional
+from typing import List, Optional
 
 import einops
 import torch
 import torch.nn as nn
 
 from cleandiffuser.nn_condition import IdentityCondition
-from cleandiffuser.utils import fps
 
 
 class SharedMlp(nn.Module):
@@ -40,34 +39,58 @@ class DP3PointCloudCondition(IdentityCondition):
 
     Examples:
         >>> nn_condition = DP3PointCloudCondition(emb_dim=128, fps_downsample_points=512)
-        >>> x = torch.randn((2, 3, 1000))  # (batch, 3, N)
+        >>> x = torch.randn((2, 1000, 3))  # (batch, N, 3)
         >>> nn_condition(x).shape
         torch.Size([2, 128])
 
     """
 
-    def __init__(self, emb_dim: int, fps_downsample_points: Optional[int] = None):
+    def __init__(
+        self,
+        emb_dim: int,
+        fps_downsample_points: Optional[int] = None,
+        hidden_sizes: List[int] = (64, 128, 256),
+    ):
         super().__init__()
-        self.net = nn.Sequential(
-            SharedMlp(3, 64),
-            SharedMlp(64, 128),
-            SharedMlp(128, 256),
-            MaxPool(-2),
-            nn.Linear(256, emb_dim),
-            nn.LayerNorm(emb_dim),
-        )
+
+        if fps_downsample_points is not None:
+            try:
+                from pytorch3d.ops import sample_farthest_points
+
+                self.fps = sample_farthest_points
+                self.torch3d_fps = True
+            except ImportError:
+                Warning("Pytorch3d not installed. Using slow fps implementation.")
+                from cleandiffuser.utils import fps
+
+                self.fps = fps
+                self.torch3d_fps = False
+        else:
+            self.fps = None
+            self.torch3d_fps = None
+
+        layers = [SharedMlp(3, hidden_sizes[0])]
+        for i, sz in enumerate(hidden_sizes[:-1]):
+            layers.append(SharedMlp(sz, hidden_sizes[i + 1]))
+        layers.extend([MaxPool(-2), nn.Linear(hidden_sizes[-1], emb_dim), nn.LayerNorm(emb_dim)])
+        self.net = nn.Sequential(*layers)
+        
         self.fps_downsample_points = fps_downsample_points
 
     def forward(self, condition: torch.Tensor, mask: Optional[torch.Tensor] = None):
-        if self.fps_downsample_points:
-            _, condition = fps(condition, self.fps_downsample_points)
-        condition = einops.rearrange(condition, "... d n -> ... n d")
+        if self.fps is not None:
+            if self.torch3d_fps:
+                condition = self.fps(condition, K=self.fps_downsample_points)[0]
+            else:
+                condition = self.fps(
+                    einops.rearrange(condition, "... d n -> ... n d"), self.fps_downsample_points
+                )[1]
         feature = self.net(condition)
         return super().forward(feature, mask)
 
 
 if __name__ == "__main__":
-    x = torch.randn((2, 3, 1000))
+    x = torch.randn((2, 1000, 3))
 
     m = DP3PointCloudCondition(emb_dim=128, fps_downsample_points=512)
 
