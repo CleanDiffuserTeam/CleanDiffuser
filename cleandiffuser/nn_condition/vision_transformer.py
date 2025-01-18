@@ -1,9 +1,9 @@
 from typing import Literal, Optional, Tuple, Union
 
 import torch
-from timm.models import VisionTransformer
+import torchvision.transforms as T
 
-from .base_nn_condition import IdentityCondition
+from cleandiffuser.nn_condition.base_nn_condition import IdentityCondition
 
 
 class ViTCondition(IdentityCondition):
@@ -70,6 +70,8 @@ class ViTCondition(IdentityCondition):
         self.dropout = dropout
         self.global_pool = global_pool
 
+        from timm.models import VisionTransformer
+
         self.vit = VisionTransformer(
             img_size=img_size,
             patch_size=patch_size,
@@ -93,3 +95,92 @@ class ViTCondition(IdentityCondition):
         if self.global_pool == "":
             feat = feat[:, self.prefix_len :]
         return super().forward(feat, mask).view(*leading_dim, *feat.shape[1:])
+
+
+class PretrainedViTCondition(IdentityCondition):
+    """Pretrained ViT model for image condition.
+
+    Pretrained ViT model on ImageNet-21k from https://huggingface.co/google/vit-base-patch16-224-in21k.
+
+    This class loads a pretrained huggingface ViT model and uses it to extract image features.
+    It accepts both uint8 and float32 images in the range [0, 255] or [0, 1].
+    And returns the patch features or the pooler output depending on the `use_pooler_output` parameter.
+
+    Args:
+        pretrained_model_name_or_path (str):
+            Pretrained model name or path.
+        use_pooler_output (bool):
+            Whether to only return the pooler output. Default is False.
+        require_cls_feature (bool):
+            Whether to require the CLS feature. Default is False.
+        freeze (bool):
+            Whether to freeze the model. Default is True.
+        dropout (float):
+            Classifier-free guidance condition dropout rate. Default is 0.0.
+        **kwargs:
+            Additional keyword arguments for creating huggingface ViT model.
+
+    Examples:
+        >>> nn_condition = PretrainedViTCondition()
+        >>> x = torch.randint(0, 256, (2, 3, 224, 224), dtype=torch.uint8)
+        >>> nn_condition(x).shape
+        torch.Size([2, 196, 768])
+
+        >>> nn_condition = PretrainedViTCondition(use_pooler_output=True)
+        >>> x = torch.randint(0, 256, (2, 3, 224, 224), dtype=torch.uint8)
+        >>> nn_condition(x).shape
+        torch.Size([2, 768])
+
+        >>> nn_condition = PretrainedViTCondition(require_cls_feature=True)
+        >>> x = torch.randint(0, 256, (2, 3, 224, 224), dtype=torch.uint8)
+        >>> nn_condition(x).shape
+        torch.Size([2, 197, 768])
+    """
+
+    def __init__(
+        self,
+        pretrained_model_name_or_path: str = "google/vit-base-patch16-224-in21k",
+        use_pooler_output: bool = False,
+        require_cls_feature: bool = False,
+        freeze: bool = True,
+        dropout: float = 0.0,
+        **kwargs,
+    ):
+        super().__init__(dropout)
+
+        from transformers import ViTModel
+
+        self.transform = T.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+
+        self.model = ViTModel.from_pretrained(pretrained_model_name_or_path, **kwargs)
+        self._use_pooler_output = use_pooler_output
+        self._require_cls_feature = require_cls_feature
+
+        if freeze:
+            for param in self.model.parameters():
+                param.requires_grad = False
+            self._ignored_hparams.append("model")
+
+    def forward(
+        self,
+        condition: torch.Tensor,
+        mask: Optional[torch.Tensor] = None,
+    ):
+        leading_dims = condition.shape[:-3]
+        condition = condition.reshape(-1, *condition.shape[-3:])
+
+        if condition.dtype == torch.uint8:
+            dtype = next(self.model.parameters()).dtype
+            condition = condition.to(dtype) / 255.0
+        condition = self.transform(condition)
+
+        out = self.model(condition)
+        if self._use_pooler_output:
+            out = out["pooler_output"].reshape(*leading_dims, -1)
+        else:
+            out = out["last_hidden_state"]
+            if not self._require_cls_feature:
+                out = out[:, 1:]
+            out = out.reshape(*leading_dims, *out.shape[1:])
+
+        return super().forward(out, mask)

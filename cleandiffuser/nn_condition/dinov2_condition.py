@@ -60,6 +60,7 @@ class DINOv2ImageCondition(BaseNNCondition):
         if freeze:
             for param in self.model.parameters():
                 param.requires_grad = False
+            self._ignored_hparams.append("model")
 
         self.transform = T.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
 

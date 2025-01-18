@@ -29,6 +29,7 @@ class BaseNNCondition(nn.Module):
         self,
     ):
         super().__init__()
+        self._ignored_hparams = []
 
     def forward(
         self, condition: Union[TensorDict, torch.Tensor], mask: Optional[Union[TensorDict, torch.Tensor]] = None

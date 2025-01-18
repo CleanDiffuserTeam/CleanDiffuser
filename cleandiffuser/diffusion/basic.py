@@ -33,11 +33,23 @@ class DiffusionModel(L.LightningModule):
     ):
         super().__init__()
         self.ema_rate = ema_rate
-        self.optimizer_params = self._preprocess_optimizer_params(optimizer_params or {}, classifier)
+        self.optimizer_params = self._preprocess_optimizer_params(
+            optimizer_params or {}, classifier
+        )
+
+        # Ignore the specified hyperparameters
+        # ignored_hparams = list()
+        # for m in getattr(nn_diffusion, "_ignored_hparams", []):
+        #     ignored_hparams.append(f"nn_diffusion.{m}")
+        # for m in getattr(nn_condition, "_ignored_hparams", []):
+        #     ignored_hparams.append(f"nn_condition.{m}")
+        # self.save_hyperparameters(ignore=ignored_hparams)
 
         # When updating both diffusion and classifier, use manual optimization.
         self.automatic_optimization = (
-            False if (classifier is not None and "diffusion" in self.optimizer_params.keys()) else True
+            False
+            if (classifier is not None and "diffusion" in self.optimizer_params.keys())
+            else True
         )
 
         # nn_condition is None means that the model is not conditioned on any input.
@@ -61,7 +73,9 @@ class DiffusionModel(L.LightningModule):
         self.manual_optimizers = {}
 
     @staticmethod
-    def _preprocess_optimizer_params(optimizer_params: dict, classifier: Optional[BaseClassifier] = None):
+    def _preprocess_optimizer_params(
+        optimizer_params: dict, classifier: Optional[BaseClassifier] = None
+    ):
         keys = optimizer_params.keys()
         if len(keys) == 0:
             optimizer_params["diffusion"] = {"optimizer": "adam", "lr": 3e-4}
@@ -76,27 +90,48 @@ class DiffusionModel(L.LightningModule):
     @staticmethod
     def _get_optimizer(params, optimizer_params: dict):
         if optimizer_params["optimizer"].lower() == "sgd":
-            return torch.optim.SGD(params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"})
+            return torch.optim.SGD(
+                params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"}
+            )
         elif optimizer_params["optimizer"].lower() == "adam":
-            return torch.optim.Adam(params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"})
+            return torch.optim.Adam(
+                params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"}
+            )
         elif optimizer_params["optimizer"].lower() == "adamw":
-            return torch.optim.AdamW(params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"})
+            return torch.optim.AdamW(
+                params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"}
+            )
         elif optimizer_params["optimizer"].lower() == "adagrad":
-            return torch.optim.Adagrad(params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"})
+            return torch.optim.Adagrad(
+                params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"}
+            )
         elif optimizer_params["optimizer"].lower() == "rmsprop":
-            return torch.optim.RMSprop(params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"})
+            return torch.optim.RMSprop(
+                params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"}
+            )
         elif optimizer_params["optimizer"].lower() == "adadelta":
-            return torch.optim.Adadelta(params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"})
+            return torch.optim.Adadelta(
+                params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"}
+            )
         elif optimizer_params["optimizer"].lower() == "adamax":
-            return torch.optim.Adamax(params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"})
+            return torch.optim.Adamax(
+                params, **{k: v for k, v in optimizer_params.items() if k != "optimizer"}
+            )
         else:
             raise ValueError(f"Optimizer {optimizer_params['optimizer']} is not supported.")
 
     def configure_optimizers(self):
         """PyTorch Lightning optimizer configuration."""
-        if "diffusion" in self.optimizer_params.keys() and "classifier" in self.optimizer_params.keys():
+        if (
+            "diffusion" in self.optimizer_params.keys()
+            and "classifier" in self.optimizer_params.keys()
+        ):
             return (
-                {"optimizer": self._get_optimizer(self.model.parameters(), self.optimizer_params["diffusion"])},
+                {
+                    "optimizer": self._get_optimizer(
+                        self.model.parameters(), self.optimizer_params["diffusion"]
+                    )
+                },
                 {
                     "optimizer": self._get_optimizer(
                         self.classifier.model.parameters(), self.optimizer_params["classifier"]
@@ -106,7 +141,9 @@ class DiffusionModel(L.LightningModule):
         elif "diffusion" in self.optimizer_params.keys():
             return self._get_optimizer(self.model.parameters(), self.optimizer_params["diffusion"])
         elif "classifier" in self.optimizer_params.keys():
-            return self._get_optimizer(self.classifier.model.parameters(), self.optimizer_params["classifier"])
+            return self._get_optimizer(
+                self.classifier.model.parameters(), self.optimizer_params["classifier"]
+            )
         else:
             raise ValueError("Invalid optimizer configuration.")
 
@@ -171,9 +208,9 @@ class DiffusionModel(L.LightningModule):
                 "condition_cg" is the CG condition and is optional.
             batch_idx (int): Batch index.
         """
-        assert (
-            isinstance(batch, dict) and "x0" in batch.keys()
-        ), "The batch should contain the key `x0` for the input data."
+        assert isinstance(batch, dict) and "x0" in batch.keys(), (
+            "The batch should contain the key `x0` for the input data."
+        )
 
         x0 = batch["x0"]
         condition_cfg = batch.get("condition_cfg", None)
@@ -241,7 +278,11 @@ class DiffusionModel(L.LightningModule):
                 )
 
     def update_diffusion(
-        self, x0: torch.Tensor, condition_cfg: Optional[torch.Tensor] = None, update_ema: bool = True, **kwargs
+        self,
+        x0: torch.Tensor,
+        condition_cfg: Optional[torch.Tensor] = None,
+        update_ema: bool = True,
+        **kwargs,
     ):
         """One-step diffusion update.
 
@@ -274,7 +315,11 @@ class DiffusionModel(L.LightningModule):
         return {"diffusion_loss": loss.item()}
 
     def update_classifier(
-        self, x0: torch.Tensor, condition_cg: Optional[torch.Tensor] = None, update_ema: bool = True, **kwargs
+        self,
+        x0: torch.Tensor,
+        condition_cg: Optional[torch.Tensor] = None,
+        update_ema: bool = True,
+        **kwargs,
     ):
         if not self.manual_optimizers:
             if "classifier" in self.optimizer_params.keys():

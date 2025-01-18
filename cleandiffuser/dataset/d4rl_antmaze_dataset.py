@@ -14,8 +14,8 @@ class D4RLAntmazeDataset(BaseDataset):
         Chunk the dataset into sequences of length `horizon` with obs-repeat/act-zero/reward-zero padding.
         Use GaussianNormalizer to normalize the observations as default.
         Each batch contains
-        - batch["obs"]["state"], observations of shape (batch_size, horizon, o_dim)
-        - batch["act"], actions of shape (batch_size, horizon, a_dim)
+        - batch["obs"]["state"], observations of shape (batch_size, horizon, obs_dim)
+        - batch["act"], actions of shape (batch_size, horizon, act_dim)
         - batch["rew"], rewards of shape (batch_size, horizon, 1)
         - batch["val"], Monte Carlo return of shape (batch_size, 1)
 
@@ -164,9 +164,9 @@ class D4RLAntmazeTDDataset(BaseDataset):
     Chunk the dataset into transitions.
     Use GaussianNormalizer to normalize the observations as default.
     Each batch contains
-    - batch["obs"]["state"], observation of shape (batch_size, o_dim)
-    - batch["next_obs"]["state"], next observation of shape (batch_size, o_dim)
-    - batch["act"], action of shape (batch_size, a_dim)
+    - batch["obs"]["state"], observation of shape (batch_size, obs_dim)
+    - batch["next_obs"]["state"], next observation of shape (batch_size, obs_dim)
+    - batch["act"], action of shape (batch_size, act_dim)
     - batch["rew"], reward of shape (batch_size, 1)
     - batch["tml"], terminal of shape (batch_size, 1)
 
@@ -259,11 +259,11 @@ class MultiHorizonD4RLAntmazeDataset(BaseDataset):
         super().__init__()
 
         observations, actions, rewards, timeouts, terminals = (
-            dataset["observations"].astype(np.float32),
-            dataset["actions"].astype(np.float32),
-            dataset["rewards"].astype(np.float32),
-            dataset["timeouts"],
-            dataset["terminals"])
+            np.copy(dataset["observations"]).astype(np.float32),
+            np.copy(dataset["actions"]).astype(np.float32),
+            np.copy(dataset["rewards"]).astype(np.float32),
+            np.copy(dataset["timeouts"]),
+            np.copy(dataset["terminals"]))
         rewards -= 1
         dones = np.logical_or(timeouts, terminals)
         self.normalizers = {
@@ -271,7 +271,7 @@ class MultiHorizonD4RLAntmazeDataset(BaseDataset):
         normed_observations = self.normalizers["state"].normalize(observations)
 
         self.horizons = horizons
-        self.o_dim, self.a_dim = observations.shape[-1], actions.shape[-1]
+        self.obs_dim, self.act_dim = observations.shape[-1], actions.shape[-1]
         self.discount = discount ** np.arange(max_path_length, dtype=np.float32)
 
         self.indices = [[] for _ in range(len(horizons))]
@@ -289,8 +289,8 @@ class MultiHorizonD4RLAntmazeDataset(BaseDataset):
                 # 1. agent walks out of the goal
                 if path_length < max_path_length:
 
-                    _seq_obs = np.zeros((max_path_length, self.o_dim), dtype=np.float32)
-                    _seq_act = np.zeros((max_path_length, self.a_dim), dtype=np.float32)
+                    _seq_obs = np.zeros((max_path_length, self.obs_dim), dtype=np.float32)
+                    _seq_act = np.zeros((max_path_length, self.act_dim), dtype=np.float32)
                     _seq_rew = np.zeros((max_path_length, 1), dtype=np.float32)
 
                     _seq_obs[:i - ptr] = normed_observations[ptr:i]

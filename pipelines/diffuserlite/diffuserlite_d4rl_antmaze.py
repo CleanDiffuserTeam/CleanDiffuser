@@ -139,7 +139,7 @@ def pipeline(args):
 
             if (n_gradient_step + 1) % args.save_interval == 0:
                 iql.save(save_path + f'iql_ckpt_{n_gradient_step + 1}.pt')
-                iql.save(save_path + f'iql_ckpt_latest.pt')
+                iql.save(save_path + 'iql_ckpt_latest.pt')
 
             n_gradient_step += 1
             if n_gradient_step > 1_000_000:
