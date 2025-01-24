@@ -60,8 +60,8 @@ class T5LanguageEncoder:
         return self.encode(sentences)
 
 
-DEVICE = "cuda:1"
-PATH_TO_T5 = "/home/dzb/pretrained/t5-base"
+DEVICE = "cuda:0"
+PATH_TO_T5 = "/google/t5-base"
 IMAGE_SIZE = 224
 BOUNDING_BOX = o3d.geometry.AxisAlignedBoundingBox(
     min_bound=(-1.0, -1.0, 0.0), max_bound=(1.0, 1.0, 1.6)
@@ -69,7 +69,7 @@ BOUNDING_BOX = o3d.geometry.AxisAlignedBoundingBox(
 
 LIBERO_PATH = Path(os.path.dirname(libero.libero.__file__)).parents[0]
 DATASET_PATH = LIBERO_PATH / "datasets"
-BENCHMARKS = ["libero_10"]
+BENCHMARKS = ["libero_goal", "libero_spatial", "libero_object", "libero_90", "libero_10"]
 SAVE_DATA_PATH = Path(__file__).parents[3] / "dev/libero"
 
 # create save directory

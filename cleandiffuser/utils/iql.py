@@ -129,9 +129,9 @@ class IQL(L.LightningModule):
         return v
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=3e-4)
+        return torch.optim.Adam(self.parameters(), lr=5e-4)
 
-    def update_target(self, mu=0.995):
+    def update_target(self, mu=0.9):
         for p, p_targ in zip(self.Q.parameters(), self.Q_targ.parameters()):
             p_targ.data = mu * p_targ.data + (1 - mu) * p.data
 

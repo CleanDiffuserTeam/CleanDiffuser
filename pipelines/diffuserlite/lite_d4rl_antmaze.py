@@ -67,10 +67,10 @@ class MultiHorizonD4RLAntmazeDatasetwQ(MultiHorizonD4RLAntmazeDataset):
 
 
 # --- Config ---
-env_name = "antmaze-medium-play-v2"
+env_name = "antmaze-large-play-v2"
 seed = 0
-mode = "training"
-devices = [1]
+mode = "iql_training"
+devices = [0]
 default_root_dir = Path(__file__).parents[2] / f"results/diffuserlite/{env_name}/"
 
 if __name__ == "__main__":
@@ -91,10 +91,10 @@ if __name__ == "__main__":
 
         dummy_env = gym.make(env_name)
         dataset = D4RLAntmazeTDDataset(d4rl.qlearning_dataset(dummy_env))
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=512, shuffle=True)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=2048, shuffle=True)
         obs_dim, act_dim = dataset.obs_dim, dataset.act_dim
 
-        iql = IQL(obs_dim, act_dim, hidden_dim=512, discount=0.99, tau=0.9)
+        iql = IQL(obs_dim, act_dim, hidden_dim=256, discount=0.99, tau=0.9)
 
         callback = ModelCheckpoint(
             dirpath=default_root_dir,

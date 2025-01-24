@@ -39,7 +39,6 @@ class T5LanguageEncoder:
         >>> h, mask = lang_encoder(["Hello world!", "How are you?"])
         >>> print(h.shape, mask.shape)
         torch.Size([2, 4, 768]) torch.Size([2, 4])
-
     """
 
     def __init__(
@@ -74,7 +73,6 @@ class ViTAndT5VisionLanguageCondition(BaseNNCondition):
         To: int = 2,
     ):
         super().__init__()
-
         self.vit_model = ViTModel.from_pretrained(vit_pretrained_model_name_or_path)
         self.vit_adapter = nn.Sequential(
             nn.Linear(768, vit_feat_dim),
@@ -96,7 +94,7 @@ class ViTAndT5VisionLanguageCondition(BaseNNCondition):
         )
         self._ignored_hparams.append("t5_model")
 
-        self.To_pos_emb = nn.Parameter(torch.randn(1, To, 1, vit_feat_dim) * 0.02)
+        self.To_pos_emb = nn.Parameter(torch.randn(1, To * 2, 1, vit_feat_dim) * 0.02)
 
     @torch.no_grad()
     def language_encode(self, sentences: List[str]):
@@ -144,6 +142,7 @@ class ViTAndT5VisionLanguageCondition(BaseNNCondition):
 class DatasetWrapper:
     def __init__(self, dataset):
         self.dataset = dataset
+        self.normalize = T.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
         self.vis_aug = T.Compose(
             [
                 T.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
@@ -160,18 +159,17 @@ class DatasetWrapper:
 
     def __getitem__(self, idx):
         item = self.dataset[idx]
-
         # Rescale to [0, 1] and apply random crop and resize
         image = item["observation"]["color"].astype(np.float32) / 255.0
         image = self.vis_aug(torch.tensor(image))
-        # image_ego = item["observation"]["color_ego"].astype(np.float32) / 255.0
-        # image_ego = self.vis_aug(torch.tensor(image_ego))
-        # Combine two-view images as one 6-channel image
-        # combined_image = torch.cat([image, image_ego], dim=1)
+        image_ego = item["observation"]["color_ego"].astype(np.float32) / 255.0
+        image_ego = self.normalize(torch.tensor(image_ego))
+        # Concatenate two-view images along the time dimension
+        combined_image = torch.cat([image, image_ego], dim=0)
 
         act = item["action"]
         obs = {
-            "image": image,
+            "image": combined_image,
             "language_embedding": item["language_embedding"],
             "language_mask": item["language_mask"],
         }
@@ -192,20 +190,20 @@ class FTContinuousDiffusionSDE(ContinuousDiffusionSDE):
 
 # --- Config ---
 task_suite = "libero_goal"
-t5_pretrained_model_name_or_path = "/home/dzb/pretrained/t5-base"
+t5_pretrained_model_name_or_path = "/google/t5-base"
 seed = 0
 To = 2
 Ta = 16
 num_act_exec = 8
-mode = "rendering"  # training, inference or rendering
+mode = "inference"  # training, inference or rendering
 dataset_path = Path(__file__).parents[2] / f"dev/libero/{task_suite}.zarr"
-devices = [1]  # List of GPU ids to train on, cuda:0 for default
+devices = [3]  # List of GPU ids to train on, cuda:0 for default
 default_root_dir = Path(__file__).parents[2] / f"results/diffusion_policy/{task_suite}/"
 training_steps = 500_000
 save_every_n_steps = 10_000
-ckpt_file = "epoch=40-step=20000.ckpt"
+ckpt_file = "epoch=180-step=120000.ckpt"
 env_name = "libero-goal-v0"
-task_id = 0
+task_id = 9
 sampling_steps = 20
 
 if __name__ == "__main__":
@@ -214,7 +212,7 @@ if __name__ == "__main__":
     # --- Dataset ---
     dataset = LiberoDataset(
         data_path=dataset_path,
-        observation_meta=["color"],
+        observation_meta=["color", "color_ego"],
         To=To,
         Ta=Ta,
     )
@@ -223,7 +221,7 @@ if __name__ == "__main__":
 
     dataloader = torch.utils.data.DataLoader(
         DatasetWrapper(dataset),
-        batch_size=64,
+        batch_size=32,
         shuffle=True,
         num_workers=4,
         persistent_workers=True,
@@ -286,9 +284,10 @@ if __name__ == "__main__":
         )
         print(env.task_description)
         normalizer = dataset.get_normalizer()
+        normalize = T.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
         center_crop = T.Compose(
             [
-                T.Normalize(mean=IMAGENET_DEFAULT_MEAN, std=IMAGENET_DEFAULT_STD),
+                T.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
                 T.CenterCrop(200),
                 T.Resize(224),
             ]
@@ -308,6 +307,10 @@ if __name__ == "__main__":
             image = torch.tensor(obs["agentview_image"] / 255.0, device=device, dtype=torch.float32)
             image = center_crop(image)
             image = image[None, None].repeat(1, To, 1, 1, 1)
+            image_ego = torch.tensor(obs["robot0_eye_in_hand_image"] / 255.0, device=device, dtype=torch.float32)
+            image_ego = normalize(image_ego)
+            image_ego = image_ego[None, None].repeat(1, To, 1, 1, 1)
+            image = torch.cat([image, image_ego], dim=1)
 
             frames = []
             frames.append(
@@ -347,7 +350,14 @@ if __name__ == "__main__":
                         )
                         this_image = this_image[None]
                         this_image = center_crop(this_image)
+                        this_image_ego = torch.tensor(
+                            next_obs["robot0_eye_in_hand_image"] / 255.0, device=device, dtype=torch.float32
+                        )
+                        this_image_ego = this_image_ego[None]
+                        this_image_ego = normalize(this_image_ego)
+                        
                         image[:, i - num_act_exec + To] = this_image
+                        image[:, i - num_act_exec + To * 2] = this_image_ego
 
                     if np.all(all_done):
                         break
@@ -368,7 +378,7 @@ if __name__ == "__main__":
             if all_rew:
                 success.append(True)
 
-        print(f"Success rate: {np.mean(success)}")
+        print(f"Success rate: {np.sum(success) / env.num_init_states}")
 
     # -- rendering --
     elif mode == "rendering":
