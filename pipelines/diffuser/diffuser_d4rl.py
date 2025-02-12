@@ -1,8 +1,3 @@
-"""
-WARNING: This pipeline has not been fully tested. The results may not be accurate.
-You may tune the hyperparameters in the config file before using it.
-"""
-
 from pathlib import Path
 
 import d4rl  # noqa: F401
@@ -21,7 +16,8 @@ from cleandiffuser.dataset.d4rl_kitchen_dataset import D4RLKitchenDataset
 from cleandiffuser.dataset.d4rl_mujoco_dataset import D4RLMuJoCoDataset
 from cleandiffuser.diffusion import ContinuousDiffusionSDE
 from cleandiffuser.nn_classifier import HalfJannerUNet1d
-from cleandiffuser.nn_diffusion import DiT1d
+from cleandiffuser.nn_diffusion import JannerUNet1d
+from pytorch_lightning.loggers import WandbLogger
 
 RETURN_SCALE = {
     "halfcheetah-medium-expert-v2": 1200,
@@ -65,7 +61,7 @@ class ObsActSequence_Wrapper(torch.utils.data.Dataset):
         }
 
 
-@hydra.main(config_path="../configs/diffuser", config_name="d4rl", version_base=None)
+@hydra.main(config_path="../../configs/diffuser", config_name="d4rl", version_base=None)
 def pipeline(args):
     L.seed_everything(args.seed, workers=True)
 
@@ -84,8 +80,14 @@ def pipeline(args):
     obs_dim, act_dim = dataset.obs_dim, dataset.act_dim
 
     # --- Create Diffusion Model ---
-    nn_diffusion = DiT1d(
-        x_dim=obs_dim + act_dim, emb_dim=128, d_model=320, n_heads=10, depth=2, timestep_emb_type="untrainable_fourier"
+    nn_diffusion = JannerUNet1d(
+        x_dim=obs_dim + act_dim,
+        emb_dim=32,
+        model_dim=32,
+        kernel_size=5,
+        dim_mult=args.task.dim_mult,
+        attention=False,
+        timestep_emb_type="untrainable_fourier",
     )
     nn_classifier = HalfJannerUNet1d(
         horizon=args.task.horizon,
@@ -106,10 +108,10 @@ def pipeline(args):
         classifier = OptimalityClassifier(nn_classifier, ema_rate=0.999)
 
         actor = ContinuousDiffusionSDE(nn_diffusion, None, fix_mask, loss_weight, ema_rate=0.999, classifier=classifier)
-
+        
         dataloader = DataLoader(
             ObsActSequence_Wrapper(dataset, env_name),
-            batch_size=512,
+            batch_size=512,  # batch size per gpu
             shuffle=True,
             num_workers=4,
             persistent_workers=True,
@@ -118,15 +120,21 @@ def pipeline(args):
         callback = ModelCheckpoint(
             dirpath=save_path, filename="diffusion-{step}", every_n_train_steps=args.save_interval, save_top_k=-1
         )
+        wandb_logger = WandbLogger(
+            project="cleandiffuser",
+            config=dict(args),
+            name=f"{args.pipeline_name}-{args.task.env_name}-{args.mode}"
+        )
 
         trainer = L.Trainer(
             accelerator="gpu",
-            devices=[0, 1, 2, 3],
+            devices=-1,
             max_steps=args.diffusion_training_steps,
             deterministic=True,
-            log_every_n_steps=200,
+            log_every_n_steps=100,
             default_root_dir=save_path,
             callbacks=[callback],
+            logger=wandb_logger,
             strategy="ddp_find_unused_parameters_true",
         )
 
@@ -199,7 +207,6 @@ def pipeline(args):
         episode_rewards = [list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards]
         episode_rewards = np.array(episode_rewards).mean(-1) * 100.0
         print(f"Score: {episode_rewards.mean():.3f}±{episode_rewards.std():.3f}")
-
         env_eval.close()
 
 

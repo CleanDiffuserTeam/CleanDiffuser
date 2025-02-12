@@ -1,23 +1,23 @@
 defaults:
   - _self_
-  - task: halfcheetah-medium-expert-v2
+  - task: walker2d-medium-expert-v2
 
 pipeline_name: diffuser_d4rl
-device_id: 0
 mode: training  # training -> inference
 seed: 0
 
 # Training
-diffusion_training_steps: 10000
-classifier_training_steps: 10000
-save_interval: 10000
+diffusion_training_steps: 1000000
+classifier_training_steps: 1000000
+save_interval: 200000
 
 # Inference
-ckpt: 10000
+device_id: 0  # only for inference
+ckpt: 1000000
 solver: ddpm
-sampling_steps: 5
+sampling_steps: 10
 num_envs: 50
-num_episodes: 1
+num_episodes: 3
 num_candidates: 64
 
 # hydra

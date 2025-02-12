@@ -1,8 +1,3 @@
-"""
-WARNING: This pipeline has not been fully tested. The results may not be accurate.
-You may tune the hyperparameters in the config file before using it.
-"""
-
 from pathlib import Path
 
 import d4rl  # noqa: F401
@@ -21,6 +16,7 @@ from cleandiffuser.diffusion import ContinuousDiffusionSDE
 from cleandiffuser.invdynamic import FancyMlpInvDynamic
 from cleandiffuser.nn_condition import FourierCondition
 from cleandiffuser.nn_diffusion import DiT1d
+from pytorch_lightning.loggers import WandbLogger
 
 RETURN_SCALE = {
     "halfcheetah-medium-expert-v2": 1200,
@@ -82,7 +78,7 @@ class InvDyn_Wrapper(torch.utils.data.Dataset):
         return obs[:-1], act[:-1], obs[1:]
 
 
-@hydra.main(config_path="../configs/dd", config_name="d4rl", version_base=None)
+@hydra.main(config_path="../../configs/dd", config_name="d4rl", version_base=None)
 def pipeline(args):
     L.seed_everything(args.seed, workers=True)
 
@@ -117,21 +113,31 @@ def pipeline(args):
         actor = ContinuousDiffusionSDE(nn_diffusion, nn_condition, fix_mask, loss_weight, ema_rate=0.999)
 
         dataloader = DataLoader(
-            ObsSequence_Wrapper(dataset, env_name), batch_size=512, shuffle=True, num_workers=4, persistent_workers=True
+            ObsSequence_Wrapper(dataset, env_name),
+            batch_size=512,  # batch size per gpu
+            shuffle=True,
+            num_workers=4,
+            persistent_workers=True
         )
 
         callback = ModelCheckpoint(
             dirpath=save_path, filename="diffusion-{step}", every_n_train_steps=args.save_interval, save_top_k=-1
         )
+        wandb_logger = WandbLogger(
+            project="cleandiffuser",
+            config=dict(args),
+            name=f"{args.pipeline_name}-{args.task.env_name}-{args.mode}"
+        )
 
         trainer = L.Trainer(
             accelerator="gpu",
-            devices=[0, 1, 2, 3],
+            devices=-1,
             max_steps=args.diffusion_training_steps,
             deterministic=True,
             log_every_n_steps=200,
             default_root_dir=save_path,
             callbacks=[callback],
+            logger=wandb_logger,
         )
 
         trainer.fit(actor, dataloader)
@@ -147,14 +153,20 @@ def pipeline(args):
         )
 
         callback = ModelCheckpoint(dirpath=save_path, filename="invdyn-{step}", every_n_train_steps=args.save_interval)
-
+        wandb_logger = WandbLogger(
+            project="cleandiffuser",
+            config=dict(args),
+            name=f"{args.pipeline_name}-{args.task.env_name}-{args.mode}"
+        )
+                
         trainer = L.Trainer(
             accelerator="gpu",
-            devices=[0, 1, 2, 3],
+            devices=-1,
             max_steps=args.invdyn_training_steps,
             deterministic=True,
             log_every_n_steps=200,
             default_root_dir=save_path,
+            logger=wandb_logger,
             callbacks=[callback],
         )
 
