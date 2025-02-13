@@ -1,5 +1,4 @@
 dev_pipelines/
-scripts/
 outputs/
 /results
 /wandb

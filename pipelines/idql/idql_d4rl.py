@@ -1,8 +1,3 @@
-"""
-WARNING: This pipeline has not been fully tested. The results may not be accurate.
-You may tune the hyperparameters in the config file before using it.
-"""
-
 from pathlib import Path
 
 import d4rl
@@ -22,6 +17,7 @@ from cleandiffuser.diffusion import ContinuousDiffusionSDE
 from cleandiffuser.nn_condition import MLPCondition
 from cleandiffuser.nn_diffusion import IDQLMlp
 from cleandiffuser.utils import IQL
+from pytorch_lightning.loggers import WandbLogger
 
 
 class BC_Wrapper(torch.utils.data.Dataset):
@@ -55,7 +51,7 @@ class IQL_Wrapper(torch.utils.data.Dataset):
         return self.obs[idx], self.act[idx], self.rew[idx], self.next_obs[idx], self.tml[idx]
 
 
-@hydra.main(config_path="../configs/idql", config_name="d4rl", version_base=None)
+@hydra.main(config_path="../../configs/idql", config_name="d4rl", version_base=None)
 def pipeline(args):
     L.seed_everything(args.seed, workers=True)
 
@@ -103,9 +99,15 @@ def pipeline(args):
             dirpath=save_path, filename="diffusion_bc-{step}", every_n_train_steps=args.save_interval
         )
 
+        wandb_logger = WandbLogger(
+            project="cleandiffuser",
+            config=dict(args),
+            name=f"{args.pipeline_name}-{args.task.env_name}-{args.mode}"
+        )
+                
         trainer = L.Trainer(
             accelerator="gpu",
-            devices=[0, 1, 2, 3],
+            devices=-1,
             max_steps=args.bc_training_steps,
             deterministic=True,
             log_every_n_steps=200,
@@ -124,15 +126,22 @@ def pipeline(args):
         )
 
         callback = ModelCheckpoint(dirpath=save_path, filename="iql-{step}", every_n_train_steps=args.save_interval)
-
+        
+        wandb_logger = WandbLogger(
+            project="cleandiffuser",
+            config=dict(args),
+            name=f"{args.pipeline_name}-{args.task.env_name}-{args.mode}"
+        )
+        
         trainer = L.Trainer(
             accelerator="gpu",
-            devices=[0, 1, 2, 3],
+            devices=-1,
             max_steps=args.iql_training_steps,
             deterministic=True,
             log_every_n_steps=200,
             default_root_dir=save_path,
             callbacks=[callback],
+            logger=wandb_logger,
         )
 
         trainer.fit(iql, dataloader)

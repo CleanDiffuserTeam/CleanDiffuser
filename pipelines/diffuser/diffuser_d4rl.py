@@ -17,6 +17,7 @@ from cleandiffuser.dataset.d4rl_mujoco_dataset import D4RLMuJoCoDataset
 from cleandiffuser.diffusion import ContinuousDiffusionSDE
 from cleandiffuser.nn_classifier import HalfJannerUNet1d
 from cleandiffuser.nn_diffusion import JannerUNet1d
+from cleandiffuser.nn_diffusion import DiT1d
 from pytorch_lightning.loggers import WandbLogger
 
 RETURN_SCALE = {
@@ -80,14 +81,17 @@ def pipeline(args):
     obs_dim, act_dim = dataset.obs_dim, dataset.act_dim
 
     # --- Create Diffusion Model ---
-    nn_diffusion = JannerUNet1d(
-        x_dim=obs_dim + act_dim,
-        emb_dim=32,
-        model_dim=32,
-        kernel_size=5,
-        dim_mult=args.task.dim_mult,
-        attention=False,
-        timestep_emb_type="untrainable_fourier",
+    # nn_diffusion = JannerUNet1d(
+    #     x_dim=obs_dim + act_dim,
+    #     emb_dim=32,
+    #     model_dim=32,
+    #     kernel_size=5,
+    #     dim_mult=args.task.dim_mult,
+    #     attention=False,
+    #     timestep_emb_type="untrainable_fourier",
+    # )
+    nn_diffusion = DiT1d(
+        x_dim=obs_dim + act_dim, emb_dim=128, d_model=320, n_heads=10, depth=2, timestep_emb_type="untrainable_fourier"
     )
     nn_classifier = HalfJannerUNet1d(
         horizon=args.task.horizon,
