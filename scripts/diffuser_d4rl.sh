@@ -13,8 +13,8 @@ pipeline_name="diffuser_d4rl"
 # # -------------------- halfcheetah-medium-v2 --------------------
 # training
 env_name="halfcheetah-medium-v2"
-training_steps=500000
-classifier_steps=500000
+training_steps=600000
+classifier_steps=600000
 seed=0
 mode="training"
 CUDA_VISIBLE_DEVICES=0 nohup python -m pipelines.diffuser.diffuser_d4rl task.env_name=$env_name mode=$mode diffusion_training_steps=$training_steps classifier_training_steps=$classifier_steps seed=$seed > logs/${mode}_${pipeline_name}_${env_name}.log 2>&1 &
@@ -25,8 +25,8 @@ CUDA_VISIBLE_DEVICES=0 nohup python -m pipelines.diffuser.diffuser_d4rl task.env
 # # # -------------------- halfcheetah-medium-expert-v2 --------------------
 # # training
 env_name="halfcheetah-medium-expert-v2"
-training_steps=500000
-classifier_steps=500000
+training_steps=600000
+classifier_steps=600000
 seed=0
 mode="training"
 CUDA_VISIBLE_DEVICES=1 nohup python -m pipelines.diffuser.diffuser_d4rl task.env_name=$env_name mode=$mode diffusion_training_steps=$training_steps classifier_training_steps=$classifier_steps seed=$seed > logs/${mode}_${pipeline_name}_${env_name}.log 2>&1 &
@@ -37,8 +37,8 @@ CUDA_VISIBLE_DEVICES=1 nohup python -m pipelines.diffuser.diffuser_d4rl task.env
 # # # -------------------- halfcheetah-medium-replay-v2 --------------------
 # # training 
 env_name="halfcheetah-medium-replay-v2"
-training_steps=500000
-classifier_steps=500000
+training_steps=600000
+classifier_steps=600000
 seed=0
 mode="training"
 CUDA_VISIBLE_DEVICES=2 nohup python -m pipelines.diffuser.diffuser_d4rl task.env_name=$env_name mode=$mode diffusion_training_steps=$training_steps classifier_training_steps=$classifier_steps seed=$seed > logs/${mode}_${pipeline_name}_${env_name}.log 2>&1 &
@@ -49,8 +49,8 @@ CUDA_VISIBLE_DEVICES=2 nohup python -m pipelines.diffuser.diffuser_d4rl task.env
 # # # -------------------- hopper-medium-v2 --------------------
 # # training
 env_name="hopper-medium-v2"
-training_steps=500000
-classifier_steps=500000
+training_steps=600000
+classifier_steps=600000
 seed=0
 mode="training"
 CUDA_VISIBLE_DEVICES=3 nohup python -m pipelines.diffuser.diffuser_d4rl task.env_name=$env_name mode=$mode diffusion_training_steps=$training_steps classifier_training_steps=$classifier_steps seed=$seed > logs/${mode}_${pipeline_name}_${env_name}.log 2>&1 &
@@ -61,8 +61,8 @@ CUDA_VISIBLE_DEVICES=3 nohup python -m pipelines.diffuser.diffuser_d4rl task.env
 # # -------------------- hopper-medium-expert-v2 --------------------
 # training
 env_name="hopper-medium-expert-v2"
-training_steps=500000
-classifier_steps=500000
+training_steps=600000
+classifier_steps=600000
 seed=0
 mode="training"
 CUDA_VISIBLE_DEVICES=4 nohup python -m pipelines.diffuser.diffuser_d4rl task.env_name=$env_name mode=$mode diffusion_training_steps=$training_steps classifier_training_steps=$classifier_steps seed=$seed > logs/${mode}_${pipeline_name}_${env_name}.log 2>&1 &
@@ -73,8 +73,8 @@ CUDA_VISIBLE_DEVICES=4 nohup python -m pipelines.diffuser.diffuser_d4rl task.env
 # # -------------------- hopper-medium-replay-v2 --------------------
 # training
 env_name="hopper-medium-replay-v2"
-training_steps=500000
-classifier_steps=500000
+training_steps=600000
+classifier_steps=600000
 seed=0
 mode="training"
 CUDA_VISIBLE_DEVICES=5 nohup python -m pipelines.diffuser.diffuser_d4rl task.env_name=$env_name mode=$mode diffusion_training_steps=$training_steps classifier_training_steps=$classifier_steps seed=$seed > logs/${mode}_${pipeline_name}_${env_name}.log 2>&1 &
@@ -85,8 +85,8 @@ CUDA_VISIBLE_DEVICES=5 nohup python -m pipelines.diffuser.diffuser_d4rl task.env
 # # -------------------- walker2d-medium-v2 --------------------
 # training
 env_name="walker2d-medium-v2"
-training_steps=500000
-classifier_steps=500000
+training_steps=600000
+classifier_steps=600000
 seed=0
 mode="training"
 CUDA_VISIBLE_DEVICES=6 nohup python -m pipelines.diffuser.diffuser_d4rl task.env_name=$env_name mode=$mode diffusion_training_steps=$training_steps classifier_training_steps=$classifier_steps seed=$seed > logs/${mode}_${pipeline_name}_${env_name}.log 2>&1 &
@@ -97,8 +97,8 @@ CUDA_VISIBLE_DEVICES=6 nohup python -m pipelines.diffuser.diffuser_d4rl task.env
 # # -------------------- walker2d-medium-expert-v2 --------------------
 # training
 env_name="walker2d-medium-expert-v2"
-training_steps=500000
-classifier_steps=500000
+training_steps=600000
+classifier_steps=600000
 seed=0
 mode="training"
 CUDA_VISIBLE_DEVICES=7 nohup python -m pipelines.diffuser.diffuser_d4rl task.env_name=$env_name mode=$mode diffusion_training_steps=$training_steps classifier_training_steps=$classifier_steps seed=$seed > logs/${mode}_${pipeline_name}_${env_name}.log 2>&1 &
@@ -109,8 +109,8 @@ CUDA_VISIBLE_DEVICES=7 nohup python -m pipelines.diffuser.diffuser_d4rl task.env
 # # -------------------- walker2d-medium-replay-v2 --------------------
 # training
 env_name="walker2d-medium-replay-v2"
-training_steps=500000
-classifier_steps=500000
+training_steps=600000
+classifier_steps=600000
 seed=0
 mode="training"
 CUDA_VISIBLE_DEVICES=0 nohup python -m pipelines.diffuser.diffuser_d4rl task.env_name=$env_name mode=$mode diffusion_training_steps=$training_steps classifier_training_steps=$classifier_steps seed=$seed > logs/${mode}_${pipeline_name}_${env_name}.log 2>&1 &   
@@ -121,8 +121,8 @@ CUDA_VISIBLE_DEVICES=0 nohup python -m pipelines.diffuser.diffuser_d4rl task.env
 # # -------------------- antmaze-medium-play-v2 --------------------
 # training
 env_name="antmaze-medium-play-v2"
-training_steps=500000
-classifier_steps=500000
+training_steps=600000
+classifier_steps=600000
 seed=0
 mode="training"
 CUDA_VISIBLE_DEVICES=3 nohup python -m pipelines.diffuser.diffuser_d4rl task.env_name=$env_name mode=$mode diffusion_training_steps=$training_steps classifier_training_steps=$classifier_steps seed=$seed > logs/${mode}_${pipeline_name}_${env_name}.log 2>&1 &
@@ -133,8 +133,8 @@ CUDA_VISIBLE_DEVICES=3 nohup python -m pipelines.diffuser.diffuser_d4rl task.env
 # # -------------------- antmaze-medium-diverse-v2 --------------------
 # training
 env_name="antmaze-medium-diverse-v2"
-training_steps=500000
-classifier_steps=500000
+training_steps=600000
+classifier_steps=600000
 seed=0
 mode="training"   
 CUDA_VISIBLE_DEVICES=4 nohup python -m pipelines.diffuser.diffuser_d4rl task.env_name=$env_name mode=$mode diffusion_training_steps=$training_steps classifier_training_steps=$classifier_steps seed=$seed > logs/${mode}_${pipeline_name}_${env_name}.log 2>&1 &
@@ -146,8 +146,8 @@ CUDA_VISIBLE_DEVICES=4 nohup python -m pipelines.diffuser.diffuser_d4rl task.env
 # # -------------------- antmaze-large-play-v2 --------------------
 # training
 env_name="antmaze-large-play-v2"
-training_steps=500000
-classifier_steps=500000
+training_steps=600000
+classifier_steps=600000
 seed=0
 mode="training"
 CUDA_VISIBLE_DEVICES=5 nohup python -m pipelines.diffuser.diffuser_d4rl task.env_name=$env_name mode=$mode diffusion_training_steps=$training_steps classifier_training_steps=$classifier_steps seed=$seed > logs/${mode}_${pipeline_name}_${env_name}.log 2>&1 &
@@ -158,8 +158,8 @@ CUDA_VISIBLE_DEVICES=5 nohup python -m pipelines.diffuser.diffuser_d4rl task.env
 # # -------------------- antmaze-large-diverse-v2 --------------------
 # training
 env_name="antmaze-large-diverse-v2"
-training_steps=500000
-classifier_steps=500000
+training_steps=600000
+classifier_steps=600000
 seed=0
 mode="training"
 CUDA_VISIBLE_DEVICES=6 nohup python -m pipelines.diffuser.diffuser_d4rl task.env_name=$env_name mode=$mode diffusion_training_steps=$training_steps classifier_training_steps=$classifier_steps seed=$seed > logs/${mode}_${pipeline_name}_${env_name}.log 2>&1 &
@@ -170,8 +170,8 @@ CUDA_VISIBLE_DEVICES=6 nohup python -m pipelines.diffuser.diffuser_d4rl task.env
 # -------------------- kitchen-mixed-v0 --------------------
 # training
 env_name="kitchen-mixed-v0"
-training_steps=500000
-classifier_steps=500000
+training_steps=600000
+classifier_steps=600000
 seed=0
 mode="training"
 CUDA_VISIBLE_DEVICES=1 nohup python -m pipelines.diffuser.diffuser_d4rl task.env_name=$env_name mode=$mode diffusion_training_steps=$training_steps classifier_training_steps=$classifier_steps seed=$seed > logs/${mode}_${pipeline_name}_${env_name}.log 2>&1 &
@@ -182,8 +182,8 @@ CUDA_VISIBLE_DEVICES=1 nohup python -m pipelines.diffuser.diffuser_d4rl task.env
 # # -------------------- kitchen-partial-v0 --------------------
 # training
 env_name="kitchen-partial-v0"
-training_steps=500000
-classifier_steps=500000
+training_steps=600000
+classifier_steps=600000
 seed=0
 mode="training"
 CUDA_VISIBLE_DEVICES=2 nohup python -m pipelines.diffuser.diffuser_d4rl task.env_name=$env_name mode=$mode diffusion_training_steps=$training_steps classifier_training_steps=$classifier_steps seed=$seed > logs/${mode}_${pipeline_name}_${env_name}.log 2>&1 &

@@ -136,89 +136,89 @@ class IQL(L.LightningModule):
     def load(self, path, device):
         self.load_state_dict(torch.load(path, map_location=device))
         
-    @classmethod
-    def from_pretrained(self, env_name, **kwargs):
-        """ Load pretrained model.
+    # @classmethod
+    # def from_pretrained(self, env_name, **kwargs):
+    #     """ Load pretrained model.
         
-        Load pretrained model from the CleanDiffuser pretrain directory `~/.CleanDiffuser/pretrain/iql/`.
-        Only available for the following environments: D4RL-MuJoCo-v2, D4RL-Kitchen-v0, D4RL-AntMaze-v2.
+    #     Load pretrained model from the CleanDiffuser pretrain directory `~/.CleanDiffuser/pretrain/iql/`.
+    #     Only available for the following environments: D4RL-MuJoCo-v2, D4RL-Kitchen-v0, D4RL-AntMaze-v2.
         
-        Args:
-            env_name (str): Environment name.
-            **kwargs: Additional keyword arguments. 
-                - for D4RL-MuJoCo, `normalize_reward` (bool). Whether to normalize reward or not.
-                - for D4RL-Kitchen, None.
-                - for D4RL-AntMaze, `reward_tune` (str). Reward tuning method. Can be "none", "iql", "cql", "antmaze".
+    #     Args:
+    #         env_name (str): Environment name.
+    #         **kwargs: Additional keyword arguments. 
+    #             - for D4RL-MuJoCo, `normalize_reward` (bool). Whether to normalize reward or not.
+    #             - for D4RL-Kitchen, None.
+    #             - for D4RL-AntMaze, `reward_tune` (str). Reward tuning method. Can be "none", "iql", "cql", "antmaze".
         
-        Returns:
-            model (IQL): Pretrained IQL model.
-            additional items (dict): Additional items such as normalizer.
-        """
-        default_kwargs = {
-            "normalize_reward": False,
-            "reward_tune": "iql"}
+    #     Returns:
+    #         model (IQL): Pretrained IQL model.
+    #         additional items (dict): Additional items such as normalizer.
+    #     """
+    #     default_kwargs = {
+    #         "normalize_reward": False,
+    #         "reward_tune": "iql"}
         
-        kwargs = {**default_kwargs, **kwargs}
+    #     kwargs = {**default_kwargs, **kwargs}
         
-        path = os.path.expanduser("~") + "/.CleanDiffuser/pretrain/iql/"
-        if not os.path.exists(path):
-            raise FileNotFoundError("Pretrained model not found.")
+    #     path = os.path.expanduser("~") + "/.CleanDiffuser/pretrain/iql/"
+    #     if not os.path.exists(path):
+    #         raise FileNotFoundError("Pretrained model not found.")
 
-        if env_name in [
-            "halfcheetah-medium-expert-v2",
-            "halfcheetah-medium-v2",
-            "halfcheetah-medium-replay-v2",
-            "hopper-medium-expert-v2",
-            "hopper-medium-v2",
-            "hopper-medium-replay-v2",
-            "walker2d-medium-expert-v2",
-            "walker2d-medium-v2",
-            "walker2d-medium-replay-v2",
-        ]:
-            path += f"d4rl_mujoco/{env_name}/"  
-            with open(path + "normalizer_params.pkl", "rb") as f:
-                normalizer_params = pkl.load(f)
-            normalizer = GaussianNormalizer(
-                None, -1, normalizer_params["mean"], normalizer_params["std"])
-            return (
-                self.load_from_checkpoint(
-                    path + f"normalize_reward={kwargs['normalize_reward']}.ckpt", map_location="cpu",
-                    hparams_file=path + "hparams.yaml"), 
-                {"state_normalizer": normalizer})
+    #     if env_name in [
+    #         "halfcheetah-medium-expert-v2",
+    #         "halfcheetah-medium-v2",
+    #         "halfcheetah-medium-replay-v2",
+    #         "hopper-medium-expert-v2",
+    #         "hopper-medium-v2",
+    #         "hopper-medium-replay-v2",
+    #         "walker2d-medium-expert-v2",
+    #         "walker2d-medium-v2",
+    #         "walker2d-medium-replay-v2",
+    #     ]:
+    #         path += f"{env_name}/"  
+    #         with open(path + "normalizer_params.pkl", "rb") as f:
+    #             normalizer_params = pkl.load(f)
+    #         normalizer = GaussianNormalizer(
+    #             None, -1, normalizer_params["mean"], normalizer_params["std"])
+    #         return (
+    #             self.load_from_checkpoint(
+    #                 path + f"normalize_reward={kwargs['normalize_reward']}.ckpt", map_location="cpu",
+    #                 hparams_file=path + "hparams.yaml"), 
+    #             {"state_normalizer": normalizer})
         
-        elif env_name in [
-            "kitchen-mixed-v0", 
-            "kitchen-partial-v0"
-        ]:
-            path += f"d4rl_kitchen/{env_name}/"  
-            with open(path + "normalizer_params.pkl", "rb") as f:
-                normalizer_params = pkl.load(f)
-            normalizer = GaussianNormalizer(
-                None, -1, normalizer_params["mean"], normalizer_params["std"])
-            return (
-                self.load_from_checkpoint(
-                    path + f"kitchen.ckpt", map_location="cpu",
-                    hparams_file=path + "hparams.yaml"), 
-                {"state_normalizer": normalizer})
+    #     elif env_name in [
+    #         "kitchen-mixed-v0", 
+    #         "kitchen-partial-v0"
+    #     ]:
+    #         path += f"{env_name}/"  
+    #         with open(path + "normalizer_params.pkl", "rb") as f:
+    #             normalizer_params = pkl.load(f)
+    #         normalizer = GaussianNormalizer(
+    #             None, -1, normalizer_params["mean"], normalizer_params["std"])
+    #         return (
+    #             self.load_from_checkpoint(
+    #                 path + f"kitchen.ckpt", map_location="cpu",
+    #                 hparams_file=path + "hparams.yaml"), 
+    #             {"state_normalizer": normalizer})
         
-        elif env_name in [
-            "antmaze-medium-play-v2",
-            "antmaze-medium-diverse-v2",
-            "antmaze-large-play-v2",
-            "antmaze-large-diverse-v2",
-        ]:
-            path += f"d4rl_antmaze/{env_name}/"  
-            with open(path + "normalizer_params.pkl", "rb") as f:
-                normalizer_params = pkl.load(f)
-            normalizer = GaussianNormalizer(
-                None, -1, normalizer_params["mean"], normalizer_params["std"])
-            return (
-                self.load_from_checkpoint(
-                    path + f"reward_tune={kwargs['reward_tune']}.ckpt", map_location="cpu",
-                    hparams_file=path + "hparams.yaml"), 
-                {"state_normalizer": normalizer})
+    #     elif env_name in [
+    #         "antmaze-medium-play-v2",
+    #         "antmaze-medium-diverse-v2",
+    #         "antmaze-large-play-v2",
+    #         "antmaze-large-diverse-v2",
+    #     ]:
+    #         path += f"{env_name}/"  
+    #         with open(path + "normalizer_params.pkl", "rb") as f:
+    #             normalizer_params = pkl.load(f)
+    #         normalizer = GaussianNormalizer(
+    #             None, -1, normalizer_params["mean"], normalizer_params["std"])
+    #         return (
+    #             self.load_from_checkpoint(
+    #                 path + f"reward_tune={kwargs['reward_tune']}.ckpt", map_location="cpu",
+    #                 hparams_file=path + "hparams.yaml"), 
+    #             {"state_normalizer": normalizer})
             
-        else:
-            warnings.warn(f"Pretrained model for this environment ({env_name}) not found.")
-            return None, None
+    #     else:
+    #         warnings.warn(f"Pretrained model for this environment ({env_name}) not found.")
+    #         return None, None
         

@@ -57,6 +57,7 @@ def pipeline(args):
 
     env_name = args.task.env_name
     save_path = Path(__file__).parents[1] / f"results/{args.pipeline_name}/{env_name}/"
+    iql_save_path = Path(__file__).parents[1] / f"results/iql/{env_name}/"  # todo: fix this
 
     # --- Create Dataset ---
     env = gym.make(env_name)
@@ -113,6 +114,7 @@ def pipeline(args):
             log_every_n_steps=200,
             default_root_dir=save_path,
             callbacks=[callback],
+            logger=wandb_logger,
         )
 
         trainer.fit(actor, dataloader)
@@ -156,7 +158,7 @@ def pipeline(args):
             iql, _ = IQL.from_pretrained(env_name, normalize_reward=True, reward_tune="iql")
         else:
             iql = IQL.load_from_checkpoint(
-                checkpoint_path=save_path / f"iql-step={args.iql_ckpt}.ckpt",
+                checkpoint_path=iql_save_path / f"iql-step={args.iql_ckpt}.ckpt",  # todo: fix this
                 obs_dim=obs_dim,
                 act_dim=act_dim,
                 tau=args.task.iql_tau,

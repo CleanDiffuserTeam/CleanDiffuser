@@ -3,9 +3,9 @@ defaults:
   - task: halfcheetah-medium-expert-v2
 
 pipeline_name: sfbc_d4rl
-mode: bc_training  # bc_training
+mode: bc_training  # bc_training -> critic_training -> inference
+device_id: 0
 seed: 0
-device: cuda:0
 
 # Environment
 discount: 0.99
@@ -19,15 +19,15 @@ actor_learning_rate: 0.0003
 hidden_dim: 256
 
 # BC Training
-bc_training_steps: 10000
+bc_training_steps: 1000000
 batch_size: 32
 log_interval: 1000
-save_interval: 10000
+save_interval: 200000
 
 # Critic Training
 critic_learning_rate: 0.001
-critic_training_steps: 10000
-eval_actor_ckpt: 10000
+critic_training_steps: 50000
+eval_actor_ckpt: 1000000
 eval_actor_solver: ddpm
 eval_actor_sampling_steps: 5
 eval_actor_temperature: 1.0
@@ -36,11 +36,10 @@ monte_carlo_samples: 16
 weight_temperature: 20
 
 # Inference
-ckpt: latest
 solver: ddpm
 sampling_steps: 5
 num_envs: 50
-num_episodes: 1
+num_episodes: 3
 num_candidates: 50
 temperature: 1.0
 top_k_average: 4

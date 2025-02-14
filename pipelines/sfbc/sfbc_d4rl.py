@@ -1,8 +1,3 @@
-"""
-WARNING: This pipeline has not been fully tested. The results may not be accurate.
-You may tune the hyperparameters in the config file before using it.
-"""
-
 from pathlib import Path
 from typing import Union
 
@@ -24,6 +19,7 @@ from cleandiffuser.diffusion import ContinuousDiffusionSDE
 from cleandiffuser.nn_condition import MLPCondition
 from cleandiffuser.nn_diffusion import SfBCUNet
 from cleandiffuser.utils import GaussianNormalizer, Mlp, dict_apply, loop_dataloader
+from pytorch_lightning.loggers import WandbLogger
 
 
 def weight_init(m):
@@ -76,14 +72,14 @@ class BC_Wrapper(torch.utils.data.Dataset):
         }
 
 
-@hydra.main(config_path="../configs/sfbc", config_name="d4rl", version_base=None)
+@hydra.main(config_path="../../configs/sfbc", config_name="d4rl", version_base=None)
 def pipeline(args):
     L.seed_everything(args.seed, workers=True)
-
+    device = f"cuda:{args.device_id}"
+    
     env_name = args.task.env_name
     M, alpha = args.monte_carlo_samples, args.weight_temperature
     save_path = Path(__file__).parents[1] / f"results/{args.pipeline_name}/{env_name}/"
-    device = "cuda:2"
 
     # --- Create Dataset ---
     env = gym.make(env_name)
@@ -119,14 +115,21 @@ def pipeline(args):
             dirpath=save_path, filename="diffusion_bc-{step}", every_n_train_steps=args.save_interval
         )
 
+        wandb_logger = WandbLogger(
+            project="cleandiffuser",
+            config=dict(args),
+            name=f"{args.pipeline_name}-{args.task.env_name}-{args.mode}"
+        )
+
         trainer = L.Trainer(
             accelerator="gpu",
-            devices=[0, 1, 2, 3],
+            devices=-1,
             max_steps=args.bc_training_steps,
             deterministic=True,
             log_every_n_steps=200,
             default_root_dir=save_path,
             callbacks=[callback],
+            logger=wandb_logger
         )
 
         trainer.fit(actor, dataloader)

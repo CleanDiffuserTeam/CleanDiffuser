@@ -19,7 +19,7 @@ save_interval: 200000
 bc_ckpt: 1000000
 iql_ckpt: 1000000
 solver: ddpm
-iql_from_pretrain: True
+iql_from_pretrain: False  # Must be False for now! We will fix this later.
 sampling_steps: 5
 num_envs: 50
 num_episodes: 3
