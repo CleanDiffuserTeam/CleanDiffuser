@@ -1,0 +1,8 @@
+env_name: "kitchen-mixed-v0"
+max_path_length: 280
+
+planner_horizon: 32
+stride: 4
+planner_temperature: 1.0
+planner_target_return: 1.0 # Placeholder. Require grid tuning for CFG
+planner_w_cfg: 1.0 # Placeholder. Require grid tuning for CG and CFG

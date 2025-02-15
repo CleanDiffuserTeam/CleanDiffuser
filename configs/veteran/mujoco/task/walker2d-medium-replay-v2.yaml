@@ -1,0 +1,8 @@
+env_name: "walker2d-medium-replay-v2"
+max_path_length: 1000
+
+planner_horizon: 4
+stride: 1
+planner_temperature: 1.0
+planner_target_return: 1.0 # Placeholder. Require grid tuning for CFG
+planner_w_cfg: 1.0 # Placeholder. Require grid tuning for CG and CFG

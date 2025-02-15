@@ -1,0 +1,73 @@
+defaults:
+  - _self_
+  - task: maze2d-umaze-v1
+  - reward_mode: linear
+
+pipeline_name: veteran_d4rl_maze2d
+mode: train
+seed: 0
+device: cuda:0
+project: Default
+group: release
+name: Default
+enable_wandb: true
+
+# Guidance
+guidance_type: MCSS # cfg, cg, MCSS
+# For Planner
+planner_net: transformer # transformer, unet
+# Separate state and action
+pipeline_type: separate # separate, joint
+# Rebase_policy position
+rebase_policy: true
+
+# Environment
+
+# Planner Config
+planner_solver: ddim
+## Network Architecture
+planner_emb_dim: 128
+planner_d_model: 256
+planner_depth: 2
+planner_sampling_steps: 20
+planner_predict_noise: True
+planner_next_obs_loss_weight: 1
+planner_ema_rate: 0.9999
+unet_dim: 32
+
+## Policy Config
+policy_solver: ddpm
+policy_hidden_dim: 256
+policy_diffusion_steps: 10
+policy_sampling_steps: 10
+policy_predict_noise: True
+policy_ema_rate: 0.995
+policy_learning_rate: 0.0003
+critic_learning_rate: 0.0003
+
+# Training
+use_diffusion_invdyn: 1
+invdyn_gradient_steps: 200000
+policy_diffusion_gradient_steps: 1000000
+planner_diffusion_gradient_steps: 1000000
+batch_size: 128
+log_interval: 1000
+save_interval: 100000
+
+# Inference
+num_envs: 50
+num_episodes: 20
+planner_num_candidates: 50
+planner_ckpt: 1000000
+critic_ckpt: 200000
+policy_ckpt: 1000000
+invdyn_ckpt: 200000
+planner_use_ema: True
+policy_temperature: 0.5
+policy_use_ema: True
+
+# hydra
+hydra:
+  job:
+    chdir: false
+

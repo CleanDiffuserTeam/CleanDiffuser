@@ -1,0 +1,4 @@
+name: linear
+continous_reward_at_done: true
+reward_tune: "iql"
+discount: 1.0
