@@ -402,3 +402,8 @@ def loop_dataloader(dl):
     while True:
         for b in dl:
             yield b
+
+def loop_two_dataloaders(dl1, dl2):
+    while True:
+        for b1, b2 in zip(dl1, dl2):
+            yield b1, b2
