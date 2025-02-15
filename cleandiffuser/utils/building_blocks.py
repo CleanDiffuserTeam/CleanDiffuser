@@ -4,6 +4,7 @@ import numpy as np
 import einops
 from typing import List
 from .iql import TwinQ, V
+from cleandiffuser.utils import SinusoidalEmbedding
 
 IDQLQNet = TwinQ
 IDQLVNet = V
@@ -145,6 +146,87 @@ class DQLCritic(nn.Module):
         q1, q2 = self.forward(obs, act)
         return torch.min(q1, q2)
 
+class DVTransformerBlock(nn.Module):
+    def __init__(self, hidden_size: int, n_heads: int, dropout: float = 0.0, norm_type="post"):
+        super().__init__()
+        self.norm_type = norm_type
+        
+        self.norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+        self.attn = nn.MultiheadAttention(hidden_size, n_heads, dropout, batch_first=True)
+        self.norm2 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
+
+        def approx_gelu(): return nn.GELU(approximate="tanh")
+
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size * 4), approx_gelu(), nn.Dropout(dropout),
+            nn.Linear(hidden_size * 4, hidden_size))
+
+    def forward(self, x: torch.Tensor):
+        if self.norm_type == "post":
+            x = self.norm1(x + self.attn(x, x, x)[0])
+            x = self.norm2(x + self.mlp(x))
+        elif self.norm_type == "pre":
+            x = self.norm1(x)
+            x = x + self.attn(x, x, x)[0]
+            x = x + self.mlp(self.norm2(x))
+        else:
+            raise NotImplementedError
+        return x
+    
+class DVHorizonCritic(nn.Module):
+    def __init__(
+        self,
+        in_dim: int,
+        emb_dim: int,
+        d_model: int = 384,
+        n_heads: int = 6,
+        depth: int = 12,
+        dropout: float = 0.0,
+        norm_type: str = "post"
+    ):
+        super().__init__()
+        self.in_dim, self.emb_dim = in_dim, emb_dim
+        self.d_model = d_model
+
+        self.x_proj = nn.Linear(in_dim, d_model)
+
+        self.pos_emb = SinusoidalEmbedding(d_model)
+        self.pos_emb_cache = None
+
+        self.blocks = nn.ModuleList([DVTransformerBlock(d_model, n_heads, dropout, norm_type) for _ in range(depth)])
+        self.final_layer = nn.Linear(d_model, 1)
+        self.initialize_weights()
+
+    def initialize_weights(self):
+        # Initialize transformer layers:
+        def _basic_init(module):
+            if isinstance(module, nn.Linear):
+                torch.nn.init.xavier_uniform_(module.weight)
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0)
+
+        self.apply(_basic_init)
+
+    def forward(self, x: torch.Tensor):
+        """
+        Input:
+            x:          (b, horizon, in_dim)
+
+        Output:
+            y:          (b, horizon, in_dim)
+        """
+        if self.pos_emb_cache is None or self.pos_emb_cache.shape[0] != x.shape[1]:
+            self.pos_emb_cache = self.pos_emb(torch.arange(x.shape[1], device=x.device))
+
+        x = self.x_proj(x) + self.pos_emb_cache[None,]
+
+        for block in self.blocks:
+            x = block(x)
+        x = self.final_layer(x)
+        
+        x = x[:, 0, :]
+        
+        return x
 
 class PreNorm(nn.Module):
     """Layer normalization before the function.

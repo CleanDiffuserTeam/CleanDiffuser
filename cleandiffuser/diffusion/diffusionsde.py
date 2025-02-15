@@ -91,7 +91,7 @@ class BaseDiffusionSDE(DiffusionModel):
     def add_noise(self, x0, t=None, eps=None):
         raise NotImplementedError
 
-    def loss(self, x0, condition=None):
+    def loss(self, x0, condition=None, **kwargs):
 
         xt, t, eps = self.add_noise(x0)
 
@@ -101,8 +101,15 @@ class BaseDiffusionSDE(DiffusionModel):
             loss = (self.model["diffusion"](xt, t, condition) - eps) ** 2
         else:
             loss = (self.model["diffusion"](xt, t, condition) - x0) ** 2
+        
+        loss = loss * self.loss_weight * (1 - self.fix_mask)
+        
+        # find weighted_regression_tensor in kwargs
+        weighted_regression_tensor = kwargs.get("weighted_regression_tensor", None)
+        if weighted_regression_tensor is not None:
+            loss *= weighted_regression_tensor.unsqueeze(-1)
 
-        return (loss * self.loss_weight * (1 - self.fix_mask)).mean()
+        return loss.mean()
 
     def update(self, x0, condition=None, update_ema=True, **kwargs):
         """One-step gradient update.
@@ -118,7 +125,7 @@ class BaseDiffusionSDE(DiffusionModel):
         - log: dict
             The log dictionary.
         """
-        loss = self.loss(x0, condition)
+        loss = self.loss(x0, condition, **kwargs)
 
         loss.backward()
         grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_clip_norm) \
