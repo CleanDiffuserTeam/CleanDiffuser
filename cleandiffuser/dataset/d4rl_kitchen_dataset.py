@@ -306,3 +306,140 @@ class MultiHorizonD4RLKitchenDataset(BaseDataset):
             })
 
         return torch_datas
+
+class DV_D4RLKitchenSeqDataset(BaseDataset):
+    """ **D4RL-Kitchen Sequential Dataset**
+
+    torch.utils.data.Dataset wrapper for D4RL-Kitchen dataset.
+    Chunk the dataset into sequences of length `horizon` with obs-repeat/act-zero/reward-repeat padding.
+    Use GaussianNormalizer to normalize the observations as default.
+    Each batch contains
+    - batch["obs"]["state"], observations of shape (batch_size, horizon, o_dim)
+    - batch["act"], actions of shape (batch_size, horizon, a_dim)
+    - batch["rew"], rewards of shape (batch_size, horizon, 1)
+    - batch["val"], Monte Carlo return of shape (batch_size, 1)
+
+    Args:
+        dataset: Dict[str, np.ndarray],
+            D4RL-Kitchen dataset. Obtained by calling `env.get_dataset()`.
+        horizon: int,
+            Length of each sequence. Default is 1.
+        max_path_length: int,
+            Maximum length of the episodes. Default is 280.
+        discount: float,
+            Discount factor. Default is 0.99.
+
+    Examples:
+        >>> env = gym.make("kitchen-mixed-v0")
+        >>> dataset = D4RLKitchenDataset(env.get_dataset(), horizon=32)
+        >>> dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+        >>> batch = next(iter(dataloader))
+        >>> obs = batch["obs"]["state"]  # (32, 32, 60)
+        >>> act = batch["act"]           # (32, 32, 9)
+        >>> rew = batch["rew"]           # (32, 32, 1)
+        >>> val = batch["val"]           # (32, 1)
+
+        >>> normalizer = dataset.get_normalizer()
+        >>> obs = env.reset()[None, :]
+        >>> normed_obs = normalizer.normalize(obs)
+        >>> unnormed_obs = normalizer.unnormalize(normed_obs)
+    """
+    def __init__(
+            self,
+            dataset: Dict[str, np.ndarray],
+            horizon: int = 1,
+            max_path_length: int = 280,
+            discount: float = 0.99,
+            center_mapping: bool = True,
+            stride: int = 1,
+    ):
+        super().__init__()
+
+        observations, actions, rewards, timeouts, terminals = (
+            dataset["observations"].astype(np.float32),
+            dataset["actions"].astype(np.float32),
+            dataset["rewards"].astype(np.float32),
+            dataset["timeouts"].astype(np.float32),
+            dataset["terminals"].astype(np.float32))
+        self.stride = stride
+
+        self.normalizers = {
+            "state": GaussianNormalizer(observations)}
+        normed_observations = self.normalizers["state"].normalize(observations)
+
+        self.horizon = horizon
+        self.o_dim, self.a_dim = observations.shape[-1], actions.shape[-1]
+
+        self.indices = []
+        self.seq_obs, self.seq_next_obs, self.seq_act, self.seq_rew = [], [], [], []
+
+        self.path_lengths, ptr = [], 0
+        path_idx = 0
+        for i in range(timeouts.shape[0]):
+            if timeouts[i] or terminals[i] or i == timeouts.shape[0] - 1:
+                self.path_lengths.append(i - ptr + 1)
+
+                _seq_obs = np.zeros((max_path_length, self.o_dim), dtype=np.float32)
+                _seq_next_obs = np.zeros((max_path_length, self.o_dim), dtype=np.float32)
+                _seq_act = np.zeros((max_path_length, self.a_dim), dtype=np.float32)
+                _seq_rew = np.zeros((max_path_length, 1), dtype=np.float32)
+
+                _seq_obs[:i - ptr + 1] = normed_observations[ptr:i + 1]
+                _seq_act[:i - ptr + 1] = actions[ptr:i + 1]
+                _seq_rew[:i - ptr + 1] = rewards[ptr:i + 1][:, None]
+
+                # repeat padding
+                _seq_obs[i - ptr + 1:] = normed_observations[i]  # repeat last state
+                _seq_act[i - ptr + 1:] = 0  # repeat zero action
+                _seq_rew[i - ptr + 1:] = rewards[i]  # repeat last reward
+
+                self.seq_obs.append(_seq_obs)
+                self.seq_next_obs.append(_seq_next_obs)
+                self.seq_act.append(_seq_act)
+                self.seq_rew.append(_seq_rew)
+
+                max_start = min(self.path_lengths[-1] - 1, max_path_length - (horizon - 1) * stride - 1)
+                self.indices += [(path_idx, start, start + (horizon - 1) * stride + 1) for start in range(max_start + 1)]
+
+                ptr = i + 1
+                path_idx += 1
+
+        self.seq_obs = np.array(self.seq_obs)
+        self.seq_act = np.array(self.seq_act)
+        self.seq_rew = np.array(self.seq_rew)
+
+        self.seq_val = np.copy(self.seq_rew)
+        for i in reversed(range(max_path_length - 1)):
+            self.seq_val[:, i] = self.seq_rew[:, i] + discount * self.seq_val[:, i+1]
+        
+        print(f"max discounted return: {self.seq_val.max()}")
+        print(f"min discounted return: {self.seq_val.min()}")
+        
+        # val \in [-1, 1]
+        self.seq_val = (self.seq_val - self.seq_val.min()) / (self.seq_val.max() - self.seq_val.min())
+        if center_mapping:
+            self.seq_val = self.seq_val * 2 - 1
+        print(f"max normed discounted return: {self.seq_val.max()}")
+        print(f"min normed discounted return: {self.seq_val.min()}")
+
+    def get_normalizer(self):
+        return self.normalizers["state"]
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, idx: int):
+        path_idx, start, end = self.indices[idx]
+        
+        horizon_state = self.seq_obs[path_idx, start:end:self.stride]
+
+        data = {
+            'obs': {'state': horizon_state},
+            'act': self.seq_act[path_idx, start:end:self.stride],
+            'rew': self.seq_rew[path_idx, start:end:self.stride],
+            'val': self.seq_val[path_idx, start],
+        }
+
+        torch_data = dict_apply(data, torch.tensor)
+
+        return torch_data
