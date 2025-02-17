@@ -1,8 +1,3 @@
-"""
-WARNING: This pipeline has not been fully tested. The results may not be accurate.
-You may tune the hyperparameters in the config file before using it.
-"""
-
 import os
 from copy import deepcopy
 from pathlib import Path
@@ -63,7 +58,7 @@ class TwinQ(nn.Module):
         return torch.min(*self.both(obs, act))
 
 
-@hydra.main(config_path="../configs/dql", config_name="d4rl", version_base=None)
+@hydra.main(config_path="../../configs/dql", config_name="d4rl", version_base=None)
 def pipeline(args):
     L.seed_everything(args.seed, workers=True)
 

@@ -1,8 +1,3 @@
-"""
-WARNING: This pipeline has not been fully tested. The results may not be accurate.
-You may tune the hyperparameters in the config file before using it.
-"""
-
 import os
 from copy import deepcopy
 from pathlib import Path
@@ -25,6 +20,7 @@ from cleandiffuser.diffusion import ContinuousDiffusionSDE
 from cleandiffuser.nn_condition import MLPCondition
 from cleandiffuser.nn_diffusion import IDQLMlp
 from cleandiffuser.utils import FreezeModules, loop_dataloader
+from pytorch_lightning.loggers import WandbLogger
 
 
 class TwinQ(nn.Module):
@@ -63,7 +59,7 @@ class TwinQ(nn.Module):
         return torch.min(*self.both(obs, act))
 
 
-@hydra.main(config_path="../configs/edp", config_name="d4rl", version_base=None)
+@hydra.main(config_path="../../configs/edp", config_name="d4rl", version_base=None)
 def pipeline(args):
     L.seed_everything(args.seed, workers=True)
 
@@ -149,17 +145,24 @@ def pipeline(args):
 
             q1, q2 = critic.both(obs, act)
 
+            wandb_logger = WandbLogger(
+                project="cleandiffuser",
+                config=dict(args),
+                name=f"{args.pipeline_name}-{args.task.env_name}-{args.mode}"
+            )
+
             """ Use max-Q backup for AntMaze, otherwise use policy-Q backup. """
             if "antmaze" in env_name:
                 repeat_next_obs = einops.repeat(next_obs, "b d -> (b n) d", n=10)
                 next_act, _ = actor.sample(
                     prior.repeat(10, 1),
                     solver=args.solver,
-                    n_samples=2560,
+                    n_samples=256,
                     sample_steps=args.sampling_steps,
                     condition_cfg=repeat_next_obs,
                     w_cfg=1.0,
                     requires_grad=False,
+                    logger=wandb_logger
                 )
 
                 with torch.no_grad():
@@ -176,6 +179,7 @@ def pipeline(args):
                     condition_cfg=next_obs,
                     w_cfg=1.0,
                     requires_grad=False,
+                    logger=wandb_logger
                 )
 
                 with torch.no_grad():
