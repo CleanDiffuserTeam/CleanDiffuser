@@ -31,7 +31,7 @@
 - 🚀 Amazing features specially tailored for decision-making tasks
 - 🍧 Support for multiple advanced diffusion models and network architectures
 - 🧩 Build decoupled modules into integrated pipelines easily like building blocks
-- 📈 Wandb logging and Hydra configuration
+- 📈 Wandb logging and Hydra configuration 
 - 🌏 Unified environmental interface and efficient dataloader
 
 We strongly recommend reading [papers](https://arxiv.org/abs/2406.09509) and [documents](https://cleandiffuserteam.github.io/CleanDiffuserDocs/) to learn more about CleanDiffuser and its design philosophy.
