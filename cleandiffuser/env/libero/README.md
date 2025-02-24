@@ -1,6 +1,6 @@
 # CleanDiffuser LIBERO Benchmark Support
 
-> Note: The CleanDiffuser LIBERO benchmark support is currently in beta. Please report any issues to the CleanDiffuser team.
+> Note: The CleanDiffuser LIBERO benchmark support is currently in beta. Please report any issues to me [here](zibindong@outlook.com).
 
 CleanDiffuser is fully decoupled from any benchmark or dataset, meaning you are not required to use the CleanDiffuser LIBERO Benchmark Support for conducting LIBERO experiments. It is simply a streamlined wrapper for using LIBERO, designed to facilitate quick algorithm development and validation. Compared to directly using LIBERO, the support we provide includes the following features:  
 

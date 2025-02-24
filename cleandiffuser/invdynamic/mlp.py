@@ -1,22 +1,23 @@
+import json
 import os
+from pathlib import Path
 
 import pytorch_lightning as L
 import torch
 import torch.nn as nn
 
-from cleandiffuser.utils import Mlp
-
 
 class BasicInvDynamic(L.LightningModule):
-    """ Basic Inverse Dynamics Model.
-    
+    """Basic Inverse Dynamics Model.
+
     Predicts the action given the current and next observation.
-    
+
     Args:
     Examples:
     >>> inv_dynamic = BasicInvDynamic()
     >>> act = inv_dynamic.predict(obs, next_obs)
     """
+
     def __init__(self):
         super().__init__()
         self.save_hyperparameters()
@@ -30,124 +31,109 @@ class BasicInvDynamic(L.LightningModule):
 
 
 class MlpInvDynamic(BasicInvDynamic):
-    """ MLP Inverse Dynamics Model.
-    
-    Predicts the action given the current and next observation.
-    It concatenates the current and next observation 
-    and passes it through an MLP to predict the action.
-    
-    Args:
-        obs_dim (int): Dimension of the observation space.
-        act_dim (int): Dimension of the action space.
-        hidden_dim (int): Dimension of the hidden layers.
-        out_activation (nn.Module): Activation function for the output layer. Default: nn.Tanh().
-        action_scale (float): Scale factor for the action. Default: 1.0.
-    
-    Examples:
-    >>> inv_dynamic = BasicInvDynamic()
-    >>> act = inv_dynamic.predict(obs, next_obs)
+    """MLP Inverse Dynamics Model.
+
+    TODO
     """
+
     def __init__(
-            self,
-            obs_dim: int, act_dim: int,
-            hidden_dim: int,
-            out_activation: nn.Module = nn.Tanh(),
-            action_scale: float = 1.0,
+        self,
+        obs_dim: int,
+        act_dim: int,
+        hidden_dim: int = 512,
+        tanh_out_activation: bool = True,
+        action_scale: float = 1.0,
     ):
         super().__init__()
-        self.save_hyperparameters(ignore=["out_activation"])
+        self._tanh_out_activation = tanh_out_activation
         self.action_scale = action_scale
-        self.mlp = Mlp(
-            2 * obs_dim, [hidden_dim, hidden_dim], act_dim, nn.ReLU(), out_activation)
+        self.mlp = nn.Sequential(
+            nn.Linear(obs_dim * 2, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, act_dim),
+            nn.Tanh() if tanh_out_activation else nn.Identity(),
+        )
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=3e-4)
 
     def forward(self, obs: torch.Tensor, next_obs: torch.Tensor):
-        return self.mlp(torch.cat([obs, next_obs], -1)) * self.action_scale
+        out = self.mlp(torch.cat([obs, next_obs], -1))
+        if self._tanh_out_activation:
+            out = out * self.action_scale
+        return out
 
-    def loss(self, obs, act, next_obs):
+    def loss(self, obs: torch.Tensor, act: torch.Tensor, next_obs: torch.Tensor):
         pred_act = self.forward(obs, next_obs)
-        return (pred_act - act).pow(2).mean()
+        return torch.nn.functional.mse_loss(pred_act, act)
 
     def training_step(self, batch, batch_idx):
-        obs, act, next_obs = batch
+        obs = batch["obs"]
+        act = batch["act"]
+        next_obs = batch["next_obs"]
         loss = self.loss(obs, act, next_obs)
-        self.log("train/loss", loss)
+        self.log("train_loss", loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        obs, act, next_obs = batch
+        obs = batch["obs"]
+        act = batch["act"]
+        next_obs = batch["next_obs"]
         loss = self.loss(obs, act, next_obs)
-        self.log("val/loss", loss)
+        self.log("val_loss", loss, prog_bar=True, sync_dist=True)
         return loss
 
 
 class FancyMlpInvDynamic(MlpInvDynamic):
-    """ MLP Inverse Dynamics Model.
-    
-    Predicts the action given the current and next observation.
-    It concatenates the current and next observation 
-    and passes it through an MLP to predict the action.
-    The MLP has LayerNorm and Dropout layers to improve generalization.
-    The layers are arranged as follows:
-    Linear -> GELU -> LayerNorm -> Dropout -> Linear -> GELU -> Linear
-    
-    Args:
-        obs_dim (int): Dimension of the observation space.
-        act_dim (int): Dimension of the action space.
-        hidden_dim (int): Dimension of the hidden layers.
-        out_activation (nn.Module): Activation function for the output layer. Default: nn.Tanh().
-        action_scale (float): Scale factor for the action. Default: 1.0.
-        add_norm (bool): Add a LayerNorm layer. Default: False.
-        add_dropout (bool): Add a Dropout layer. Default: False.
-    
-    Examples:
-    >>> inv_dynamic = BasicInvDynamic()
-    >>> act = inv_dynamic.predict(obs, next_obs)
+    """MLP Inverse Dynamics Model.
+
+    TODO
     """
+
     def __init__(
-            self,
-            obs_dim: int, act_dim: int,
-            hidden_dim: int,
-            out_activation: nn.Module = nn.Tanh(),
-            action_scale: float = 1.0,
-            add_norm: bool = False, add_dropout: bool = False,
+        self,
+        obs_dim: int,
+        act_dim: int,
+        hidden_dim: int = 512,
+        tanh_out_activation: bool = True,
+        action_scale: float = 1.0,
+        add_norm: bool = True,
+        add_dropout: bool = True,
     ):
-        super(BasicInvDynamic, self).__init__()
-        self.save_hyperparameters(ignore=["out_activation"])
-        self.action_scale = action_scale
+        super().__init__(obs_dim, act_dim, hidden_dim, tanh_out_activation, action_scale)
         self.mlp = nn.Sequential(
-            nn.Linear(2 * obs_dim, hidden_dim), nn.GELU(),
+            nn.Linear(2 * obs_dim, hidden_dim),
             nn.LayerNorm(hidden_dim) if add_norm else nn.Identity(),
+            nn.GELU(approximate="tanh"),
             nn.Dropout(0.1) if add_dropout else nn.Identity(),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.GELU(),
-            nn.Linear(hidden_dim, act_dim), out_activation)
+            nn.LayerNorm(hidden_dim) if add_norm else nn.Identity(),
+            nn.GELU(approximate="tanh"),
+            nn.Linear(hidden_dim, act_dim),
+            nn.Tanh() if tanh_out_activation else nn.Identity(),
+        )
 
     @classmethod
-    def from_pretrained(self, env_name: str, hidden_dim: int = 256):
-        """ Load pretrained model.
-        
-        Load pretrained model from the CleanDiffuser pretrain directory `~/.CleanDiffuser/pretrain/invdyn/`.
-        Only available for the following environments: D4RL-MuJoCo-v2, D4RL-Kitchen-v0, D4RL-AntMaze-v2.
-        
-        Note that the pretrained model should be used with the same state normalizer as the training data, i.e., 
-        cleandiffuser.dataset.D4RLxxxTDDataset/D4RLxxxDataset.
-        
-        Args:
-            env_name (str): Environment name.
-            hidden_dim (int): Dimension of the hidden layers. Can be 256, 512, 1024. Default: 256.
-        
-        Returns:
-            invdyn (FancyMlpInvDynamic): Pretrained model.
-        """
-        path = os.path.expanduser("~") + f"/.CleanDiffuser/pretrain/invdyn/{env_name}/"
-        if not os.path.exists(path):
-            raise FileNotFoundError("Pretrained model not found.")
-        
-        hparams_file = f"hparams_{hidden_dim}.yaml"
-        ckpt_file = f"hidden_dim={hidden_dim}.ckpt"
-        
-        return self.load_from_checkpoint(
-            path + ckpt_file, map_location="cpu", output_activation=nn.Tanh())
+    def from_pretrained(self, env_name: str):
+        try:
+            path = (
+                os.path.expanduser("~") + f"/.CleanDiffuser/pretrained/invdyn/{env_name}/"
+            )
+            path = Path(path)
+            file_list = os.listdir(path)
+            for each in file_list:
+                if ".ckpt" in each:
+                    print(f"Pretrained model loaded from {path / each}")
+                    with open(path / "params.json", "r") as f:
+                        params = json.load(f)
+                    model = FancyMlpInvDynamic(**params["config"])
+                    model.load_state_dict(torch.load(path / each, map_location="cpu")["state_dict"])
+                    return model, params
+            else:
+                Warning(f"No pretrained model found in {path}")
+                return None, None
+        except Exception as e:
+            print(e)
+            return None, None

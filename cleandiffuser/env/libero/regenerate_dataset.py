@@ -1,6 +1,6 @@
+import argparse
 import os
 from pathlib import Path
-from typing import List
 
 import h5py
 import numpy as np
@@ -9,9 +9,10 @@ import torch
 import zarr
 from pytorch3d.ops import sample_farthest_points
 from robosuite.utils.camera_utils import get_camera_intrinsic_matrix, get_real_depth_map
-from transformers import T5EncoderModel, T5Tokenizer
 
 import libero
+from cleandiffuser.utils.codecs import jpeg
+from cleandiffuser.utils.t5 import T5LanguageEncoder
 from libero.libero import benchmark, get_libero_path
 from libero.libero.envs import OffScreenRenderEnv
 
@@ -38,38 +39,30 @@ def filter(pointclouds, device="cuda"):
     return pcd.cpu().numpy()
 
 
-class T5LanguageEncoder:
-    def __init__(
-        self,
-        pretrained_model_name_or_path: str = "google-t5/t5-base",
-        device: str = "cpu",
-    ):
-        self.device = device
-        self.tokenizer = T5Tokenizer.from_pretrained(pretrained_model_name_or_path)
-        self.model = T5EncoderModel.from_pretrained(pretrained_model_name_or_path).to(device).eval()
+# --- Config ---
 
-    @torch.no_grad()
-    def encode(self, sentences: List[str]):
-        inputs = self.tokenizer(sentences, return_tensors="pt", padding=True)
-        input_ids = inputs.input_ids
-        outputs = self.model(input_ids=input_ids.to(self.device))
-        last_hidden_states = outputs.last_hidden_state
-        return last_hidden_states, inputs.attention_mask
+argparser = argparse.ArgumentParser()
+argparser.add_argument("--require_depth", type=bool, default=False)
+argparser.add_argument("--require_pointcloud", type=bool, default=False)
+argparser.add_argument("--device", type=str, default="cuda:0")
+argparser.add_argument("--path_to_t5", type=str, default="google-t5/t5-base")
+argparser.add_argument("--image_size", type=int, default=224)
+argparser.add_argument("--benchmark", type=str, default="libero_spatial")
 
-    def __call__(self, sentences: List[str]):
-        return self.encode(sentences)
+args = argparser.parse_args()
 
-
-DEVICE = "cuda:0"
-PATH_TO_T5 = "/google/t5-base"
-IMAGE_SIZE = 224
+REQUIRE_DEPTH = args.require_depth
+REQUIRE_POINT_CLOUD = args.require_pointcloud
+DEVICE = args.device
+PATH_TO_T5 = args.path_to_t5
+IMAGE_SIZE = args.image_size
 BOUNDING_BOX = o3d.geometry.AxisAlignedBoundingBox(
     min_bound=(-1.0, -1.0, 0.0), max_bound=(1.0, 1.0, 1.6)
 )
 
 LIBERO_PATH = Path(os.path.dirname(libero.libero.__file__)).parents[0]
 DATASET_PATH = LIBERO_PATH / "datasets"
-BENCHMARKS = ["libero_goal", "libero_spatial", "libero_object", "libero_90", "libero_10"]
+BENCHMARKS = [args.benchmark]
 SAVE_DATA_PATH = Path(__file__).parents[3] / "dev/libero"
 
 # create save directory
@@ -86,6 +79,7 @@ for bm in BENCHMARKS:
 
 # languege encoder
 language_encoder = T5LanguageEncoder(pretrained_model_name_or_path=PATH_TO_T5, device=DEVICE)
+t5_hidden_dim = language_encoder.model.config.d_model
 
 tasks_stored = 0
 for bm in BENCHMARKS:
@@ -99,50 +93,51 @@ for bm in BENCHMARKS:
     root = zarr.open(str(SAVE_DATA_PATH / f"{bm}.zarr"), "w")
     zarr_data = root.create_group("data")
     zarr_meta = root.create_group("meta")
-    compressor = zarr.Blosc(cname="zstd", clevel=3, shuffle=1)
 
     zarr_data.require_dataset(
         "color",
         shape=(0, 3, IMAGE_SIZE, IMAGE_SIZE),
         dtype=np.uint8,
         chunks=(1, 3, IMAGE_SIZE, IMAGE_SIZE),
-        compressor=compressor,
+        compressor=jpeg((1, 3, IMAGE_SIZE, IMAGE_SIZE), quality=50),
     )
     zarr_data.require_dataset(
         "color_ego",
         shape=(0, 3, IMAGE_SIZE, IMAGE_SIZE),
         dtype=np.uint8,
         chunks=(1, 3, IMAGE_SIZE, IMAGE_SIZE),
-        compressor=compressor,
+        compressor=jpeg((1, 3, IMAGE_SIZE, IMAGE_SIZE), quality=50),
     )
-    zarr_data.require_dataset(
-        "depth",
-        shape=(0, IMAGE_SIZE, IMAGE_SIZE),
-        dtype=np.uint16,
-        chunks=(1, IMAGE_SIZE, IMAGE_SIZE),
-        compressor=compressor,
-    )
-    zarr_data.require_dataset(
-        "depth_ego",
-        shape=(0, IMAGE_SIZE, IMAGE_SIZE),
-        dtype=np.uint16,
-        chunks=(1, IMAGE_SIZE, IMAGE_SIZE),
-        compressor=compressor,
-    )
-    zarr_data.require_dataset(
-        "pointcloud",
-        shape=(0, 8192, 3),
-        dtype=np.float32,
-        chunks=(1, 8192, 3),
-        compressor=compressor,
-    )
-    zarr_data.require_dataset(
-        "pointcloud_ego",
-        shape=(0, 8192, 3),
-        dtype=np.float32,
-        chunks=(1, 8192, 3),
-        compressor=compressor,
-    )
+    if REQUIRE_DEPTH:
+        zarr_data.require_dataset(
+            "depth",
+            shape=(0, IMAGE_SIZE, IMAGE_SIZE),
+            dtype=np.uint16,
+            chunks=(1, IMAGE_SIZE, IMAGE_SIZE),
+            compressor=jpeg((1, IMAGE_SIZE, IMAGE_SIZE), quality=50),
+        )
+        zarr_data.require_dataset(
+            "depth_ego",
+            shape=(0, IMAGE_SIZE, IMAGE_SIZE),
+            dtype=np.uint16,
+            chunks=(1, IMAGE_SIZE, IMAGE_SIZE),
+            compressor=jpeg((1, IMAGE_SIZE, IMAGE_SIZE), quality=50),
+        )
+    if REQUIRE_POINT_CLOUD:
+        zarr_data.require_dataset(
+            "pointcloud",
+            shape=(0, 8192, 3),
+            dtype=np.float32,
+            chunks=(1, 8192, 3),
+            compressor=zarr.Blosc(cname="zstd", clevel=3, shuffle=1),
+        )
+        zarr_data.require_dataset(
+            "pointcloud_ego",
+            shape=(0, 8192, 3),
+            dtype=np.float32,
+            chunks=(1, 8192, 3),
+            compressor=zarr.Blosc(cname="zstd", clevel=3, shuffle=1),
+        )
     zarr_meta.require_dataset(
         "episode_ends",
         shape=(0,),
@@ -150,7 +145,7 @@ for bm in BENCHMARKS:
     )
     zarr_meta.require_dataset(
         "language_embeddings",
-        shape=(0, 32, 768),
+        shape=(0, 32, t5_hidden_dim),
         dtype=np.float32,
     )
     zarr_meta.require_dataset(
@@ -179,7 +174,7 @@ for bm in BENCHMARKS:
             "bddl_file_name": task_bddl_file,
             "camera_heights": IMAGE_SIZE,
             "camera_widths": IMAGE_SIZE,
-            "camera_depths": True,
+            "camera_depths": REQUIRE_DEPTH or REQUIRE_POINT_CLOUD,
         }
         env = OffScreenRenderEnv(**env_args)
 
@@ -212,26 +207,28 @@ for bm in BENCHMARKS:
 
                 # get RGBD
                 color = obs["agentview_image"][::-1]
-                depth = obs["agentview_depth"][::-1]
                 color_ego = obs["robot0_eye_in_hand_image"][::-1]
-                depth_ego = obs["robot0_eye_in_hand_depth"][::-1]
 
-                # to metric depth
-                depth = np.clip(get_real_depth_map(env.sim, depth), 0.0, 2.0)
-                depth_ego = np.clip(get_real_depth_map(env.sim, depth_ego), 0.0, 2.0)
+                if REQUIRE_DEPTH or REQUIRE_POINT_CLOUD:
+                    depth = obs["agentview_depth"][::-1]
+                    depth_ego = obs["robot0_eye_in_hand_depth"][::-1]
+                    # to metric depth
+                    depth = np.clip(get_real_depth_map(env.sim, depth), 0.0, 2.0)
+                    depth_ego = np.clip(get_real_depth_map(env.sim, depth_ego), 0.0, 2.0)
 
-                # get pcd
-                od_depth = o3d.geometry.Image(depth)
-                o3d_cloud = o3d.geometry.PointCloud.create_from_depth_image(od_depth, od_cammat)
-                o3d_cloud = o3d_cloud.crop(BOUNDING_BOX)
-                o3d_cloud = o3d_cloud.voxel_down_sample(voxel_size=0.005)
+                if REQUIRE_POINT_CLOUD:
+                    # get pcd
+                    od_depth = o3d.geometry.Image(depth)
+                    o3d_cloud = o3d.geometry.PointCloud.create_from_depth_image(od_depth, od_cammat)
+                    o3d_cloud = o3d_cloud.crop(BOUNDING_BOX)
+                    o3d_cloud = o3d_cloud.voxel_down_sample(voxel_size=0.005)
 
-                od_depth_ego = o3d.geometry.Image(depth_ego)
-                o3d_cloud_ego = o3d.geometry.PointCloud.create_from_depth_image(
-                    od_depth_ego, od_cammat_ego
-                )
-                o3d_cloud_ego = o3d_cloud_ego.crop(BOUNDING_BOX)
-                o3d_cloud_ego = o3d_cloud_ego.voxel_down_sample(voxel_size=0.003)
+                    od_depth_ego = o3d.geometry.Image(depth_ego)
+                    o3d_cloud_ego = o3d.geometry.PointCloud.create_from_depth_image(
+                        od_depth_ego, od_cammat_ego
+                    )
+                    o3d_cloud_ego = o3d_cloud_ego.crop(BOUNDING_BOX)
+                    o3d_cloud_ego = o3d_cloud_ego.voxel_down_sample(voxel_size=0.003)
 
                 joint_state = obs["robot0_joint_pos"]
                 eef_state = np.concatenate([obs["robot0_eef_pos"], obs["robot0_eef_quat"]])
@@ -240,13 +237,17 @@ for bm in BENCHMARKS:
                 # append
                 colors.append(color)
                 colors_ego.append(color_ego)
-                depths.append(depth)
-                depths_ego.append(depth_ego)
+
+                if REQUIRE_DEPTH:
+                    depths.append(depth)
+                    depths_ego.append(depth_ego)
+                if REQUIRE_POINT_CLOUD:
+                    pcds.append(np.asarray(o3d_cloud.points))
+                    pcds_ego.append(np.asarray(o3d_cloud_ego.points))
+
                 joint_states.append(joint_state)
                 eef_states.append(eef_state)
                 gripper_states.append(gripper_state)
-                pcds.append(np.asarray(o3d_cloud.points))
-                pcds_ego.append(np.asarray(o3d_cloud_ego.points))
 
                 if not init_others:
                     init_others = True
@@ -255,21 +256,18 @@ for bm in BENCHMARKS:
                         shape=(0, joint_state.shape[-1]),
                         dtype=np.float32,
                         chunks=(1, joint_state.shape[-1]),
-                        compressor=compressor,
                     )
                     zarr_data.require_dataset(
                         "eef_states",
                         shape=(0, eef_state.shape[-1]),
                         dtype=np.float32,
                         chunks=(1, eef_state.shape[-1]),
-                        compressor=compressor,
                     )
                     zarr_data.require_dataset(
                         "gripper_states",
                         shape=(0, gripper_state.shape[-1]),
                         dtype=np.float32,
                         chunks=(1, gripper_state.shape[-1]),
-                        compressor=compressor,
                     )
                     if bm not in ["libero_90", "libero_10"]:
                         zarr_data.require_dataset(
@@ -277,29 +275,29 @@ for bm in BENCHMARKS:
                             shape=(0, demo_data["states"].shape[-1]),
                             dtype=np.float32,
                             chunks=(1, demo_data["states"].shape[-1]),
-                            compressor=compressor,
                         )
                     zarr_data.require_dataset(
                         "actions",
                         shape=(0, demo_data["actions"].shape[-1]),
                         dtype=np.float32,
-                        chunks=(1, demo_data["actions"].shape[-1]),
-                        compressor=compressor,
                     )
                     zarr_data.require_dataset(
                         "rewards",
                         shape=(0,),
                         dtype=np.float32,
                         chunks=(1,),
-                        compressor=compressor,
                     )
 
             colors = np.array(colors, dtype=np.uint8).transpose(0, 3, 1, 2)
             colors_ego = np.array(colors_ego, dtype=np.uint8).transpose(0, 3, 1, 2)
-            depths = (np.array(depths) * 1000.0).astype(np.uint16)[:, :, :, 0]
-            depths_ego = (np.array(depths_ego) * 1000.0).astype(np.uint16)[:, :, :, 0]
-            pointcloud = filter(pcds, device=DEVICE)
-            pointcloud_ego = filter(pcds_ego, device=DEVICE)
+
+            if REQUIRE_DEPTH:
+                depths = (np.array(depths) * 1000.0).astype(np.uint16)[:, :, :, 0]
+                depths_ego = (np.array(depths_ego) * 1000.0).astype(np.uint16)[:, :, :, 0]
+            if REQUIRE_POINT_CLOUD:
+                pointcloud = filter(pcds, device=DEVICE)
+                pointcloud_ego = filter(pcds_ego, device=DEVICE)
+
             joint_states = np.array(joint_states, dtype=np.float32)
             eef_states = np.array(eef_states, dtype=np.float32)
             gripper_states = np.array(gripper_states, dtype=np.float32)
@@ -318,10 +316,14 @@ for bm in BENCHMARKS:
 
             zarr_data["color"].append(colors)
             zarr_data["color_ego"].append(colors_ego)
-            zarr_data["depth"].append(depths)
-            zarr_data["depth_ego"].append(depths_ego)
-            zarr_data["pointcloud"].append(pointcloud)
-            zarr_data["pointcloud_ego"].append(pointcloud_ego)
+
+            if REQUIRE_DEPTH:
+                zarr_data["depth"].append(depths)
+                zarr_data["depth_ego"].append(depths_ego)
+            if REQUIRE_POINT_CLOUD:
+                zarr_data["pointcloud"].append(pointcloud)
+                zarr_data["pointcloud_ego"].append(pointcloud_ego)
+
             zarr_data["joint_states"].append(joint_states)
             zarr_data["eef_states"].append(eef_states)
             zarr_data["gripper_states"].append(gripper_states)

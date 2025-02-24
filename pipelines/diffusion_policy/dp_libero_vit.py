@@ -292,7 +292,7 @@ if __name__ == "__main__":
                 T.Resize(224),
             ]
         )
-
+        
         policy.load_state_dict(torch.load(default_root_dir / ckpt_file, map_location=device)["state_dict"])
         policy = policy.to(device).eval()
 

@@ -4,7 +4,7 @@ You may tune the hyperparameters in the config file before using it.
 """
 
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Union
 
 import d4rl
 import gym
@@ -23,12 +23,14 @@ from cleandiffuser.dataset.d4rl_antmaze_dataset import D4RLAntmazeTDDataset
 from cleandiffuser.dataset.d4rl_kitchen_dataset import D4RLKitchenTDDataset
 from cleandiffuser.dataset.d4rl_mujoco_dataset import D4RLMuJoCoTDDataset
 from cleandiffuser.diffusion import ContinuousDiffusionSDE
-from cleandiffuser.nn_diffusion import TransitionTransformer
-from cleandiffuser.utils import TD3BC
+from cleandiffuser.nn_diffusion import IDQLMlp
+from cleandiffuser.utils import set_seed
 
 
 class Transition_Wrapper(torch.utils.data.Dataset):
-    def __init__(self, dataset: torch.utils.data.Dataset):
+    def __init__(
+        self, dataset: Union[D4RLMuJoCoTDDataset, D4RLAntmazeTDDataset, D4RLKitchenTDDataset]
+    ):
         super().__init__()
         self.dataset = dataset
 
@@ -48,7 +50,9 @@ class Transition_Wrapper(torch.utils.data.Dataset):
 
 
 class Upsampling_Wrapper(torch.utils.data.Dataset):
-    def __init__(self, dataset: torch.utils.data.Dataset, upsampling_dataset: Dict[str, torch.Tensor]):
+    def __init__(
+        self, dataset: torch.utils.data.Dataset, upsampling_dataset: Dict[str, torch.Tensor]
+    ):
         super().__init__()
         self.dataset = dataset
         self.obs = torch.cat([dataset.obs, upsampling_dataset["obs"]], 0)
@@ -68,67 +72,68 @@ class Upsampling_Wrapper(torch.utils.data.Dataset):
         return self.obs[idx], self.act[idx], self.rew[idx], self.next_obs[idx], self.tml[idx]
 
 
-@hydra.main(config_path="../configs/synther", config_name="d4rl", version_base=None)
-def pipeline(args):
-    L.seed_everything(args.seed, workers=True)
+# --- config ---
+seed = 0
+env_name = "hopper-medium-v2"
+mode = "synther_training"
+save_every_n_steps = 100_000
+training_steps = 500_000
+devices = [0]
 
-    env_name = args.task.env_name
-    save_path = Path(__file__).parents[1] / f"results/{args.pipeline_name}/{env_name}/"
+if __name__ == "__main__":
+    set_seed(seed)
 
-    device = f"cuda:{args.device_id}"
+    save_path = Path(__file__).parents[2] / f"results/synther/{env_name}/"
 
     # --- Create Dataset ---
     env = gym.make(env_name)
-    raw_dataset = d4rl.qlearning_dataset(env)
     if "kitchen" in env_name:
-        dataset = D4RLKitchenTDDataset(raw_dataset)
+        dataset = D4RLKitchenTDDataset(d4rl.qlearning_dataset(env))
     elif "antmaze" in env_name:
-        dataset = D4RLAntmazeTDDataset(raw_dataset, reward_tune="iql")
+        dataset = D4RLAntmazeTDDataset(d4rl.qlearning_dataset(env))
     else:
-        dataset = D4RLMuJoCoTDDataset(raw_dataset, normalize_reward=True)
+        dataset = D4RLMuJoCoTDDataset(d4rl.qlearning_dataset(env), normalize_reward=True)
     obs_dim, act_dim = dataset.obs_dim, dataset.act_dim
 
     """
     SynthER generates transitions, which are aranged as
     (obs, next_obs, rew, act, tml).
-    So the dimension is `(obs_dim + obs_dim + 1 + act_dim + 1)`,
-    such that the last `act_dim + 1` dimensions are ranged in `[-1, 1]`.
+    So the dimension is `(obs_dim + obs_dim + 1 + act_dim + 1)`.
     """
     x_dim = 2 * obs_dim + act_dim + 2
 
-    # --- Create Loss-weights ---
-    """
-    Although `obs` can have a larger dimension than `rew` and `act`,
-    they are equally important in the training.
-    So we set the loss-weight according to the dimension of the data.
-    """
-    x_max = torch.empty((x_dim,))
-    x_min = torch.empty((x_dim,))
-    x_max[: 2 * obs_dim + 1] = torch.inf
-    x_max[2 * obs_dim + 1 :] = 1
-    x_min[: 2 * obs_dim + 1] = -torch.inf
-    x_min[2 * obs_dim + 1 :] = -1
-    x_min[-1] = 0
-
     # --- Create Diffusion Model ---
-    nn_diffusion = TransitionTransformer(obs_dim, act_dim, 128, 384, 12, 4, "untrainable_fourier")
+    nn_diffusion = IDQLMlp(
+        x_dim=x_dim,
+        emb_dim=512,
+        hidden_dim=512,
+        n_blocks=3,
+        timestep_emb_type="untrainable_fourier",
+        timestep_emb_params={"scale": 0.2},
+    )
+
+    synther = ContinuousDiffusionSDE(nn_diffusion)
 
     # --- SynthER Training ---
-    if args.mode == "synther_training":
-        synther = ContinuousDiffusionSDE(nn_diffusion, ema_rate=0.999, x_max=x_max, x_min=x_min)
-
+    if mode == "synther_training":
         dataloader = DataLoader(
-            Transition_Wrapper(dataset), batch_size=512, shuffle=True, num_workers=4, persistent_workers=True
+            Transition_Wrapper(dataset),
+            batch_size=512,
+            shuffle=True,
+            num_workers=4,
+            persistent_workers=True,
         )
 
-        callback = ModelCheckpoint(dirpath=save_path, filename="synther-{step}", every_n_train_steps=args.save_interval)
+        callback = ModelCheckpoint(
+            dirpath=save_path,
+            filename="synther-{step}",
+            every_n_train_steps=save_every_n_steps,
+            save_top_k=-1,
+        )
 
         trainer = L.Trainer(
-            accelerator="gpu",
-            devices=[0, 1, 2, 3],
-            max_steps=args.diffusion_training_steps,
-            deterministic=True,
-            log_every_n_steps=200,
+            devices=devices,
+            max_steps=training_steps,
             default_root_dir=save_path,
             callbacks=[callback],
         )
@@ -139,9 +144,10 @@ def pipeline(args):
     elif args.mode == "dataset_upsampling":
         synther = ContinuousDiffusionSDE(nn_diffusion, ema_rate=0.999, x_max=x_max, x_min=x_min)
         synther.load_state_dict(
-            torch.load(save_path / f"synther-step={args.diffusion_training_steps}.ckpt", map_location=device)[
-                "state_dict"
-            ]
+            torch.load(
+                save_path / f"synther-step={args.diffusion_training_steps}.ckpt",
+                map_location=device,
+            )["state_dict"]
         )
         synther.eval().to(device)
 
@@ -176,7 +182,9 @@ def pipeline(args):
             syn_obs[ptr : ptr + batch_size] = transition[:, :obs_dim]
             syn_next_obs[ptr : ptr + batch_size] = transition[:, obs_dim : 2 * obs_dim]
             syn_rew[ptr : ptr + batch_size] = transition[:, 2 * obs_dim : 2 * obs_dim + 1]
-            syn_act[ptr : ptr + batch_size] = transition[:, 2 * obs_dim + 1 : 2 * obs_dim + 1 + act_dim]
+            syn_act[ptr : ptr + batch_size] = transition[
+                :, 2 * obs_dim + 1 : 2 * obs_dim + 1 + act_dim
+            ]
             syn_tml[ptr : ptr + batch_size] = transition[:, -1:]
             ptr += batch_size
 
@@ -210,7 +218,9 @@ def pipeline(args):
             persistent_workers=True,
         )
 
-        callback = ModelCheckpoint(dirpath=save_path, filename="td3bc-{step}", every_n_train_steps=args.save_interval)
+        callback = ModelCheckpoint(
+            dirpath=save_path, filename="td3bc-{step}", every_n_train_steps=args.save_interval
+        )
 
         trainer = L.Trainer(
             accelerator="gpu",
@@ -228,7 +238,9 @@ def pipeline(args):
     elif args.mode == "inference":
         td3bc = TD3BC(obs_dim, act_dim)
         td3bc.load_state_dict(
-            torch.load(save_path / f"td3bc-step={args.td3bc_ckpt}.ckpt", map_location=device)["state_dict"]
+            torch.load(save_path / f"td3bc-step={args.td3bc_ckpt}.ckpt", map_location=device)[
+                "state_dict"
+            ]
         )
         td3bc.eval().to(device)
 
@@ -259,10 +271,8 @@ def pipeline(args):
 
             episode_rewards.append(ep_reward)
 
-        episode_rewards = [list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards]
+        episode_rewards = [
+            list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards
+        ]
         episode_rewards = np.array(episode_rewards)
         print(np.mean(episode_rewards, -1), np.std(episode_rewards, -1))
-
-
-if __name__ == "__main__":
-    pipeline()

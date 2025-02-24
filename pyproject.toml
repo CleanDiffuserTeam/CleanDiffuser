@@ -64,3 +64,11 @@ include = ["cleandiffuser"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.pyright]
+exclude = [
+    "**/__pycache__",
+    "dev/**",
+    "notebooks/**",
+    "configs/**",
+]
