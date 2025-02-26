@@ -3,12 +3,12 @@ WARNING: This pipeline has not been fully tested. The results may not be accurat
 You may tune the hyperparameters in the config file before using it.
 """
 
+import argparse
 from pathlib import Path
 
 import d4rl  # noqa: F401
 import einops
 import gym
-import hydra
 import numpy as np
 import pytorch_lightning as L
 import torch
@@ -20,8 +20,9 @@ from cleandiffuser.dataset.d4rl_antmaze_dataset import D4RLAntmazeDataset
 from cleandiffuser.dataset.d4rl_kitchen_dataset import D4RLKitchenDataset
 from cleandiffuser.dataset.d4rl_mujoco_dataset import D4RLMuJoCoDataset
 from cleandiffuser.diffusion import ContinuousDiffusionSDE
-from cleandiffuser.nn_classifier import HalfJannerUNet1d
+from cleandiffuser.nn_classifier import HalfDiT1d
 from cleandiffuser.nn_diffusion import DiT1d
+from cleandiffuser.utils import set_seed
 
 RETURN_SCALE = {
     "halfcheetah-medium-expert-v2": 1200,
@@ -65,66 +66,106 @@ class ObsActSequence_Wrapper(torch.utils.data.Dataset):
         }
 
 
-@hydra.main(config_path="../configs/diffuser", config_name="d4rl", version_base=None)
-def pipeline(args):
-    L.seed_everything(args.seed, workers=True)
+# --- config ---
+argparser = argparse.ArgumentParser()
+argparser.add_argument("--seed", type=int, default=0)
+argparser.add_argument("--devices", type=int, nargs="+", default=[0, 1])
+argparser.add_argument("--env_name", type=str, default="hopper-medium-v2")
+argparser.add_argument("--horizon", type=int, default=32)
+argparser.add_argument("--mode", type=str, default="training")
+argparser.add_argument("--save_every_n_steps", type=int, default=200000)
+argparser.add_argument("--training_steps", type=int, default=1000000)
+argparser.add_argument("--ckpt_file", type=str, default="diffusion-step=500000.ckpt")
+argparser.add_argument("--num_envs", type=int, default=50)
+argparser.add_argument("--num_episodes", type=int, default=1)
+argparser.add_argument("--num_candidates", type=int, default=32)
+argparser.add_argument("--sampling_steps", type=int, default=5)
+argparser.add_argument("--w_cg", type=float, default=0.3)
+args = argparser.parse_args()
 
-    env_name = args.task.env_name
-    save_path = Path(__file__).parents[1] / f"results/{args.pipeline_name}/{env_name}/"
+seed = args.seed
+env_name = args.env_name
+horizon = args.horizon
+mode = args.mode
+devices = args.devices
+training_steps = args.training_steps
+save_every_n_steps = args.save_every_n_steps
+num_envs = args.num_envs
+num_episodes = args.num_episodes
+num_candidates = args.num_candidates
+ckpt_file = args.ckpt_file
+sampling_steps = args.sampling_steps
+w_cg = args.w_cg
 
-    # --- Create Dataset ---
+
+if __name__ == "__main__":
+    set_seed(seed)
+
+    save_path = Path(__file__).parents[2] / f"results/diffuser/{env_name}/"
+
+    # --- Dataset ---
     env = gym.make(env_name)
-    raw_dataset = env.get_dataset()
     if "kitchen" in env_name:
-        dataset = D4RLKitchenDataset(raw_dataset, horizon=args.task.horizon, discount=0.99)
+        dataset = D4RLKitchenDataset(env.get_dataset(), horizon=horizon, discount=0.99)
     elif "antmaze" in env_name:
-        dataset = D4RLAntmazeDataset(raw_dataset, horizon=args.task.horizon, discount=0.99)
+        dataset = D4RLAntmazeDataset(env.get_dataset(), horizon=horizon, discount=0.99)
     else:
-        dataset = D4RLMuJoCoDataset(raw_dataset, horizon=args.task.horizon, discount=0.99)
+        dataset = D4RLMuJoCoDataset(env.get_dataset(), horizon=horizon, discount=0.99)
     obs_dim, act_dim = dataset.obs_dim, dataset.act_dim
 
     # --- Create Diffusion Model ---
     nn_diffusion = DiT1d(
-        x_dim=obs_dim + act_dim, emb_dim=128, d_model=320, n_heads=10, depth=2, timestep_emb_type="untrainable_fourier"
-    )
-    nn_classifier = HalfJannerUNet1d(
-        horizon=args.task.horizon,
-        in_dim=obs_dim + act_dim,
-        out_dim=1,
-        dim_mult=args.task.dim_mult,
+        x_dim=obs_dim + act_dim,
+        x_seq_len=horizon,
+        emb_dim=128,
+        d_model=256,
+        n_heads=8,
+        depth=4,
         timestep_emb_type="untrainable_fourier",
+        timestep_emb_params={"scale": 0.02},
+    )
+    nn_classifier = HalfDiT1d(
+        x_dim=obs_dim + act_dim,
+        out_dim=1,
+        x_seq_len=horizon,
+        emb_dim=128,
+        d_model=256,
+        n_heads=8,
+        depth=4,
+        timestep_emb_type="untrainable_fourier",
+        timestep_emb_params={"scale": 0.02},
     )
 
     # --- Create Masks & Weights ---
-    fix_mask = torch.zeros((args.task.horizon, obs_dim + act_dim))
+    fix_mask = torch.zeros((horizon, obs_dim + act_dim))
     fix_mask[0, :obs_dim] = 1.0
-    loss_weight = torch.ones((args.task.horizon, obs_dim + act_dim))
+    loss_weight = torch.ones((horizon, obs_dim + act_dim))
     loss_weight[0, obs_dim:] = 10.0
 
+    classifier = OptimalityClassifier(nn_classifier)
+
+    actor = ContinuousDiffusionSDE(nn_diffusion, None, fix_mask, loss_weight, classifier=classifier)
+
     # --- Diffusion Training ---
-    if args.mode == "training":
-        classifier = OptimalityClassifier(nn_classifier, ema_rate=0.999)
-
-        actor = ContinuousDiffusionSDE(nn_diffusion, None, fix_mask, loss_weight, ema_rate=0.999, classifier=classifier)
-
+    if mode == "training":
         dataloader = DataLoader(
             ObsActSequence_Wrapper(dataset, env_name),
-            batch_size=512,
+            batch_size=256,
             shuffle=True,
             num_workers=4,
             persistent_workers=True,
         )
 
         callback = ModelCheckpoint(
-            dirpath=save_path, filename="diffusion-{step}", every_n_train_steps=args.save_interval, save_top_k=-1
+            dirpath=save_path,
+            filename="diffusion-{step}",
+            every_n_train_steps=save_every_n_steps,
+            save_top_k=-1,
         )
 
         trainer = L.Trainer(
-            accelerator="gpu",
-            devices=[0, 1, 2, 3],
-            max_steps=args.diffusion_training_steps,
-            deterministic=True,
-            log_every_n_steps=200,
+            devices=devices,
+            max_steps=training_steps,
             default_root_dir=save_path,
             callbacks=[callback],
             strategy="ddp_find_unused_parameters_true",
@@ -133,24 +174,17 @@ def pipeline(args):
         trainer.fit(actor, dataloader)
 
     # --- Inference ---
-    elif args.mode == "inference":
-        num_envs = args.num_envs
-        num_episodes = args.num_episodes
-        num_candidates = args.num_candidates
+    elif mode == "inference":
+        device = f"cuda:{devices[0]}"
 
-        classifier = OptimalityClassifier(nn_classifier, ema_rate=0.999)
-
-        actor = ContinuousDiffusionSDE(nn_diffusion, None, fix_mask, loss_weight, ema_rate=0.999, classifier=classifier)
-        actor.load_state_dict(
-            torch.load(save_path / f"diffusion-step={args.ckpt}.ckpt", map_location=f"cuda:{args.device_id}")["state_dict"]
-        )
-        actor.to(f"cuda:{args.device_id}").eval()
+        actor.load_state_dict(torch.load(save_path / ckpt_file, map_location=device)["state_dict"])
+        actor.to(device).eval()
 
         env_eval = gym.vector.make(env_name, num_envs=num_envs)
         normalizer = dataset.get_normalizer()
         episode_rewards = []
 
-        prior = torch.zeros((num_envs * num_candidates, args.task.horizon, obs_dim + act_dim))
+        prior = torch.zeros((num_envs * num_candidates, horizon, obs_dim + act_dim))
         for i in range(num_episodes):
             obs, ep_reward, all_done, t = env_eval.reset(), 0, False, 0
 
@@ -161,11 +195,11 @@ def pipeline(args):
 
                 traj, log = actor.sample(
                     prior,
-                    solver=args.solver,
-                    n_samples=num_envs * num_candidates,
-                    sample_steps=args.sampling_steps,
+                    solver="ddpm",
+                    sample_steps=sampling_steps,
                     condition_cg=None,
-                    w_cg=args.task.w_cg,
+                    w_cg=w_cg,
+                    sampling_schedule="quad",
                 )
 
                 logp = log["log_p"]
@@ -196,12 +230,10 @@ def pipeline(args):
 
             episode_rewards.append(ep_reward)
 
-        episode_rewards = [list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards]
+        episode_rewards = [
+            list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards
+        ]
         episode_rewards = np.array(episode_rewards).mean(-1) * 100.0
         print(f"Score: {episode_rewards.mean():.3f}±{episode_rewards.std():.3f}")
 
         env_eval.close()
-
-
-if __name__ == "__main__":
-    pipeline()

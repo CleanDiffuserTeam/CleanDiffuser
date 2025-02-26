@@ -81,49 +81,19 @@ class InvDyn_Wrapper(torch.utils.data.Dataset):
 
 # --- config ---
 argparser = argparse.ArgumentParser()
-argparser.add_argument("--seed", type=int, default=0, help="random seed")
-argparser.add_argument(
-    "--env_name", type=str, default="halfcheetah-medium-expert-v2", help="env name"
-)
-argparser.add_argument("--horizon", type=int, default=32, help="planning horizon")
-argparser.add_argument(
-    "--mode",
-    type=str,
-    default="diffusion_training",
-    help="Mode: diffusion_training, invdyn_training, inference",
-)
-argparser.add_argument(
-    "--devices",
-    type=int,
-    nargs="+",
-    default=[0, 1],
-    help="Devices used for training, e.g. 0 1. only the first device is used for inference.",
-)
-argparser.add_argument("--training_steps", type=int, default=500_000, help="training steps")
-argparser.add_argument("--save_every_n_steps", type=int, default=100_000, help="save interval")
-argparser.add_argument(
-    "--ckpt_file",
-    type=str,
-    default="diffusion-step=500000.ckpt",
-    help="ckpt file used for inference",
-)
-argparser.add_argument("--sampling_steps", type=int, default=10, help="sampling steps")
-argparser.add_argument(
-    "--num_envs", type=int, default=50, help="number of parallel envs for evaluation"
-)
-argparser.add_argument("--num_episodes", type=int, default=3, help="number of seeds for evaluation")
-argparser.add_argument(
-    "--target_return",
-    type=float,
-    default=None,
-    help="target return. set this value to overwrite the default value.",
-)
-argparser.add_argument(
-    "--w_cfg",
-    type=float,
-    default=None,
-    help="w_cfg. set this value to overwrite the default value.",
-)
+argparser.add_argument("--seed", type=int, default=0)
+argparser.add_argument("--env_name", type=str, default="halfcheetah-medium-expert-v2")
+argparser.add_argument("--horizon", type=int, default=32)
+argparser.add_argument("--mode", type=str, default="diffusion_training")
+argparser.add_argument("--devices", type=int, nargs="+", default=[0, 1])
+argparser.add_argument("--training_steps", type=int, default=500_000)
+argparser.add_argument("--save_every_n_steps", type=int, default=100_000)
+argparser.add_argument("--ckpt_file", type=str, default="diffusion-step=500000.ckpt")
+argparser.add_argument("--sampling_steps", type=int, default=10)
+argparser.add_argument("--num_envs", type=int, default=50)
+argparser.add_argument("--num_episodes", type=int, default=3)
+argparser.add_argument("--target_return", type=float, default=None)
+argparser.add_argument("--w_cfg", type=float, default=None)
 args = argparser.parse_args()
 
 seed = args.seed

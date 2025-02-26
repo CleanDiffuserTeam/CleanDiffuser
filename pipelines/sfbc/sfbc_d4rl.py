@@ -1,19 +1,16 @@
-"""
-WARNING: This pipeline has not been fully tested. The results may not be accurate.
-You may tune the hyperparameters in the config file before using it.
-"""
-
+import argparse
 from pathlib import Path
 from typing import Union
 
 import d4rl
 import einops
 import gym
-import hydra
 import numpy as np
 import pytorch_lightning as L
 import torch
+import torch.nn as nn
 from pytorch_lightning.callbacks import ModelCheckpoint
+from termcolor import cprint
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -22,14 +19,25 @@ from cleandiffuser.dataset.d4rl_kitchen_dataset import D4RLKitchenDataset, D4RLK
 from cleandiffuser.dataset.d4rl_mujoco_dataset import D4RLMuJoCoDataset, D4RLMuJoCoTDDataset
 from cleandiffuser.diffusion import ContinuousDiffusionSDE
 from cleandiffuser.nn_condition import MLPCondition
-from cleandiffuser.nn_diffusion import SfBCUNet
-from cleandiffuser.utils import GaussianNormalizer, Mlp, dict_apply, loop_dataloader
+from cleandiffuser.nn_diffusion import IDQLMlp
+from cleandiffuser.utils import GaussianNormalizer, dict_apply, loop_dataloader, set_seed
 
 
-def weight_init(m):
-    if isinstance(m, torch.nn.Linear):
-        torch.nn.init.orthogonal_(m.weight)
-        torch.nn.init.constant_(m.bias, 0)
+class Critic(nn.Module):
+    def __init__(self, obs_dim: int, act_dim: int, hidden_dim: int = 256):
+        super().__init__()
+        self.model = nn.Sequential(
+            nn.Linear(obs_dim + act_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(self, obs: torch.Tensor, act: torch.Tensor):
+        return self.model(torch.cat([obs, act], dim=-1))
 
 
 class InsamplePlanningD4RLDataset(torch.utils.data.Dataset):
@@ -76,28 +84,68 @@ class BC_Wrapper(torch.utils.data.Dataset):
         }
 
 
-@hydra.main(config_path="../configs/sfbc", config_name="d4rl", version_base=None)
-def pipeline(args):
-    L.seed_everything(args.seed, workers=True)
+# -- config --
 
-    env_name = args.task.env_name
-    M, alpha = args.monte_carlo_samples, args.weight_temperature
-    save_path = Path(__file__).parents[1] / f"results/{args.pipeline_name}/{env_name}/"
-    device = "cuda:2"
+argparser = argparse.ArgumentParser()
+argparser.add_argument("--seed", type=int, default=0)
+argparser.add_argument("--env_name", type=str, default="halfcheetah-medium-expert-v2")
+argparser.add_argument("--mode", type=str, default="training")
+argparser.add_argument("--save_every_n_steps", type=int, default=200000)
+argparser.add_argument("--training_steps", type=int, default=1000000)
+argparser.add_argument("--ckpt_file", type=str, default="diffusion_bc-step=1000000.ckpt")
+argparser.add_argument("--num_envs", type=int, default=50)
+argparser.add_argument("--num_episodes", type=int, default=3)
+argparser.add_argument("--num_candidates", type=int, default=50)
+argparser.add_argument("--M", type=int, default=16)
+argparser.add_argument("--alpha", type=int, default=20)
+argparser.add_argument("--sampling_steps", type=int, default=5)
+argparser.add_argument("--devices", type=int, nargs="+", default=[0])
+argparser.add_argument("--q_training_iters", type=int, default=-1)
+argparser.add_argument("--critic_training_steps", type=int, default=10000)
+argparser.add_argument("--critic_lr", type=float, default=1e-3)
+args = argparser.parse_args()
+
+seed = args.seed
+env_name = args.env_name
+M = args.M
+alpha = args.alpha
+devices = args.devices
+mode = args.mode
+sampling_steps = args.sampling_steps
+save_every_n_steps = args.save_every_n_steps
+training_steps = args.training_steps
+ckpt_file = args.ckpt_file
+q_training_iters = args.q_training_iters
+critic_training_steps = args.critic_training_steps
+critic_lr = args.critic_lr
+num_envs = args.num_envs
+num_episodes = args.num_episodes
+num_candidates = args.num_candidates
+
+# default
+if q_training_iters == -1:
+    if "antmaze" in env_name or "kitchen" in env_name:
+        q_training_iters = 5
+    else:
+        q_training_iters = 2
+
+if __name__ == "__main__":
+    set_seed(seed)
+    save_path = Path(__file__).parents[2] / f"results/sfbc/{env_name}/"
 
     # --- Create Dataset ---
     env = gym.make(env_name)
-    raw_dataset = d4rl.qlearning_dataset(env)
     if "kitchen" in env_name:
-        dataset = D4RLKitchenTDDataset(raw_dataset)
+        dataset = D4RLKitchenTDDataset(d4rl.qlearning_dataset(env))
     elif "antmaze" in env_name:
-        dataset = D4RLAntmazeTDDataset(raw_dataset, reward_tune="iql")
+        dataset = D4RLAntmazeTDDataset(d4rl.qlearning_dataset(env))
     else:
-        dataset = D4RLMuJoCoTDDataset(raw_dataset, normalize_reward=True)
+        dataset = D4RLMuJoCoTDDataset(d4rl.qlearning_dataset(env))
     obs_dim, act_dim = dataset.obs_dim, dataset.act_dim
 
-    nn_diffusion = SfBCUNet(act_dim, emb_dim=64)
-    nn_condition = MLPCondition(obs_dim, 64, [64], torch.nn.SiLU())
+    # --- Create Diffusion Model ---
+    nn_diffusion = IDQLMlp(x_dim=act_dim, timestep_emb_type="untrainable_fourier")
+    nn_condition = MLPCondition(in_dim=obs_dim, out_dim=64, hidden_dims=64, dropout=0.0)
 
     actor = ContinuousDiffusionSDE(
         nn_diffusion,
@@ -107,35 +155,39 @@ def pipeline(args):
         x_min=-1.0 * torch.ones((act_dim,)),
     )
 
-    critic = Mlp(obs_dim + act_dim, [256, 256], 1, torch.nn.SiLU()).to(device)
-    critic_optim = torch.optim.Adam(critic.parameters(), lr=1e-3)
-
-    if args.mode == "bc_training":
+    # --- BC Training ---
+    if mode == "bc_training":
         dataloader = DataLoader(
-            BC_Wrapper(dataset), batch_size=512, shuffle=True, num_workers=4, persistent_workers=True
+            BC_Wrapper(dataset),
+            batch_size=512,
+            shuffle=True,
+            num_workers=4,
+            persistent_workers=True,
         )
 
         callback = ModelCheckpoint(
-            dirpath=save_path, filename="diffusion_bc-{step}", every_n_train_steps=args.save_interval
+            dirpath=save_path,
+            filename="diffusion_bc-{step}",
+            every_n_train_steps=save_every_n_steps,
+            save_top_k=-1,
         )
 
         trainer = L.Trainer(
-            accelerator="gpu",
-            devices=[0, 1, 2, 3],
-            max_steps=args.bc_training_steps,
-            deterministic=True,
-            log_every_n_steps=200,
+            devices=devices,
+            max_steps=training_steps,
             default_root_dir=save_path,
             callbacks=[callback],
         )
 
         trainer.fit(actor, dataloader)
 
-    elif args.mode == "critic_training":
-        actor.load_state_dict(
-            torch.load(save_path / f"diffusion_bc-step={args.eval_actor_ckpt}.ckpt", map_location=device)["state_dict"]
-        )
+    elif mode == "critic_training":
+        device = f"cuda:{devices[0]}"
+
+        actor.load_state_dict(torch.load(save_path / ckpt_file, map_location=device)["state_dict"])
         actor.to(device).eval()
+
+        critic = None  # wait for initialization
 
         if "kitchen" in env_name:
             dataset = D4RLKitchenDataset(env.get_dataset(), horizon=32)
@@ -146,28 +198,35 @@ def pipeline(args):
 
         dataset = InsamplePlanningD4RLDataset(dataset)
 
-        dataloader = DataLoader(dataset, batch_size=256, shuffle=True, num_workers=4, persistent_workers=True)
+        dataloader = DataLoader(
+            dataset, batch_size=256, shuffle=True, num_workers=4, persistent_workers=True
+        )
 
-        _, max_traj_len = dataset.seq_obs.shape[0], dataset.seq_obs.shape[1]
+        max_traj_len = dataset.seq_obs.shape[1]
 
-        for k in range(args.q_training_iters):
+        for k in range(q_training_iters):
+            cprint(f"Critic training iteration: {k + 1} ...", "green")
             if k > 0:
+                cprint("Relabeling values ...", "cyan")
                 critic.eval()
                 # M Monte Carlo evaluation
                 normed_eval_seq_val = np.empty_like(dataset.normed_seq_val)
                 for i in tqdm(range(dataset.normed_seq_val.shape[0])):
-                    obs = torch.tensor(dataset.seq_obs[i], device=device).unsqueeze(1).repeat(1, M, 1)
+                    obs = (
+                        torch.tensor(dataset.seq_obs[i], device=device).unsqueeze(1).repeat(1, M, 1)
+                    )
                     prior = torch.zeros((max_traj_len * M, act_dim))
                     act = actor.sample(
                         prior,
-                        solver=args.eval_actor_solver,
-                        n_samples=max_traj_len * M,
-                        sample_steps=args.eval_actor_sampling_steps,
+                        solver="ddpm",
+                        sample_steps=sampling_steps,
                         condition_cfg=obs.view(-1, obs_dim),
+                        w_cfg=1.0,
+                        sample_step_schedule="quad",
                     )[0].view(-1, M, act_dim)
 
                     with torch.no_grad():
-                        pred_val = critic(torch.cat([obs, act], dim=-1))
+                        pred_val = critic(obs, act)
 
                     weight = torch.nn.functional.softmax(alpha * pred_val, dim=1)
                     normed_eval_seq_val[i] = (weight * pred_val).sum(1).cpu().numpy()
@@ -176,7 +235,7 @@ def pipeline(args):
                 eval_seq_val = dataset.val_normalizer.unnormalize(normed_eval_seq_val)
 
                 target_seq_val = np.empty_like(eval_seq_val)
-                target_seq_val[:, :-1] = dataset.seq_rew[:, :-1] + args.discount * np.maximum(
+                target_seq_val[:, :-1] = dataset.seq_rew[:, :-1] + 0.99 * np.maximum(
                     dataset.seq_val[:, 1:], eval_seq_val[:, 1:]
                 )
                 target_seq_val[:, -1] = eval_seq_val[:, -1]
@@ -187,50 +246,56 @@ def pipeline(args):
                 dataset.seq_val = target_seq_val
                 dataset.val_normalizer.__init__(target_seq_val)
                 dataset.normed_seq_val = dataset.val_normalizer.normalize(target_seq_val)
-                dataloader = DataLoader(dataset, batch_size=256, shuffle=True, num_workers=4, persistent_workers=True)
-                critic_optim = torch.optim.Adam(critic.parameters(), lr=1e-3)
+                dataloader = DataLoader(
+                    dataset, batch_size=256, shuffle=True, num_workers=4, persistent_workers=True
+                )
 
             # Critic training, reset critic for each iteration
             n_gradient_step = 0
-            critic.apply(weight_init)
-            critic.train()
+            critic = Critic(obs_dim, act_dim).to(device)
+            optim = torch.optim.Adam(critic.parameters(), lr=critic_lr)
+
+            cprint("Critic training ...", "cyan")
             log = dict.fromkeys(["critic_loss"], 0.0)
             for batch in loop_dataloader(dataloader):
-                obs, act, val = batch["obs"]["state"].to(device), batch["act"].to(device), batch["val"].to(device)
-                critic_loss = (critic(torch.cat([obs, act], dim=-1)) - val).pow(2).mean()
-                critic_optim.zero_grad()
+                obs, act, val = (
+                    batch["obs"]["state"].to(device),
+                    batch["act"].to(device),
+                    batch["val"].to(device),
+                )
+                critic_loss = (critic(obs, act) - val).pow(2).mean()
+                optim.zero_grad()
                 critic_loss.backward()
-                critic_optim.step()
+                optim.step()
                 log["critic_loss"] += critic_loss.item()
-                if (n_gradient_step + 1) % args.log_interval == 0:
-                    log = {k: v / args.log_interval for k, v in log.items()}
+                if (n_gradient_step + 1) % 500 == 0:
+                    log = {k: v / 500 for k, v in log.items()}
                     log["gradient_step"] = n_gradient_step + 1
                     print(log)
                     log = dict.fromkeys(["critic_loss"], 0.0)
                 n_gradient_step += 1
-                if n_gradient_step > args.critic_training_steps:
+                if n_gradient_step > critic_training_steps:
                     break
 
+        cprint("Done!", "cyan")
         torch.save(critic.state_dict(), save_path / "critic.pt")
 
-    elif args.mode == "inference":
-        num_candidates = args.num_candidates
-        num_envs = args.num_envs
+    elif mode == "inference":
+        device = f"cuda:{devices[0]}"
 
-        actor.load_state_dict(
-            torch.load(save_path / f"diffusion_bc-step={args.eval_actor_ckpt}.ckpt", map_location=device)["state_dict"]
-        )
-        actor.to(device).eval()
+        critic = Critic(obs_dim, act_dim).to(device).eval()
         critic.load_state_dict(torch.load(save_path / "critic.pt", map_location=device))
-        critic.eval()
 
-        env_eval = gym.vector.make(env_name, num_envs)
+        actor.load_state_dict(torch.load(save_path / ckpt_file, map_location=device)["state_dict"])
+        actor = actor.to(device).eval()
+
+        env_eval = gym.vector.make(env_name, num_envs=num_envs)
         normalizer = dataset.get_normalizer()
         episode_rewards = []
 
         prior = torch.zeros((num_envs * num_candidates, act_dim))
 
-        for i in range(args.num_episodes):
+        for i in range(num_episodes):
             obs, ep_reward, all_done, t = env_eval.reset(), 0.0, False, 0
 
             while not np.all(all_done) and t < 1000:
@@ -239,15 +304,15 @@ def pipeline(args):
 
                 act, _ = actor.sample(
                     prior,
-                    solver=args.solver,
-                    n_samples=num_candidates * num_envs,
-                    sample_steps=args.sampling_steps,
+                    solver="ddpm",
+                    sample_steps=sampling_steps,
                     condition_cfg=obs,
                     w_cfg=1.0,
+                    sample_step_schedule="quad",
                 )
 
                 with torch.no_grad():
-                    value = critic(torch.cat([obs, act], -1))
+                    value = critic(obs, act)
                     value = einops.rearrange(value, "(b k) 1 -> b k 1", k=num_candidates)
                     act = einops.rearrange(act, "(b k) d -> b k d", k=num_candidates)
                     idx = value.argsort(dim=1, descending=True).squeeze(-1)
@@ -275,12 +340,10 @@ def pipeline(args):
 
             episode_rewards.append(ep_reward)
 
-        episode_rewards = [list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards]
+        episode_rewards = [
+            list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards
+        ]
         episode_rewards = np.array(episode_rewards).mean(-1) * 100.0
         print(f"Score: {episode_rewards.mean():.3f}±{episode_rewards.std():.3f}")
 
         env_eval.close()
-
-
-if __name__ == "__main__":
-    pipeline()

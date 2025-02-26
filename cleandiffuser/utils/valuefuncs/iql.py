@@ -10,16 +10,21 @@ import torch.nn as nn
 
 class Mlp(nn.Module):
     def __init__(
-        self, in_dim: int, out_dim: int, hidden_dim: int = 256, use_layer_norm: bool = True
+        self,
+        in_dim: int,
+        out_dim: int,
+        hidden_dim: int = 256,
+        use_layer_norm: bool = True,
+        use_gelu: bool = True,
     ):
         super().__init__()
         self.mlp = nn.Sequential(
             nn.Linear(in_dim, hidden_dim),
             nn.LayerNorm(hidden_dim) if use_layer_norm else nn.Identity(),
-            nn.GELU(approximate="tanh"),
+            nn.GELU(approximate="tanh") if use_gelu else nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.LayerNorm(hidden_dim) if use_layer_norm else nn.Identity(),
-            nn.GELU(approximate="tanh"),
+            nn.GELU(approximate="tanh") if use_gelu else nn.ReLU(),
             nn.Linear(hidden_dim, out_dim),
         )
 
@@ -28,38 +33,136 @@ class Mlp(nn.Module):
 
 
 class Qfuncs(nn.Module):
-    def __init__(self, obs_dim: int, act_dim: int, hidden_dim: int = 256, n_ensembles: int = 10):
+    """Q functions with ensembles.
+
+    Use `forward` to get Q values for all ensembles, or use `min_q` to get min Q value.
+
+    Example:
+        >>> obs = torch.randn((..., obs_dim))
+        >>> act = torch.randn((..., act_dim))
+        >>> q_funcs = Qfuncs(obs_dim, act_dim, n_ensembles=N)
+        >>> q_funcs(obs, act).shape
+        torch.Size([..., N, 1])
+        >>> q_funcs.min_q(obs, act).shape
+        torch.Size([..., 1])
+
+    Args:
+        obs_dim (int):
+            Observation dimension.
+        act_dim (int):
+            Action dimension.
+        hidden_dim (int):
+            Hidden dimension. Default is 256.
+        n_ensembles (int):
+            Number of ensembles. Default is 10.
+        use_layer_norm (bool):
+            Use layer normalization. Default is True.
+        use_gelu (bool):
+            Use GELU activation. Default is True.
+    """
+
+    def __init__(
+        self,
+        obs_dim: int,
+        act_dim: int,
+        hidden_dim: int = 256,
+        n_ensembles: int = 10,
+        use_layer_norm: bool = True,
+        use_gelu: bool = True,
+    ):
         super().__init__()
         self.q_funcs = nn.ModuleList(
-            [Mlp(obs_dim + act_dim, 1, hidden_dim) for _ in range(n_ensembles)]
+            [
+                Mlp(obs_dim + act_dim, 1, hidden_dim, use_layer_norm, use_gelu)
+                for _ in range(n_ensembles)
+            ]
         )
 
     def forward(self, obs: torch.Tensor, act: torch.Tensor) -> torch.Tensor:
         x = torch.cat([obs, act], -1)
-        q = torch.stack([q_func(x) for q_func in self.q_funcs], 1)
+        q = torch.stack([q_func(x) for q_func in self.q_funcs], -2)
         return q
 
     def min_q(self, obs: torch.Tensor, act: torch.Tensor) -> torch.Tensor:
         q = self.forward(obs, act)
-        return torch.min(q, 1)[0]
+        return torch.min(q, -2)[0]
 
 
 class Vfuncs(nn.Module):
-    def __init__(self, obs_dim: int, hidden_dim: int = 256, n_ensembles: int = 1):
+    """V functions with ensembles.
+
+    Use `forward` to get V values for all ensembles, or use `min_v` to get min V value.
+
+    Example:
+        >>> obs = torch.randn((..., obs_dim))
+        >>> v_funcs = Vfuncs(obs_dim, n_ensembles=N)
+        >>> v_funcs(obs).shape
+        torch.Size([..., N, 1])
+        >>> v_funcs.min_v(obs).shape
+        torch.Size([..., 1])
+
+    Args:
+        obs_dim (int):
+            Observation dimension.
+        hidden_dim (int):
+            Hidden dimension. Default is 256.
+        n_ensembles (int):
+            Number of ensembles. Default is 1.
+        use_layer_norm (bool):
+            Use layer normalization. Default is True.
+        use_gelu (bool):
+            Use GELU activation. Default is True.
+    """
+
+    def __init__(
+        self,
+        obs_dim: int,
+        hidden_dim: int = 256,
+        n_ensembles: int = 1,
+        use_layer_norm: bool = True,
+        use_gelu: bool = True,
+    ):
         super().__init__()
-        self.v_funcs = nn.ModuleList([Mlp(obs_dim, 1, hidden_dim) for _ in range(n_ensembles)])
+        self.v_funcs = nn.ModuleList(
+            [Mlp(obs_dim, 1, hidden_dim, use_layer_norm, use_gelu) for _ in range(n_ensembles)]
+        )
 
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
-        v = torch.stack([v_func(obs) for v_func in self.v_funcs], 1)
+        v = torch.stack([v_func(obs) for v_func in self.v_funcs], -2)
         return v
 
     def min_v(self, obs: torch.Tensor) -> torch.Tensor:
         v = self.forward(obs)
-        return torch.min(v, 1)[0]
+        return torch.min(v, -2)[0]
 
 
 class Iql(L.LightningModule):
-    """TODO"""
+    """Lightning implementation of IQL.
+
+    Use `forward_q` and `forward_v` to get min Q/V values.
+    Or use `self.q.forward` and `self.v.forward` to get Q/V values for all ensembles.
+    Use `from_pretrained` to get pretrained models.
+
+    Args:
+        obs_dim (int):
+            Observation dimension.
+        act_dim (int):
+            Action dimension.
+        tau (float):
+            IQL quantile level. Default is 0.7.
+        discount (float):
+            Discount factor. Default is 0.99.
+        hidden_dim (int):
+            Hidden dimension. Default is 512.
+        q_ensembles (int):
+            Number of Q ensembles. Default is 2.
+        v_ensembles (int):
+            Number of V ensembles. Default is 1.
+        ema_ratio (float):
+            Q target EMA ratio. Default is 0.99.
+        lr (float):
+            Learning rate. Default is 3e-4.
+    """
 
     def __init__(
         self,
@@ -68,7 +171,7 @@ class Iql(L.LightningModule):
         tau: float = 0.7,
         discount: float = 0.99,
         hidden_dim: int = 512,
-        q_ensembles: int = 10,
+        q_ensembles: int = 2,
         v_ensembles: int = 1,
         ema_ratio: float = 0.99,
         lr: float = 3e-4,
@@ -89,6 +192,17 @@ class Iql(L.LightningModule):
         use_ema: bool = False,
         requires_grad: bool = False,
     ):
+        """Get min Q values.
+
+        Args:
+            obs (torch.Tensor): Observation tensor in shape (..., obs_dim).
+            act (torch.Tensor): Action tensor in shape (..., act_dim).
+            use_ema (bool, optional): Whether to use target Q funcs. Defaults to False.
+            requires_grad (bool, optional): Whether to enable gradient computation. Defaults to False.
+
+        Returns:
+            q (torch.Tensor): Min Q value in shape (..., 1).
+        """
         with torch.set_grad_enabled(requires_grad):
             if use_ema:
                 q = self.q_targ.min_q(obs, act)
@@ -97,6 +211,15 @@ class Iql(L.LightningModule):
         return q
 
     def forward_v(self, obs: torch.Tensor, requires_grad: bool = False):
+        """Get min V values.
+
+        Args:
+            obs (torch.Tensor): Observation tensor in shape (..., obs_dim).
+            requires_grad (bool, optional): Whether to enable gradient computation. Defaults to False.
+
+        Returns:
+            v (torch.Tensor): Min V value in shape (..., 1).
+        """
         with torch.set_grad_enabled(requires_grad):
             v = self.v.min_v(obs)
         return v

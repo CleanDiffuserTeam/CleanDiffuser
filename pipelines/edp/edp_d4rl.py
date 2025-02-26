@@ -3,100 +3,141 @@ WARNING: This pipeline has not been fully tested. The results may not be accurat
 You may tune the hyperparameters in the config file before using it.
 """
 
-import os
+import argparse
 from copy import deepcopy
 from pathlib import Path
 
 import d4rl
 import einops
 import gym
-import hydra
 import numpy as np
-import pytorch_lightning as L
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from termcolor import cprint
 from torch.utils.data import DataLoader
 
 from cleandiffuser.dataset.d4rl_antmaze_dataset import D4RLAntmazeTDDataset
 from cleandiffuser.dataset.d4rl_kitchen_dataset import D4RLKitchenTDDataset
 from cleandiffuser.dataset.d4rl_mujoco_dataset import D4RLMuJoCoTDDataset
-from cleandiffuser.diffusion import ContinuousDiffusionSDE
+from cleandiffuser.diffusion import DiscreteDiffusionSDE
 from cleandiffuser.nn_condition import MLPCondition
 from cleandiffuser.nn_diffusion import IDQLMlp
-from cleandiffuser.utils import FreezeModules, loop_dataloader
+from cleandiffuser.utils import FreezeModules, loop_dataloader, set_seed
+from cleandiffuser.utils.valuefuncs.iql import Qfuncs
+
+# -- config --
+argparser = argparse.ArgumentParser()
+argparser.add_argument("--seed", type=int, default=0)
+argparser.add_argument("--env_name", type=str, default="halfcheetah-medium-expert-v2")
+argparser.add_argument("--mode", type=str, default="training")
+argparser.add_argument("--device", type=int, default=0)
+argparser.add_argument("--training_steps", type=int, default=1000000)
+argparser.add_argument("--save_every_n_steps", type=int, default=200000)
+argparser.add_argument("--actor_ckpt_file", type=str, default="actor-step=1000000.ckpt")
+argparser.add_argument("--critic_ckpt_file", type=str, default="critic-step=1000000.ckpt")
+argparser.add_argument("--sampling_steps", type=int, default=5)
+argparser.add_argument("--num_envs", type=int, default=50)
+argparser.add_argument("--num_episodes", type=int, default=3)
+argparser.add_argument("--num_candidates", type=int, default=50)
+argparser.add_argument("--ema_update_interval", type=int, default=5)
+argparser.add_argument("--log_interval", type=int, default=1000)
+args = argparser.parse_args()
+
+seed = args.seed
+env_name = args.env_name
+mode = args.mode
+device = args.device
+training_steps = args.training_steps
+save_every_n_steps = args.save_every_n_steps
+actor_ckpt_file = args.actor_ckpt_file
+critic_ckpt_file = args.critic_ckpt_file
+sampling_steps = args.sampling_steps
+num_envs = args.num_envs
+num_episodes = args.num_episodes
+num_candidates = args.num_candidates
+ema_update_interval = args.ema_update_interval
+log_interval = args.log_interval
+
+if env_name == "halfcheetah-medium-expert-v2":
+    eta = 1.0
+    weight_temperature = 50.0
+elif env_name == "halfcheetah-medium-v2":
+    eta = 1.0
+    weight_temperature = 50.0
+elif env_name == "halfcheetah-medium-replay-v2":
+    eta = 1.0
+    weight_temperature = 300.0
+elif env_name == "hopper-medium-expert-v2":
+    eta = 1.0
+    weight_temperature = 1.0
+elif env_name == "hopper-medium-v2":
+    eta = 1.0
+    weight_temperature = 300.0
+elif env_name == "hopper-medium-replay-v2":
+    eta = 1.0
+    weight_temperature = 300.0
+elif env_name == "walker2d-medium-expert-v2":
+    eta = 1.0
+    weight_temperature = 50.0
+elif env_name == "walker2d-medium-v2":
+    eta = 1.0
+    weight_temperature = 300.0
+elif env_name == "walker2d-medium-replay-v2":
+    eta = 1.0
+    weight_temperature = 300.0
+elif env_name == "kitchen-mixed-v0":
+    eta = 0.005
+    weight_temperature = 1.0
+elif env_name == "kitchen-partial-v0":
+    eta = 0.005
+    weight_temperature = 1.0
+elif env_name == "antmaze-medium-play-v2":
+    eta = 2.0
+    weight_temperature = 3.0
+elif env_name == "antmaze-medium-diverse-v2":
+    eta = 3.0
+    weight_temperature = 1.0
+elif env_name == "antmaze-large-play-v2":
+    eta = 4.5
+    weight_temperature = 1.0
+elif env_name == "antmaze-large-diverse-v2":
+    eta = 3.5
+    weight_temperature = 3.0
+else:
+    raise NotImplementedError(f"Env {env_name} is not supported.")
 
 
-class TwinQ(nn.Module):
-    def __init__(self, obs_dim, act_dim, hidden_dim: int = 256):
-        super().__init__()
-        self.Q1 = nn.Sequential(
-            nn.Linear(obs_dim + act_dim, hidden_dim),
-            nn.LayerNorm(hidden_dim),
-            nn.Tanh(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.LayerNorm(hidden_dim),
-            nn.Mish(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.LayerNorm(hidden_dim),
-            nn.Mish(),
-            nn.Linear(hidden_dim, 1),
-        )
-        self.Q2 = nn.Sequential(
-            nn.Linear(obs_dim + act_dim, hidden_dim),
-            nn.LayerNorm(hidden_dim),
-            nn.Tanh(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.LayerNorm(hidden_dim),
-            nn.Mish(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.LayerNorm(hidden_dim),
-            nn.Mish(),
-            nn.Linear(hidden_dim, 1),
-        )
+if __name__ == "__main__":
+    set_seed(seed)
+    device = f"cuda:{device}"
 
-    def both(self, obs, act):
-        q1, q2 = self.Q1(torch.cat([obs, act], -1)), self.Q2(torch.cat([obs, act], -1))
-        return q1, q2
-
-    def forward(self, obs, act):
-        return torch.min(*self.both(obs, act))
-
-
-@hydra.main(config_path="../configs/edp", config_name="d4rl", version_base=None)
-def pipeline(args):
-    L.seed_everything(args.seed, workers=True)
-
-    env_name = args.task.env_name
-    save_path = Path(__file__).parents[1] / f"results/{args.pipeline_name}/{env_name}/"
-
-    device = f"cuda:{args.device_id}"
+    save_path = Path(__file__).parents[2] / f"results/dql/{env_name}/"
 
     # --- Create Dataset ---
     env = gym.make(env_name)
-    raw_dataset = d4rl.qlearning_dataset(env)
     if "kitchen" in env_name:
-        dataset = D4RLKitchenTDDataset(raw_dataset)
+        dataset = D4RLKitchenTDDataset(d4rl.qlearning_dataset(env))
     elif "antmaze" in env_name:
-        dataset = D4RLAntmazeTDDataset(raw_dataset, reward_tune="iql")
+        dataset = D4RLAntmazeTDDataset(d4rl.qlearning_dataset(env))
     else:
-        dataset = D4RLMuJoCoTDDataset(raw_dataset, normalize_reward=True)
+        dataset = D4RLMuJoCoTDDataset(d4rl.qlearning_dataset(env))
     obs_dim, act_dim = dataset.obs_dim, dataset.act_dim
 
     # --- Create Diffusion Model ---
-    nn_diffusion = IDQLMlp(
-        x_dim=act_dim, emb_dim=64, hidden_dim=256, n_blocks=3, dropout=0.0, timestep_emb_type="untrainable_fourier"
-    )
-    nn_condition = MLPCondition(
-        in_dim=obs_dim,
-        out_dim=64,
-        hidden_dims=[64],
-        act=torch.nn.SiLU(),
-        dropout=0.0,
+    nn_diffusion = IDQLMlp(x_dim=act_dim, dropout=0.0, timestep_emb_type="untrainable_positional")
+    nn_condition = MLPCondition(in_dim=obs_dim, out_dim=64, hidden_dims=64, dropout=0.0)
+
+    actor = DiscreteDiffusionSDE(
+        nn_diffusion,
+        nn_condition,
+        ema_rate=0.99,
+        diffusion_steps=sampling_steps,
+        x_max=+1.0 * torch.ones((act_dim,)),
+        x_min=-1.0 * torch.ones((act_dim,)),
+        predict_noise=False,
     )
 
-    critic = TwinQ(obs_dim, act_dim, hidden_dim=256).to(device)
-    critic_target = deepcopy(critic).requires_grad_(False).eval().to(device)
+    critic = Qfuncs(obs_dim, act_dim, hidden_dim=256, n_ensembles=2)
+    critic_target = deepcopy(critic).requires_grad_(False).eval()
 
     # --- Training ---
     if args.mode == "training":
@@ -108,28 +149,22 @@ def pipeline(args):
         which is much more readable and convenient.
         """
 
-        if not os.path.exists(save_path):
-            os.makedirs(save_path)
+        save_path.mkdir(exist_ok=True, parents=True)
 
         dataloader = DataLoader(
-            dataset, batch_size=256, shuffle=True, num_workers=4, persistent_workers=True, drop_last=True
+            dataset,
+            batch_size=256,
+            shuffle=True,
+            num_workers=4,
+            persistent_workers=True,
+            drop_last=True,
         )
 
+        critic = critic.to(device)
+        critic_target = critic_target.to(device)
         critic_optim = torch.optim.Adam(critic.parameters(), lr=3e-4)
 
-        """
-        While a high `ema_rate` performs better when using the standard
-        diffusion loss, it causes instability when adding an additional
-        Q maximization loss. So we use a smaller `ema_rate` here.
-        """
-        actor = ContinuousDiffusionSDE(
-            nn_diffusion,
-            nn_condition,
-            ema_rate=0.995,
-            x_max=+1.0 * torch.ones((act_dim,)),
-            x_min=-1.0 * torch.ones((act_dim,)),
-            predict_noise=False,
-        ).to(device)
+        actor = actor.to(device)
         actor.configure_manual_optimizers()
 
         step = 0
@@ -137,6 +172,7 @@ def pipeline(args):
 
         prior = torch.zeros((256, act_dim), device=device)
 
+        cprint(f"Training begin for {env_name}!", "green")
         for batch in loop_dataloader(dataloader):
             obs, next_obs = batch["obs"]["state"].to(device), batch["next_obs"]["state"].to(device)
             act = batch["act"].to(device)
@@ -147,43 +183,40 @@ def pipeline(args):
             actor.eval()
             critic.train()
 
-            q1, q2 = critic.both(obs, act)
+            q = critic(obs, act)
 
             """ Use max-Q backup for AntMaze, otherwise use policy-Q backup. """
             if "antmaze" in env_name:
                 repeat_next_obs = einops.repeat(next_obs, "b d -> (b n) d", n=10)
                 next_act, _ = actor.sample(
                     prior.repeat(10, 1),
-                    solver=args.solver,
-                    n_samples=2560,
-                    sample_steps=args.sampling_steps,
+                    solver="ddpm",
+                    sample_steps=sampling_steps,
                     condition_cfg=repeat_next_obs,
                     w_cfg=1.0,
                     requires_grad=False,
                 )
 
                 with torch.no_grad():
-                    target_q1, target_q2 = critic_target.both(repeat_next_obs, next_act)
-                    target_q1 = einops.rearrange(target_q1, "(b n) 1 -> b n 1", n=10).max(1)[0]
-                    target_q2 = einops.rearrange(target_q2, "(b n) 1 -> b n 1", n=10).max(1)[0]
-                    target_q = torch.min(target_q1, target_q2)
+                    target_q = critic_target(repeat_next_obs, next_act)  # ((b n), m, 1)
+                    target_q = einops.rearrange(target_q, "(b n) m 1 -> b n m 1", n=10).max(1)[0]
+                    target_q = target_q.min(1).values  # (b, 1)
             else:
                 next_act, _ = actor.sample(
                     prior,
-                    solver=args.solver,
-                    n_samples=256,
-                    sample_steps=args.sampling_steps,
+                    solver="ddpm",
+                    sample_steps=sampling_steps,
                     condition_cfg=next_obs,
                     w_cfg=1.0,
                     requires_grad=False,
                 )
 
                 with torch.no_grad():
-                    target_q = torch.min(*critic_target.both(next_obs, next_act))
+                    target_q = critic_target(next_obs, next_act).min(1).values  # (b, 1)
 
-            target_q = rew + (1 - tml) * 0.99 * target_q
+            target_q = (rew + (1 - tml) * 0.99 * target_q).detach()
 
-            critic_td_loss = F.mse_loss(q1, target_q) + F.mse_loss(q2, target_q)
+            critic_td_loss = (q - target_q[:, None]).pow(2).mean()
 
             critic_optim.zero_grad()
             critic_td_loss.backward()
@@ -203,7 +236,8 @@ def pipeline(args):
             new_act = actor.model["diffusion"](noisy_act, t, condition)
 
             with FreezeModules([critic]):
-                q1_actor, q2_actor = critic.both(obs, new_act)
+                q_actor = critic(obs, new_act)
+                q1_actor, q2_actor = q_actor[:, 0], q_actor[:, 1]
 
             if np.random.uniform() > 0.5:
                 policy_q_loss = -q1_actor.mean() / q2_actor.abs().mean()
@@ -222,42 +256,39 @@ def pipeline(args):
             step += 1
 
             # --- EMA Update ---
-            if step % args.ema_update_interval == 0:
+            if step % ema_update_interval == 0:
                 if step >= 1000:
                     actor.ema_update()
                 for param, target_param in zip(critic.parameters(), critic_target.parameters()):
+                    """ 
+                    Note: The ema ratio is set incorrectly here. However, this low ratio (0.005) actually works much better.
+                    If we set it back to 0.995, the performance degrades. I think it's because the offline data distribution is stable,
+                    so we don't need to overly slow down the ema update.
+                    """
                     target_param.data.copy_(0.995 * param.data + (1 - 0.995) * target_param.data)
 
-            if step % args.log_interval == 0:
-                log = {k: v / args.log_interval for k, v in log.items()}
+            if step % log_interval == 0:
+                log = {k: v / log_interval for k, v in log.items()}
                 print(f"[{step}] {log}")
                 log = dict.fromkeys(["bc_loss", "policy_q_loss", "critic_td_loss", "target_q"], 0.0)
 
-            if step % args.save_interval == 0:
-                actor.save(save_path / f"actor_step={step}.ckpt")
-                torch.save(critic.state_dict(), save_path / f"critic_step={step}.ckpt")
-                torch.save(critic_target.state_dict(), save_path / f"critic_target_step={step}.ckpt")
+            if step % save_every_n_steps == 0:
+                actor.save(save_path / f"actor-step={step}.ckpt")
+                torch.save(critic.state_dict(), save_path / f"critic-step={step}.ckpt")
+                torch.save(
+                    critic_target.state_dict(), save_path / f"critic_target-step={step}.ckpt"
+                )
 
-            if step >= args.training_steps:
+            if step >= training_steps:
                 break
 
     elif args.mode == "inference":
-        num_envs = args.num_envs
-        num_episodes = args.num_episodes
-        num_candidates = args.num_candidates
-
-        critic.load_state_dict(torch.load(save_path / f"critic_step={args.ckpt}.ckpt", map_location=device))
+        critic = critic.to(device)
+        critic.load_state_dict(torch.load(save_path / critic_ckpt_file, map_location=device))
         critic.eval()
 
-        actor = ContinuousDiffusionSDE(
-            nn_diffusion,
-            nn_condition,
-            ema_rate=0.995,
-            x_max=+1.0 * torch.ones((act_dim,)),
-            x_min=-1.0 * torch.ones((act_dim,)),
-            predict_noise=False,
-        ).to(device)
-        actor.load(save_path / f"actor_step={args.ckpt}.ckpt")
+        actor = actor.to(device)
+        actor.load(save_path / actor_ckpt_file)
         actor.eval()
 
         env_eval = gym.vector.make(env_name, num_envs=num_envs)
@@ -269,23 +300,23 @@ def pipeline(args):
             obs, ep_reward, all_done, t = env_eval.reset(), 0.0, False, 0
 
             while not np.all(all_done) and t < 1000:
-                obs = torch.tensor(normalizer.normalize(obs), dtype=torch.float32, device=f"cuda:{args.device_id}")
+                obs = torch.tensor(normalizer.normalize(obs), dtype=torch.float32, device=device)
                 obs = einops.repeat(obs, "b d -> (b k) d", k=num_candidates)
 
-                act, log = actor.sample(
+                act, _ = actor.sample(
                     prior,
-                    solver=args.solver,
-                    n_samples=num_envs * num_candidates,
-                    sample_steps=args.sampling_steps,
+                    solver="ddpm",
+                    sample_steps=sampling_steps,
                     condition_cfg=obs,
                     w_cfg=1.0,
+                    sample_step_schedule="quad",
                 )
 
                 with torch.no_grad():
-                    q = critic(obs, act)
+                    q = critic.min_q(obs, act)
                     act = einops.rearrange(act, "(b k) d -> b k d", k=num_candidates)
                     q = einops.rearrange(q, "(b k) 1 -> b k 1", k=num_candidates)
-                    w = torch.softmax(q * args.task.weight_temperature, dim=1)
+                    w = torch.softmax(q * weight_temperature, dim=1)
 
                     idx = torch.multinomial(w.squeeze(-1), num_samples=1).squeeze(-1)
                     act = act[torch.arange(num_envs), idx].cpu().numpy()
@@ -311,12 +342,10 @@ def pipeline(args):
 
             episode_rewards.append(ep_reward)
 
-        episode_rewards = [list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards]
+        episode_rewards = [
+            list(map(lambda x: env.get_normalized_score(x), r)) for r in episode_rewards
+        ]
         episode_rewards = np.array(episode_rewards).mean(-1) * 100.0
         print(f"Score: {episode_rewards.mean():.3f}±{episode_rewards.std():.3f}")
 
         env_eval.close()
-
-
-if __name__ == "__main__":
-    pipeline()

@@ -1,8 +1,3 @@
-"""
-WARNING: This pipeline has not been fully tested. The results may not be accurate.
-You may tune the hyperparameters in the config file before using it.
-"""
-
 import argparse
 from copy import deepcopy
 from pathlib import Path
@@ -36,7 +31,7 @@ argparser.add_argument("--actor_ckpt_file", type=str, default="actor-step=100000
 argparser.add_argument("--critic_ckpt_file", type=str, default="critic-step=1000000.ckpt")
 argparser.add_argument("--sampling_steps", type=int, default=5)
 argparser.add_argument("--num_envs", type=int, default=50)
-argparser.add_argument("--num_episodes", type=int, default=1)
+argparser.add_argument("--num_episodes", type=int, default=3)
 argparser.add_argument("--num_candidates", type=int, default=50)
 argparser.add_argument("--ema_update_interval", type=int, default=5)
 argparser.add_argument("--log_interval", type=int, default=1000)
@@ -57,20 +52,6 @@ num_candidates = args.num_candidates
 ema_update_interval = args.ema_update_interval
 log_interval = args.log_interval
 
-# seed = 0
-# env_name = "halfcheetah-medium-expert-v2"
-# mode = "training"
-# device = 1
-# training_steps = 1000000
-# save_every_n_steps = 200000
-# ckpt_file = "diffusion_bc-step=1000000.ckpt"
-# sampling_steps = 5
-# num_envs = 50
-# num_episodes = 1
-# num_candidates = 50
-# ema_update_interval = 5
-# log_interval = 100
-
 if env_name == "halfcheetah-medium-expert-v2":
     eta = 1.0
     weight_temperature = 50.0
@@ -79,7 +60,7 @@ elif env_name == "halfcheetah-medium-v2":
     weight_temperature = 50.0
 elif env_name == "halfcheetah-medium-replay-v2":
     eta = 1.0
-    weight_temperature = 50.0
+    weight_temperature = 300.0
 elif env_name == "hopper-medium-expert-v2":
     eta = 1.0
     weight_temperature = 1.0
@@ -91,27 +72,40 @@ elif env_name == "hopper-medium-replay-v2":
     weight_temperature = 300.0
 elif env_name == "walker2d-medium-expert-v2":
     eta = 1.0
+    weight_temperature = 50.0
 elif env_name == "walker2d-medium-v2":
     eta = 1.0
+    weight_temperature = 300.0
 elif env_name == "walker2d-medium-replay-v2":
     eta = 1.0
+    weight_temperature = 300.0
 elif env_name == "kitchen-mixed-v0":
     eta = 0.005
-    weight_temperature = 3.0
+    weight_temperature = 1.0
 elif env_name == "kitchen-partial-v0":
     eta = 0.005
-    weight_temperature = 10.0
+    weight_temperature = 1.0
 elif env_name == "antmaze-medium-play-v2":
     eta = 2.0
+    weight_temperature = 3.0
 elif env_name == "antmaze-medium-diverse-v2":
     eta = 3.0
+    weight_temperature = 1.0
 elif env_name == "antmaze-large-play-v2":
     eta = 4.5
-    weight_temperature = 5.0
+    weight_temperature = 1.0
 elif env_name == "antmaze-large-diverse-v2":
     eta = 3.5
+    weight_temperature = 3.0
 else:
     raise NotImplementedError(f"Env {env_name} is not supported.")
+
+# use 600k ckpt as default for antmaze because overtraining makes performance degrade
+if "antmaze" in env_name:
+    if actor_ckpt_file == "actor-step=1000000.ckpt":
+        actor_ckpt_file = "actor-step=600000.ckpt"
+    if critic_ckpt_file == "critic-step=1000000.ckpt":
+        critic_ckpt_file = "critic-step=600000.ckpt"
 
 if __name__ == "__main__":
     set_seed(seed)
@@ -130,13 +124,13 @@ if __name__ == "__main__":
     obs_dim, act_dim = dataset.obs_dim, dataset.act_dim
 
     # --- Create Diffusion Model ---
-    nn_diffusion = IDQLMlp(x_dim=act_dim, dropout=0.0, timestep_emb_type="positional")
+    nn_diffusion = IDQLMlp(x_dim=act_dim, dropout=0.0, timestep_emb_type="untrainable_positional")
     nn_condition = MLPCondition(in_dim=obs_dim, out_dim=64, hidden_dims=64, dropout=0.0)
 
     actor = DiscreteDiffusionSDE(
         nn_diffusion,
         nn_condition,
-        ema_rate=0.995,
+        ema_rate=0.99,
         diffusion_steps=sampling_steps,
         x_max=+1.0 * torch.ones((act_dim,)),
         x_min=-1.0 * torch.ones((act_dim,)),
@@ -200,14 +194,13 @@ if __name__ == "__main__":
                     sample_steps=sampling_steps,
                     condition_cfg=repeat_next_obs,
                     w_cfg=1.0,
-                    # sample_step_schedule="quad",
                     requires_grad=False,
                 )
 
                 with torch.no_grad():
                     target_q = critic_target(repeat_next_obs, next_act)  # ((b n), m, 1)
                     target_q = einops.rearrange(target_q, "(b n) m 1 -> b n m 1", n=10).max(1)[0]
-                    target_q = target_q.mean(1)  # (b, 1)
+                    target_q = target_q.min(1).values  # (b, 1)
             else:
                 next_act, _ = actor.sample(
                     prior,
@@ -215,12 +208,11 @@ if __name__ == "__main__":
                     sample_steps=sampling_steps,
                     condition_cfg=next_obs,
                     w_cfg=1.0,
-                    # sample_step_schedule="quad",
                     requires_grad=False,
                 )
 
                 with torch.no_grad():
-                    target_q = critic_target(next_obs, next_act).mean(1)  # (b, 1)
+                    target_q = critic_target(next_obs, next_act).min(1).values  # (b, 1)
 
             target_q = (rew + (1 - tml) * 0.99 * target_q).detach()
 
@@ -245,7 +237,6 @@ if __name__ == "__main__":
                 sample_steps=sampling_steps,
                 condition_cfg=obs,
                 w_cfg=1.0,
-                # sample_step_schedule="quad",
                 use_ema=False,
                 requires_grad=True,
             )
