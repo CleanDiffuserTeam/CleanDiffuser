@@ -195,7 +195,6 @@ if __name__ == "__main__":
                     condition_cfg=repeat_next_obs,
                     w_cfg=1.0,
                     requires_grad=False,
-                    logger=wandb_logger
                 )
 
                 with torch.no_grad():
@@ -210,7 +209,6 @@ if __name__ == "__main__":
                     condition_cfg=next_obs,
                     w_cfg=1.0,
                     requires_grad=False,
-                    logger=wandb_logger
                 )
 
                 with torch.no_grad():

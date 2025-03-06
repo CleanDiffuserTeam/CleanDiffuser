@@ -177,7 +177,6 @@ if __name__ == "__main__":
             max_steps=training_steps,
             default_root_dir=save_path,
             callbacks=[callback],
-            logger=wandb_logger,
             strategy="ddp_find_unused_parameters_true",
         )
 
