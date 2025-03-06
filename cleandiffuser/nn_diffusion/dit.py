@@ -135,7 +135,49 @@ class FinalLayer1d(nn.Module):
 
 class DiT1d(BaseNNDiffusion):
     """Temporal Diffusion Transformer (DiT) backbone used in AlignDiff.
-    TODO
+
+    Args:
+        x_dim (int):
+            The dimension of the input. Input tensors are assumed to be in shape of (b, x_seq_len, x_dim),
+        x_seq_len (int):
+            The sequence length of the input.
+        emb_dim (int):
+            The dimension of the timestep embedding and condition embedding.
+        d_model (int):
+            The dimension of the model.
+        n_heads (int):
+            The number of heads in the model.
+        depth (int):
+            The number of layers in the model.
+        attn_dropout (float):
+            The dropout rate for the attention layers.
+        ffn_dropout (float):
+            The dropout rate for the feed forward layers.
+        head_type (str):
+            The type of the output head. Can be "linear" or "mlp".
+        use_trainable_pos_emb (bool):
+            Whether to use trainable positional embeddings.
+        use_cross_attn (bool):
+            Whether to add an extra cross attention layer for sequence conditioning.
+        adaLN_on_cross_attn (bool):
+            Whether to use adaptive layer normalization on the cross attention layer.
+        timestep_emb_type (str):
+            The type of the timestep embedding.
+        timestep_emb_params (Optional[dict]):
+            The parameters of the timestep embedding.
+
+    Examples:
+    >>> model = DiT1d(x_dim=5, x_seq_len=10, emb_dim=128)
+    >>> xt = torch.randn((2, 10, 5))
+    >>> t = torch.randint(1000, (2,))
+    >>> condition = {"vec_condition": torch.randn((2, 128))}
+    >>> model(xt, t, condition).shape
+    torch.Size([2, 10, 5])
+
+    >>> model = DiT1d(x_dim=5, x_seq_len=10, emb_dim=128, use_cross_attn=True)
+    >>> condition = {"vec_condition": torch.randn((2, 128)), "seq_condition": torch.randn((2, 8, 128))}
+    >>> model(xt, t, condition).shape
+    torch.Size([2, 10, 5])
     """
 
     def __init__(
@@ -243,8 +285,41 @@ class DiT1dWithACICrossAttention(DiT1d):
 
     Reference: https://arxiv.org/pdf/2410.07864
 
-    TODO
+    Args:
+        x_dim (int):
+            Input dimension. The input should be in shape of (b, x_seq_len, x_dim).
+        x_seq_len (int):
+            The length of the input sequence.
+        emb_dim (int):
+            The dimension of the embedding.
+        d_model (int):
+            The dimension of the model.
+        n_heads (int):
+            The number of heads in the attention layers.
+        depth (int):
+            The number of transformer blocks.
+        attn_dropout (float):
+            The dropout rate of the attention layers.
+        ffn_dropout (float):
+            The dropout rate of the feed-forward layers.
+        head_type (str):
+            The type of the head. Can be "linear" or "mlp".
+        use_trainable_pos_emb (bool):
+            Whether to use trainable positional embedding.
+        adaLN_on_cross_attn (bool):
+            Whether to use adaLN in the cross-attention layers.
+        timestep_emb_type (str):
+            The type of the timestep embedding.
+        timestep_emb_params (Optional[dict]):
+            The parameters of the timestep embedding.
 
+    Examples:
+    >>> model = DiT1dWithACICrossAttention(x_dim=5, x_seq_len=10, emb_dim=128)
+    >>> xt = torch.randn(2, 10, 5)
+    >>> t = torch.randint(0, 1000, (2,))
+    >>> condition = {"vec_condition": torch.randn(2, 128), "vis_condition": torch.randn(2, 196, 128), "lang_condition": torch.randn(2, 32, 128)}
+    >>> model(xt, t, condition).shape
+    torch.Size([2, 10, 5])
     """
 
     def __init__(

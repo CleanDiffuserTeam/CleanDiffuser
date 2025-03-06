@@ -33,7 +33,22 @@ class BasicInvDynamic(L.LightningModule):
 class MlpInvDynamic(BasicInvDynamic):
     """MLP Inverse Dynamics Model.
 
-    TODO
+    Predicts the action given the current and next observation.
+    It concatenates the current and next observation and passes them through a MLP to
+    predict the action.
+
+    Args:
+        obs_dim (int): Observation dimension.
+        act_dim (int): Action dimension.
+        hidden_dim (int): Hidden dimension of the MLP.
+        tanh_out_activation (bool): Whether to apply a tanh activation to the output.
+        action_scale (float): Scale the action output by this factor when using tanh.
+
+    Examples:
+    >>> inv_dynamic = MlpInvDynamic(5, 3)
+    >>> obs, next_obs = torch.randn((2, 4, 5)), torch.randn((2, 4, 5))
+    >>> inv_dynamic.predict(obs, next_obs).shape
+    torch.Size([2, 4, 3])
     """
 
     def __init__(
@@ -89,7 +104,25 @@ class MlpInvDynamic(BasicInvDynamic):
 class FancyMlpInvDynamic(MlpInvDynamic):
     """MLP Inverse Dynamics Model.
 
-    TODO
+    Predicts the action given the current and next observation.
+    It concatenates the current and next observation and passes them through a MLP to
+    predict the action. The MLP employs GELU activation and LayerNorm, along with a Dropout
+    layer.
+
+    Args:
+        obs_dim (int): Observation dimension.
+        act_dim (int): Action dimension.
+        hidden_dim (int): Hidden dimension of the MLP.
+        tanh_out_activation (bool): Whether to apply a tanh activation to the output.
+        action_scale (float): Scale the action output by this factor when using tanh.
+        add_norm (bool): Whether to add LayerNorm.
+        add_dropout (bool): Whether to add Dropout.
+
+    Examples:
+    >>> inv_dynamic = FancyMlpInvDynamic(5, 3).eval()
+    >>> obs, next_obs = torch.randn((2, 4, 5)), torch.randn((2, 4, 5))
+    >>> inv_dynamic.predict(obs, next_obs).shape
+    torch.Size([2, 4, 3])
     """
 
     def __init__(
@@ -118,9 +151,7 @@ class FancyMlpInvDynamic(MlpInvDynamic):
     @classmethod
     def from_pretrained(self, env_name: str):
         try:
-            path = (
-                os.path.expanduser("~") + f"/.CleanDiffuser/pretrained/invdyn/{env_name}/"
-            )
+            path = os.path.expanduser("~") + f"/.CleanDiffuser/pretrained/invdyn/{env_name}/"
             path = Path(path)
             file_list = os.listdir(path)
             for each in file_list:

@@ -5,6 +5,7 @@ import torch.nn as nn
 
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
 
+__all__ = ["IDQLMlp"]
 
 class ResidualBlock(nn.Module):
     def __init__(self, hidden_dim: int, dropout: float = 0.1):
