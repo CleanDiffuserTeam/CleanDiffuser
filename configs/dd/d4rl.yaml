@@ -2,23 +2,24 @@ defaults:
 - _self_
 - task: halfcheetah-medium-expert-v2
 pipeline_name: dd_d4rl
-device_id: 0
-mode: diffusion_training # diffusion_training -> invdyn_training (optional) -> inference
+mode: diffusion_training # diffusion_training -> invdyn_training -> inference
 seed: 0
-invdyn_hidden_dim: 512
 
 # Training
-diffusion_training_steps: 10000
-invdyn_training_steps: 10000
-save_interval: 10000
+diffusion_training_steps: 1000000
+invdyn_training_steps: 400000
+save_interval: 200000
+invdyn_hidden_dim: 512
+
 # Inference
-diffusion_ckpt: 10000
-invdyn_ckpt: 10000
+device_id: 0
+diffusion_ckpt: 1000000
+invdyn_ckpt: 400000
 solver: ddpm
 invdyn_from_pretrain: False
 sampling_steps: 10
 num_envs: 50
-num_episodes: 1
+num_episodes: 3
 
 # hydra
 hydra:

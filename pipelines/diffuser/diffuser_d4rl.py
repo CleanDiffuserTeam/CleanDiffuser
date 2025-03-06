@@ -114,6 +114,15 @@ if __name__ == "__main__":
     obs_dim, act_dim = dataset.obs_dim, dataset.act_dim
 
     # --- Create Diffusion Model ---
+    # nn_diffusion = JannerUNet1d(
+    #     x_dim=obs_dim + act_dim,
+    #     emb_dim=32,
+    #     model_dim=32,
+    #     kernel_size=5,
+    #     dim_mult=args.task.dim_mult,
+    #     attention=False,
+    #     timestep_emb_type="untrainable_fourier",
+    # )
     nn_diffusion = DiT1d(
         x_dim=obs_dim + act_dim,
         x_seq_len=horizon,
@@ -168,6 +177,7 @@ if __name__ == "__main__":
             max_steps=training_steps,
             default_root_dir=save_path,
             callbacks=[callback],
+            logger=wandb_logger,
             strategy="ddp_find_unused_parameters_true",
         )
 
@@ -235,5 +245,4 @@ if __name__ == "__main__":
         ]
         episode_rewards = np.array(episode_rewards).mean(-1) * 100.0
         print(f"Score: {episode_rewards.mean():.3f}±{episode_rewards.std():.3f}")
-
         env_eval.close()

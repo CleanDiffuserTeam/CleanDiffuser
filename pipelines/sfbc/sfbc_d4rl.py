@@ -177,6 +177,7 @@ if __name__ == "__main__":
             max_steps=training_steps,
             default_root_dir=save_path,
             callbacks=[callback],
+            logger=wandb_logger
         )
 
         trainer.fit(actor, dataloader)

@@ -11,18 +11,18 @@ seed: 0
 normalize_reward: True
 
 # Training
-bc_training_steps: 10000
-iql_training_steps: 10000
-save_interval: 10000
+bc_training_steps: 1000000
+iql_training_steps: 1000000
+save_interval: 200000
 
 # Inference
-bc_ckpt: 10000
-iql_ckpt: 10000
+bc_ckpt: 1000000
+iql_ckpt: 1000000
 solver: ddpm
-iql_from_pretrain: True
+iql_from_pretrain: False  # Must be False for now! We will fix this later.
 sampling_steps: 5
 num_envs: 50
-num_episodes: 1
+num_episodes: 3
 num_candidates: 256
 
 # hydra
