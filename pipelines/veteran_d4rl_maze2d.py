@@ -11,7 +11,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 
 from cleandiffuser.classifier import CumRewClassifier
-from cleandiffuser.dataset.d4rl_maze2d_dataset import D4RLMaze2DSeqDataset
+from cleandiffuser.dataset.d4rl_maze2d_dataset import DV_D4RLMaze2DSeqDataset
 from cleandiffuser.dataset.dataset_utils import loop_dataloader, loop_two_dataloaders
 from cleandiffuser.diffusion import ContinuousDiffusionSDE, DiscreteDiffusionSDE
 from cleandiffuser.invdynamic import MlpInvDynamic
@@ -76,12 +76,12 @@ def pipeline(args):
 
     # ---------------------- Create Dataset ----------------------
     env = gym.make(args.task.env_name)
-    planner_dataset = D4RLMaze2DSeqDataset(
+    planner_dataset = DV_D4RLMaze2DSeqDataset(
         env.get_dataset(), horizon=args.task.planner_horizon, discount=args.reward_mode.discount, 
         continous_reward_at_done=args.reward_mode.continous_reward_at_done, reward_tune=args.reward_mode.reward_tune, 
         stride=args.task.stride, learn_policy=False, center_mapping=(args.guidance_type!="cfg")
     )
-    policy_dataset = D4RLMaze2DSeqDataset(
+    policy_dataset = DV_D4RLMaze2DSeqDataset(
         env.get_dataset(), horizon=args.task.planner_horizon, discount=args.reward_mode.discount, 
         continous_reward_at_done=args.reward_mode.continous_reward_at_done, reward_tune=args.reward_mode.reward_tune, 
         stride=args.task.stride, learn_policy=True, center_mapping=(args.guidance_type!="cfg")
