@@ -6,6 +6,7 @@ import torch.nn as nn
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
 from cleandiffuser.utils import GroupNorm1d
 
+__all__ = ["PearceMlp"]
 
 class TimeSiren(nn.Module):
     def __init__(self, input_dim, emb_dim):

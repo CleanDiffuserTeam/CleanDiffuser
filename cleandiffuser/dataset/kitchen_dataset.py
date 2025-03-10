@@ -81,12 +81,19 @@ class KitchenDataset(BaseDataset):
 
                 self.replay_buffer = ReplayBuffer.create_empty_numpy()
 
-                for i, mjl_path in enumerate(tqdm(list((data_directory / "kitchen_demos_multitask").glob("*/*.mjl")))):
+                for i, mjl_path in enumerate(
+                    tqdm(list((data_directory / "kitchen_demos_multitask").glob("*/*.mjl")))
+                ):
                     try:
                         data = parse_mjl_logs(str(mjl_path.absolute()), skipamount=40)
                         qpos = data["qpos"].astype(np.float32)
                         obs = np.concatenate(
-                            [qpos[:, :9], qpos[:, -21:], np.zeros((len(qpos), 30), dtype=np.float32)], axis=-1
+                            [
+                                qpos[:, :9],
+                                qpos[:, -21:],
+                                np.zeros((len(qpos), 30), dtype=np.float32),
+                            ],
+                            axis=-1,
                         )
                         if robot_noise_ratio > 0:
                             # add observation noise to match real robot
@@ -104,13 +111,19 @@ class KitchenDataset(BaseDataset):
                 self.state_normalizer = MinMaxNormalizer(self.replay_buffer.root["data"]["state"])
                 self.action_normalizer = MinMaxNormalizer(self.replay_buffer.root["data"]["action"])
 
-                normalized_states = self.state_normalizer.normalize(self.replay_buffer.root["data"]["state"])
-                normalized_actions = self.action_normalizer.normalize(self.replay_buffer.root["data"]["action"])
+                normalized_states = self.state_normalizer.normalize(
+                    self.replay_buffer.root["data"]["state"]
+                )
+                normalized_actions = self.action_normalizer.normalize(
+                    self.replay_buffer.root["data"]["action"]
+                )
 
                 with h5py.File(data_directory / "kitchen_abs_action_dataset.hdf5", "w") as f:
                     f.create_dataset("state", data=normalized_states)
                     f.create_dataset("action", data=normalized_actions)
-                    f.create_dataset("episode_ends", data=self.replay_buffer.root["meta"]["episode_ends"])
+                    f.create_dataset(
+                        "episode_ends", data=self.replay_buffer.root["meta"]["episode_ends"]
+                    )
                     f.create_dataset("state_normalizer_min", data=self.state_normalizer.min)
                     f.create_dataset("state_normalizer_max", data=self.state_normalizer.max)
                     f.create_dataset("action_normalizer_min", data=self.action_normalizer.min)
@@ -118,7 +131,7 @@ class KitchenDataset(BaseDataset):
 
             else:
                 print("Abs action dataset found. Loading...")
-                
+
             with h5py.File(data_directory / "kitchen_abs_action_dataset.hdf5", "r") as f:
                 dataset = {
                     "data": {
@@ -158,7 +171,10 @@ class KitchenDataset(BaseDataset):
                 self.replay_buffer.add_episode(data)
 
         self.sampler = SequenceSampler(
-            replay_buffer=self.replay_buffer, sequence_length=horizon, pad_before=pad_before, pad_after=pad_after
+            replay_buffer=self.replay_buffer,
+            sequence_length=horizon,
+            pad_before=pad_before,
+            pad_after=pad_after,
         )
 
         self.horizon = horizon
@@ -166,7 +182,10 @@ class KitchenDataset(BaseDataset):
         self.pad_after = pad_after
 
         self.normalizer = self.get_normalizer()
-        self.obs_dim, self.act_dim = self.replay_buffer["state"].shape[-1], self.replay_buffer["action"].shape[-1]
+        self.obs_dim, self.act_dim = (
+            self.replay_buffer["state"].shape[-1],
+            self.replay_buffer["action"].shape[-1],
+        )
 
     def get_normalizer(self):
         return {"state": self.state_normalizer, "action": self.action_normalizer}

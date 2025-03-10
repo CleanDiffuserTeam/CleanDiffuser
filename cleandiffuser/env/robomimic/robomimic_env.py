@@ -52,7 +52,10 @@ class RobomimicEnv(gym.Env):
         if is_dual_arm:
             obs_dict["low_dim"].extend(["robot1_eef_pos", "robot1_eef_quat", "robot1_gripper_qpos"])
         if use_image_obs:
-            obs_dict["rgb"] = [self._third_person_camera_name + "_image", "robot0_eye_in_hand_image"]
+            obs_dict["rgb"] = [
+                self._third_person_camera_name + "_image",
+                "robot0_eye_in_hand_image",
+            ]
             if is_dual_arm:
                 obs_dict["rgb"].extend(["robot1_eye_in_hand_image"])
 

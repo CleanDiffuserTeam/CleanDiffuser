@@ -82,9 +82,9 @@ class CMCurriculumLogger:
                 * (self.sigma_max ** (1 / self.rho) - self.sigma_min ** (1 / self.rho))
             ) ** self.rho
 
-            self.p_sigmas = erf((np.log(self.sigmas[1:]) - self.P_mean) / (self.P_std * (2**0.5))) - erf(
-                (np.log(self.sigmas[:-1]) - self.P_mean) / (self.P_std * (2**0.5))
-            )
+            self.p_sigmas = erf(
+                (np.log(self.sigmas[1:]) - self.P_mean) / (self.P_std * (2**0.5))
+            ) - erf((np.log(self.sigmas[:-1]) - self.P_mean) / (self.P_std * (2**0.5)))
             self.p_sigmas = self.p_sigmas / self.p_sigmas.sum()
 
     def incremental_update_k(self):
@@ -195,12 +195,22 @@ class ContinuousConsistencyModel(DiffusionModel):
         edm: Optional[ContinuousEDM] = None,
         distillation_N: int = 18,
     ):
-        super().__init__(nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate, optimizer_params)
+        super().__init__(
+            nn_diffusion,
+            nn_condition,
+            fix_mask,
+            loss_weight,
+            classifier,
+            ema_rate,
+            optimizer_params,
+        )
 
         self.sigma_data, self.sigma_min, self.sigma_max = sigma_data, sigma_min, sigma_max
         self.rho, self.P_mean, self.P_std = rho, P_mean, P_std
 
-        self.cur_logger = CMCurriculumLogger(s0, s1, curriculum_cycle, sigma_min, sigma_max, rho, P_mean, P_std)
+        self.cur_logger = CMCurriculumLogger(
+            s0, s1, curriculum_cycle, sigma_min, sigma_max, rho, P_mean, P_std
+        )
 
         self.pseudo_huber_constant = 0.01 if data_dim is None else 0.00054 * np.sqrt(data_dim)
 
@@ -228,10 +238,14 @@ class ContinuousConsistencyModel(DiffusionModel):
         ]
         differences = compare_properties(self, self.edm, checklist)
         if len(differences) != 0:
-            raise ValueError(f"Properties {differences} are different between the EDM and the Consistency Model.")
+            raise ValueError(
+                f"Properties {differences} are different between the EDM and the Consistency Model."
+            )
         self.model.load_state_dict(self.edm.model.state_dict())
         self.model_ema.load_state_dict(self.edm.model_ema.state_dict())
-        self.distillation_sigmas = nn.Parameter(self.training_noise_schedule(self.distillation_N), requires_grad=False)
+        self.distillation_sigmas = nn.Parameter(
+            self.training_noise_schedule(self.distillation_N), requires_grad=False
+        )
 
     @property
     def supported_solvers(self):
@@ -244,7 +258,9 @@ class ContinuousConsistencyModel(DiffusionModel):
     def training_noise_schedule(self, N):
         sigma = (
             self.sigma_min ** (1 / self.rho)
-            + np.arange(N + 1) / N * (self.sigma_max ** (1 / self.rho) - self.sigma_min ** (1 / self.rho))
+            + np.arange(N + 1)
+            / N
+            * (self.sigma_max ** (1 / self.rho) - self.sigma_min ** (1 / self.rho))
         ) ** self.rho
         return torch.tensor(sigma, device=self.device, dtype=torch.float32)
 
@@ -285,8 +301,12 @@ class ContinuousConsistencyModel(DiffusionModel):
         x_m, t_m, eps = self.edm.add_noise(x0, t_m, None)
 
         with torch.no_grad():
-            condition_vec_cfg = self.edm.model_ema["condition"](condition) if condition is not None else None
-            pred = self.edm.classifier_free_guidance(x_m, t_m, self.edm.model_ema, condition_vec_cfg, 1.0)
+            condition_vec_cfg = (
+                self.edm.model_ema["condition"](condition) if condition is not None else None
+            )
+            pred = self.edm.classifier_free_guidance(
+                x_m, t_m, self.edm.model_ema, condition_vec_cfg, 1.0
+            )
             dot_x = (x_m - pred) / at_least_ndim(t_m, x_m.dim())
             delta_t = t_m - t_n
             x_n = x_m - dot_x * at_least_ndim(delta_t, x_m.dim())
@@ -295,7 +315,9 @@ class ContinuousConsistencyModel(DiffusionModel):
         condition_vec = self.model["condition"](condition) if condition is not None else None
         pred_x_m = self.f(x_m, t_m, condition_vec, self.model)
         with torch.no_grad():
-            condition_vec_ema = self.model_ema["condition"](condition) if condition is not None else None
+            condition_vec_ema = (
+                self.model_ema["condition"](condition) if condition is not None else None
+            )
             pred_x_n = self.f(x_n, t_n, condition_vec_ema, self.model_ema)
 
         loss = (
@@ -307,7 +329,9 @@ class ContinuousConsistencyModel(DiffusionModel):
 
         return loss.mean(), 0.0
 
-    def consistency_training_loss(self, x0: torch.Tensor, condition: Optional[Union[torch.Tensor, TensorDict]] = None):
+    def consistency_training_loss(
+        self, x0: torch.Tensor, condition: Optional[Union[torch.Tensor, TensorDict]] = None
+    ):
         idx = np.random.choice(self.cur_logger.Nk, size=x0.shape[0], p=self.cur_logger.p_sigmas)
 
         # m = n + 1
@@ -374,7 +398,9 @@ class ContinuousConsistencyModel(DiffusionModel):
         requires_grad: bool = False,
         preserve_history: bool = False,
     ):
-        assert w_cg == 0.0 and condition_cg is None, "Consistency Models do not support classifier guidance."
+        assert w_cg == 0.0 and condition_cg is None, (
+            "Consistency Models do not support classifier guidance."
+        )
 
         # ===================== Initialization =====================
         n_samples = prior.shape[0]
@@ -385,7 +411,9 @@ class ContinuousConsistencyModel(DiffusionModel):
         prior = prior.to(self.device)
         if isinstance(warm_start_reference, torch.Tensor) and 0.0 < warm_start_forward_level < 1.0:
             warm_start_reference = warm_start_reference.to(self.device)
-            fwd_sigma = self.sigma_min + (warm_start_forward_level * (self.sigma_max - self.sigma_min))
+            fwd_sigma = self.sigma_min + (
+                warm_start_forward_level * (self.sigma_max - self.sigma_min)
+            )
             xt = warm_start_reference + fwd_sigma * torch.randn_like(warm_start_reference)
         else:
             fwd_sigma = self.sigma_max
@@ -396,7 +424,9 @@ class ContinuousConsistencyModel(DiffusionModel):
             log["sample_history"].append(xt.cpu().numpy())
 
         with torch.set_grad_enabled(requires_grad):
-            condition_vec_cfg = model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
+            condition_vec_cfg = (
+                model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
+            )
 
         # ===================== Sampling Schedule ====================
         t_schedule = (
@@ -421,7 +451,9 @@ class ContinuousConsistencyModel(DiffusionModel):
 
             for i in reversed(loop_steps):
                 t = torch.full((n_samples,), sigmas[i], dtype=xt.dtype, device=self.device)
-                xt = pred_x + (at_least_ndim(t, xt.dim()) ** 2 - self.sigma_min**2).sqrt() * torch.randn_like(xt)
+                xt = pred_x + (
+                    at_least_ndim(t, xt.dim()) ** 2 - self.sigma_min**2
+                ).sqrt() * torch.randn_like(xt)
                 xt = xt * (1.0 - self.fix_mask) + prior * self.fix_mask
 
                 pred_x = self.f(xt, t, condition_vec_cfg, model)

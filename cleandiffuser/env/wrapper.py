@@ -1,22 +1,29 @@
-import gym
-from gym import spaces
-import numpy as np
+# TODO: Delete this file?
+
 from collections import defaultdict, deque
+
 import dill
+import gym
+import numpy as np
+from gym import spaces
+
 from cleandiffuser.env.utils import VideoRecorder
 
 # ------------------ MultiStepWrapper ------------------------
 
+
 def stack_repeated(x, n):
-    return np.repeat(np.expand_dims(x,axis=0),n,axis=0)
+    return np.repeat(np.expand_dims(x, axis=0), n, axis=0)
+
 
 def repeated_box(box_space, n):
     return spaces.Box(
         low=stack_repeated(box_space.low, n),
         high=stack_repeated(box_space.high, n),
         shape=(n,) + box_space.shape,
-        dtype=box_space.dtype
+        dtype=box_space.dtype,
     )
+
 
 def repeated_space(space, n):
     if isinstance(space, spaces.Box):
@@ -27,12 +34,14 @@ def repeated_space(space, n):
             result_space[key] = repeated_space(value, n)
         return result_space
     else:
-        raise RuntimeError(f'Unsupported space type {type(space)}')
+        raise RuntimeError(f"Unsupported space type {type(space)}")
+
 
 def take_last_n(x, n):
     x = list(x)
     n = min(len(x), n)
     return np.array(x[-n:])
+
 
 def dict_take_last_n(x, n):
     result = dict()
@@ -40,25 +49,26 @@ def dict_take_last_n(x, n):
         result[key] = take_last_n(value, n)
     return result
 
-def aggregate(data, method='max'):
-    if method == 'max':
+
+def aggregate(data, method="max"):
+    if method == "max":
         # equivalent to any
         return np.max(data)
-    elif method == 'min':
+    elif method == "min":
         # equivalent to all
         return np.min(data)
-    elif method == 'mean':
+    elif method == "mean":
         return np.mean(data)
-    elif method == 'sum':
+    elif method == "sum":
         return np.sum(data)
     else:
         raise NotImplementedError()
 
+
 def stack_last_n_obs(all_obs, n_steps):
-    assert(len(all_obs) > 0)
+    assert len(all_obs) > 0
     all_obs = list(all_obs)
-    result = np.zeros((n_steps,) + all_obs[-1].shape, 
-        dtype=all_obs[-1].dtype)
+    result = np.zeros((n_steps,) + all_obs[-1].shape, dtype=all_obs[-1].dtype)
     start_idx = -min(n_steps, len(all_obs))
     result[start_idx:] = np.array(all_obs[start_idx:])
     if n_steps > len(all_obs):
@@ -66,14 +76,11 @@ def stack_last_n_obs(all_obs, n_steps):
         result[:start_idx] = result[start_idx]
     return result
 
+
 class MultiStepWrapper(gym.Wrapper):
-    def __init__(self, 
-            env, 
-            n_obs_steps, 
-            n_action_steps, 
-            max_episode_steps=None,
-            reward_agg_method='max'
-        ):
+    def __init__(
+        self, env, n_obs_steps, n_action_steps, max_episode_steps=None, reward_agg_method="max"
+    ):
         super().__init__(env)
         self._action_space = repeated_space(env.action_space, n_action_steps)
         self._observation_space = repeated_space(env.observation_space, n_obs_steps)
@@ -82,19 +89,19 @@ class MultiStepWrapper(gym.Wrapper):
         self.n_action_steps = n_action_steps
         self.reward_agg_method = reward_agg_method
 
-        self.obs = deque(maxlen=n_obs_steps+1)
+        self.obs = deque(maxlen=n_obs_steps + 1)
         self.reward = list()
         self.done = list()
-        self.info = defaultdict(lambda : deque(maxlen=n_obs_steps+1))
-    
+        self.info = defaultdict(lambda: deque(maxlen=n_obs_steps + 1))
+
     def reset(self):
         """Resets the environment using kwargs."""
         obs = super().reset()
 
-        self.obs = deque([obs], maxlen=self.n_obs_steps+1)
+        self.obs = deque([obs], maxlen=self.n_obs_steps + 1)
         self.reward = list()
         self.done = list()
-        self.info = defaultdict(lambda : deque(maxlen=self.n_obs_steps+1))
+        self.info = defaultdict(lambda: deque(maxlen=self.n_obs_steps + 1))
 
         obs = self._get_obs(self.n_obs_steps)
         return obs
@@ -111,8 +118,9 @@ class MultiStepWrapper(gym.Wrapper):
 
             self.obs.append(observation)
             self.reward.append(reward)
-            if (self.max_episode_steps is not None) \
-                and (len(self.reward) >= self.max_episode_steps):
+            if (self.max_episode_steps is not None) and (
+                len(self.reward) >= self.max_episode_steps
+            ):
                 # truncation
                 done = True
             self.done.append(done)
@@ -120,7 +128,7 @@ class MultiStepWrapper(gym.Wrapper):
 
         observation = self._get_obs(self.n_obs_steps)
         reward = aggregate(self.reward, self.reward_agg_method)
-        done = aggregate(self.done, 'max')
+        done = aggregate(self.done, "max")
         info = dict_take_last_n(self.info, self.n_obs_steps)
         return observation, reward, done, info
 
@@ -128,52 +136,45 @@ class MultiStepWrapper(gym.Wrapper):
         """
         Output (n_steps,) + obs_shape
         """
-        assert(len(self.obs) > 0)
+        assert len(self.obs) > 0
         if isinstance(self.observation_space, spaces.Box):
             return stack_last_n_obs(self.obs, n_steps)
         elif isinstance(self.observation_space, spaces.Dict):
             result = dict()
             for key in self.observation_space.keys():
-                result[key] = stack_last_n_obs(
-                    [obs[key] for obs in self.obs],
-                    n_steps
-                )
+                result[key] = stack_last_n_obs([obs[key] for obs in self.obs], n_steps)
             return result
         else:
-            raise RuntimeError('Unsupported space type')
+            raise RuntimeError("Unsupported space type")
 
     def _add_info(self, info):
         for key, value in info.items():
             self.info[key].append(value)
-    
+
     def get_rewards(self):
         return self.reward
-    
+
     def get_attr(self, name):
         return getattr(self, name)
 
     def run_dill_function(self, dill_fn):
         fn = dill.loads(dill_fn)
         return fn(self)
-    
+
     def get_infos(self):
         result = dict()
         for k, v in self.info.items():
             result[k] = list(v)
         return result
-    
+
+
 # ------------------ VideoWrapper ------------------------
 
+
 class VideoWrapper(gym.Wrapper):
-    def __init__(self, 
-            env, 
-            mode='rgb_array',
-            enabled=True,
-            steps_per_render=1,
-            **kwargs
-        ):
+    def __init__(self, env, mode="rgb_array", enabled=True, steps_per_render=1, **kwargs):
         super().__init__(env)
-        
+
         self.mode = mode
         self.enabled = enabled
         self.render_kwargs = kwargs
@@ -187,41 +188,42 @@ class VideoWrapper(gym.Wrapper):
         self.frames = list()
         self.step_count = 1
         if self.enabled:
-            frame = self.env.render(
-                mode=self.mode, **self.render_kwargs)
+            frame = self.env.render(mode=self.mode, **self.render_kwargs)
             assert frame.dtype == np.uint8
             self.frames.append(frame)
         return obs
-    
+
     def step(self, action):
         result = super().step(action)
         self.step_count += 1
         if self.enabled and ((self.step_count % self.steps_per_render) == 0):
-            frame = self.env.render(
-                mode=self.mode, **self.render_kwargs)
+            frame = self.env.render(mode=self.mode, **self.render_kwargs)
             assert frame.dtype == np.uint8
             self.frames.append(frame)
         return result
-    
-    def render(self, mode='rgb_array', **kwargs):
+
+    def render(self, mode="rgb_array", **kwargs):
         return self.frames
+
 
 # ------------------ VideoRecordingWrapper ------------------------
 
+
 class VideoRecordingWrapper(gym.Wrapper):
-    def __init__(self, 
-            env, 
-            video_recoder: VideoRecorder,
-            mode='rgb_array',
-            file_path=None,
-            steps_per_render=1,
-            **kwargs
-        ):
+    def __init__(
+        self,
+        env,
+        video_recoder: VideoRecorder,
+        mode="rgb_array",
+        file_path=None,
+        steps_per_render=1,
+        **kwargs,
+    ):
         """
         When file_path is None, don't record.
         """
         super().__init__(env)
-        
+
         self.mode = mode
         self.render_kwargs = kwargs
         self.steps_per_render = steps_per_render
@@ -236,22 +238,20 @@ class VideoRecordingWrapper(gym.Wrapper):
         self.step_count = 1
         self.video_recoder.stop()
         return obs
-    
+
     def step(self, action):
         result = super().step(action)
         self.step_count += 1
-        if self.file_path is not None \
-            and ((self.step_count % self.steps_per_render) == 0):
+        if self.file_path is not None and ((self.step_count % self.steps_per_render) == 0):
             if not self.video_recoder.is_ready():
                 self.video_recoder.start(self.file_path)
 
-            frame = self.env.render(
-                mode=self.mode, **self.render_kwargs)
+            frame = self.env.render(mode=self.mode, **self.render_kwargs)
             assert frame.dtype == np.uint8
             self.video_recoder.write_frame(frame)
         return result
-    
-    def render(self, mode='rgb_array', **kwargs):
+
+    def render(self, mode="rgb_array", **kwargs):
         if self.video_recoder.is_ready():
             self.video_recoder.stop()
         return self.file_path

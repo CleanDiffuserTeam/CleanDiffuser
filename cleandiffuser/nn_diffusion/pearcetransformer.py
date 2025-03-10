@@ -5,6 +5,8 @@ import torch.nn as nn
 
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
 
+__all__ = ["PearceTransformer"]
+
 
 class TimeSiren(nn.Module):
     def __init__(self, input_dim, emb_dim):
@@ -81,7 +83,9 @@ class TransformerEncoderBlock(nn.Module):
 class EmbeddingBlock(nn.Module):
     def __init__(self, in_dim: int, emb_dim: int):
         super().__init__()
-        self.model = nn.Sequential(nn.Linear(in_dim, emb_dim), nn.LeakyReLU(), nn.Linear(emb_dim, emb_dim))
+        self.model = nn.Sequential(
+            nn.Linear(in_dim, emb_dim), nn.LeakyReLU(), nn.Linear(emb_dim, emb_dim)
+        )
 
     def forward(self, x):
         return self.model(x)
@@ -134,13 +138,17 @@ class PearceTransformer(BaseNNDiffusion):
         self.emb_dim = emb_dim
         self.d_model = d_model
         self.condition_horizon = condition_horizon
-        self.act_emb = nn.Sequential(nn.Linear(x_dim, emb_dim), nn.LeakyReLU(), nn.Linear(emb_dim, emb_dim))
+        self.act_emb = nn.Sequential(
+            nn.Linear(x_dim, emb_dim), nn.LeakyReLU(), nn.Linear(emb_dim, emb_dim)
+        )
 
         self.act_to_input = nn.Linear(emb_dim, d_model)
         self.t_to_input = nn.Linear(emb_dim, d_model)
         self.cond_to_input = nn.Linear(emb_dim, d_model)
 
-        self.pos_embed = nn.Parameter(torch.randn((1, 2 + condition_horizon, d_model)), requires_grad=True)
+        self.pos_embed = nn.Parameter(
+            torch.randn((1, 2 + condition_horizon, d_model)), requires_grad=True
+        )
 
         self.transformer_blocks = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
@@ -159,7 +167,9 @@ class PearceTransformer(BaseNNDiffusion):
         x_e, t_e = self.act_emb(x), self.map_noise(t)
         x_input, t_input = self.act_to_input(x_e), self.t_to_input(t_e)
         if condition is None:
-            c_input = torch.zeros((x.shape[0], self.condition_horizon, self.d_model), device=x.device)
+            c_input = torch.zeros(
+                (x.shape[0], self.condition_horizon, self.d_model), device=x.device
+            )
         else:
             c_input = self.cond_to_input(condition)
         tfm_in = torch.cat([x_input.unsqueeze(1), t_input.unsqueeze(1), c_input], dim=1)

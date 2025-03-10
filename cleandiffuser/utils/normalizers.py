@@ -1,9 +1,9 @@
+import pickle as pkl
 from typing import Optional
 
 import numpy as np
-import pickle as pkl
 
-from .utils import at_least_ndim
+from cleandiffuser.utils import at_least_ndim
 
 
 class EmptyNormalizer:
@@ -57,7 +57,9 @@ class GaussianNormalizer(EmptyNormalizer):
         x_std: Optional[np.ndarray] = None,
     ):
         if X is None:
-            assert x_mean is not None and x_std is not None, "x_mean and x_std must be provided if X is None"
+            assert x_mean is not None and x_std is not None, (
+                "x_mean and x_std must be provided if X is None"
+            )
             self.mean = x_mean
             self.std = x_std
         else:
@@ -129,7 +131,9 @@ class MinMaxNormalizer(EmptyNormalizer):
         X_min: Optional[np.ndarray] = None,
     ):
         if X is None:
-            assert X_max is not None and X_min is not None, "X_max and X_min must be provided if X is None"
+            assert X_max is not None and X_min is not None, (
+                "X_max and X_min must be provided if X is None"
+            )
         else:
             total_dims = X.ndim
             if start_dim < 0:
@@ -160,7 +164,13 @@ class MinMaxNormalizer(EmptyNormalizer):
     def save(self, file: str):
         with open(file, "wb") as f:
             pkl.dump(
-                {"name": "MinMaxNormalizer", "min": self.min, "max": self.max, "range": self.range, "mask": self.mask},
+                {
+                    "name": "MinMaxNormalizer",
+                    "min": self.min,
+                    "max": self.max,
+                    "range": self.range,
+                    "mask": self.mask,
+                },
                 f,
             )
 

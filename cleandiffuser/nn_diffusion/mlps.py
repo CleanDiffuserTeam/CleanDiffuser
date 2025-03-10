@@ -6,6 +6,7 @@ import torch.nn as nn
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
 from cleandiffuser.utils import Mlp
 
+__all__ = ["MlpNNDiffusion"]
 
 class MlpNNDiffusion(BaseNNDiffusion):
     """Mlp diffusion model backbone.

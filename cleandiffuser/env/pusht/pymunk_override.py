@@ -21,12 +21,12 @@
 # SOFTWARE.
 # ----------------------------------------------------------------------------
 
-"""This submodule contains helper functions to help with quick prototyping 
+"""This submodule contains helper functions to help with quick prototyping
 using pymunk together with pygame.
 
 Intended to help with debugging and prototyping, not for actual production use
-in a full application. The methods contained in this module is opinionated 
-about your coordinate system and not in any way optimized. 
+in a full application. The methods contained in this module is opinionated
+about your coordinate system and not in any way optimized.
 """
 
 __docformat__ = "reStructuredText"
@@ -42,10 +42,8 @@ __all__ = [
 
 from typing import List, Sequence, Tuple
 
-import pygame
-
 import numpy as np
-
+import pygame
 import pymunk
 from pymunk.space_debug_draw_options import SpaceDebugColor
 from pymunk.vec2d import Vec2d
@@ -137,7 +135,7 @@ class DrawOptions(pymunk.SpaceDebugDrawOptions):
         p = to_pygame(pos, self.surface)
 
         pygame.draw.circle(self.surface, fill_color.as_int(), p, round(radius), 0)
-        pygame.draw.circle(self.surface, light_color(fill_color).as_int(), p, round(radius-4), 0)
+        pygame.draw.circle(self.surface, light_color(fill_color).as_int(), p, round(radius - 4), 0)
 
         circle_edge = pos + Vec2d(radius, 0).rotated(angle)
         p2 = to_pygame(circle_edge, self.surface)
@@ -209,9 +207,7 @@ class DrawOptions(pymunk.SpaceDebugDrawOptions):
                 b = verts[(i + 1) % len(verts)]
                 self.draw_fat_segment(a, b, radius, fill_color, fill_color)
 
-    def draw_dot(
-        self, size: float, pos: Tuple[float, float], color: SpaceDebugColor
-    ) -> None:
+    def draw_dot(self, size: float, pos: Tuple[float, float], color: SpaceDebugColor) -> None:
         p = to_pygame(pos, self.surface)
         pygame.draw.circle(self.surface, color.as_int(), p, round(size), 0)
 

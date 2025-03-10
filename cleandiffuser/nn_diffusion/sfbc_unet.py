@@ -3,7 +3,9 @@ from typing import List, Optional
 import torch
 import torch.nn as nn
 
-from .base_nn_diffusion import BaseNNDiffusion
+from cleandiffuser.nn_diffusion.base_nn_diffusion import BaseNNDiffusion
+
+__all__ = ["SfBCUNet"]
 
 
 class ResidualBlock(nn.Module):
@@ -28,7 +30,7 @@ class SfBCUNet(BaseNNDiffusion):
         x_dim (int):
             The dimension of the input. It is referred to as the dimension of `action` in SfBC.
         emb_dim (int):
-            The dimension of the timestep embedding and condition embedding. 
+            The dimension of the timestep embedding and condition embedding.
             The condition is referred to as `observation` in SfBC. It should be in the shape of (b, emb_dim).
         hidden_dims (List[int]):
             The hidden dimensions of the mlp.
@@ -59,7 +61,9 @@ class SfBCUNet(BaseNNDiffusion):
         super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
         n_layers = len(hidden_dims)
 
-        self.t_layer = nn.Sequential(nn.Linear(emb_dim, emb_dim), nn.SiLU(), nn.Linear(emb_dim, emb_dim))
+        self.t_layer = nn.Sequential(
+            nn.Linear(emb_dim, emb_dim), nn.SiLU(), nn.Linear(emb_dim, emb_dim)
+        )
 
         self.down_blocks = nn.ModuleList()
         self.up_blocks = nn.ModuleList()
@@ -72,7 +76,9 @@ class SfBCUNet(BaseNNDiffusion):
         self.mid_block = ResidualBlock(in_dim, in_dim, emb_dim)
 
         for i in range(n_layers - 1):
-            self.up_blocks.append(ResidualBlock(in_dim + hidden_dims[-1 - i], hidden_dims[-2 - i], emb_dim))
+            self.up_blocks.append(
+                ResidualBlock(in_dim + hidden_dims[-1 - i], hidden_dims[-2 - i], emb_dim)
+            )
             in_dim = hidden_dims[-2 - i]
 
         self.out_layer = nn.Linear(in_dim, x_dim)

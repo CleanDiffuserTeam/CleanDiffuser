@@ -63,7 +63,15 @@ class BaseDiffusionSDE(DiffusionModel):
         x_min: Optional[torch.Tensor] = None,
         predict_noise: bool = True,
     ):
-        super().__init__(nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate, optimizer_params)
+        super().__init__(
+            nn_diffusion,
+            nn_condition,
+            fix_mask,
+            loss_weight,
+            classifier,
+            ema_rate,
+            optimizer_params,
+        )
 
         self.predict_noise = predict_noise
         self.epsilon = epsilon
@@ -94,7 +102,9 @@ class BaseDiffusionSDE(DiffusionModel):
 
     # ==================== Sampling: Solving SDE/ODE ======================
 
-    def classifier_guidance(self, xt, t, alpha, sigma, model, condition=None, w: float = 1.0, pred=None):
+    def classifier_guidance(
+        self, xt, t, alpha, sigma, model, condition=None, w: float = 1.0, pred=None
+    ):
         """
         Guided Sampling CG:
         bar_eps = eps - w * sigma * grad
@@ -168,7 +178,9 @@ class BaseDiffusionSDE(DiffusionModel):
                 if pred is None or pred_uncond is None:
                     condition = dict_apply(condition, concat_zeros, dim=0)
 
-                    pred_all = model["diffusion"](einops.repeat(xt, "b ... -> (2 b) ..."), t.repeat(2), condition)
+                    pred_all = model["diffusion"](
+                        einops.repeat(xt, "b ... -> (2 b) ..."), t.repeat(2), condition
+                    )
 
                     pred, pred_uncond = torch.chunk(pred_all, 2, dim=0)
 
@@ -210,7 +222,9 @@ class BaseDiffusionSDE(DiffusionModel):
         One-step epsilon/x0 prediction with guidance.
         """
 
-        pred = self.classifier_free_guidance(xt, t, model, condition_cfg, w_cfg, None, None, requires_grad)
+        pred = self.classifier_free_guidance(
+            xt, t, model, condition_cfg, w_cfg, None, None, requires_grad
+        )
 
         pred, logp = self.classifier_guidance(xt, t, alpha, sigma, model, condition_cg, w_cg, pred)
 
@@ -322,7 +336,9 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
 
         self.noise_scheduler = get_noise_scheduler(noise_schedule, **(noise_schedule_params or {}))
 
-        alpha, sigma = self.noise_scheduler.t_to_schedule(torch.linspace(0, 1, self.diffusion_steps + 1))
+        alpha, sigma = self.noise_scheduler.t_to_schedule(
+            torch.linspace(0, 1, self.diffusion_steps + 1)
+        )
 
         self.alpha = nn.Parameter(alpha, requires_grad=False)
         self.sigma = nn.Parameter(sigma, requires_grad=False)
@@ -330,7 +346,9 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
 
     # ==================== Training: Score Matching ======================
 
-    def add_noise(self, x0: torch.Tensor, t: Optional[torch.Tensor] = None, eps: Optional[torch.Tensor] = None):
+    def add_noise(
+        self, x0: torch.Tensor, t: Optional[torch.Tensor] = None, eps: Optional[torch.Tensor] = None
+    ):
         """Forward process of the diffusion model.
 
         Args:
@@ -351,10 +369,17 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
             eps (torch.Tensor):
                 The noise. shape: (batch_size, *x_shape).
         """
-        t = torch.randint(1, self.diffusion_steps + 1, (x0.shape[0],), device=self.device) if t is None else t
+        t = (
+            torch.randint(1, self.diffusion_steps + 1, (x0.shape[0],), device=self.device)
+            if t is None
+            else t
+        )
         eps = torch.randn_like(x0) if eps is None else eps
 
-        alpha, sigma = at_least_ndim(self.alpha[t], x0.dim()), at_least_ndim(self.sigma[t], x0.dim())
+        alpha, sigma = (
+            at_least_ndim(self.alpha[t], x0.dim()),
+            at_least_ndim(self.sigma[t], x0.dim()),
+        )
 
         xt = alpha * x0 + sigma * eps
         xt = (1.0 - self.fix_mask) * xt + self.fix_mask * x0
@@ -457,7 +482,9 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
             warm_start_reference = warm_start_reference.to(self.device)
             diffusion_steps = int(warm_start_forward_level * self.diffusion_steps)
             fwd_alpha, fwd_sigma = self.alpha[diffusion_steps], self.sigma[diffusion_steps]
-            xt = warm_start_reference * fwd_alpha + fwd_sigma * torch.randn_like(warm_start_reference)
+            xt = warm_start_reference * fwd_alpha + fwd_sigma * torch.randn_like(
+                warm_start_reference
+            )
             sampling_schedule_params["t_max"] = warm_start_forward_level
         else:
             xt = torch.randn_like(prior) * temperature
@@ -467,18 +494,24 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
             log["sample_history"].append(xt.cpu().numpy())
 
         with torch.set_grad_enabled(requires_grad):
-            condition_vec_cfg = model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
+            condition_vec_cfg = (
+                model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
+            )
             condition_vec_cg = condition_cg
 
         sampling_scheduler = get_sampling_scheduler(sampling_schedule, **sampling_schedule_params)
-        t_schedule = sampling_scheduler(sample_steps, device=self.device, **sampling_schedule_params)
+        t_schedule = sampling_scheduler(
+            sample_steps, device=self.device, **sampling_schedule_params
+        )
         t_schedule[1:] = t_schedule[1:].clamp(1, None)
 
         alphas = self.alpha[t_schedule.long()]
         sigmas = self.sigma[t_schedule.long()]
         logSNRs = self.logSNR[t_schedule.long()]
         hs = torch.zeros_like(logSNRs)
-        hs[1:] = logSNRs[:-1] - logSNRs[1:]  # hs[0] is not correctly calculated, but it will not be used.
+        hs[1:] = (
+            logSNRs[:-1] - logSNRs[1:]
+        )  # hs[0] is not correctly calculated, but it will not be used.
         stds = torch.zeros((sample_steps + 1,), device=self.device)
         stds[1:] = sigmas[:-1] / sigmas[1:] * (1 - (alphas[1:] / alphas[:-1]) ** 2).sqrt()
 
@@ -491,15 +524,30 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
 
             # guided sampling
             pred, logp = self.guided_sampling(
-                xt, t, alphas[i], sigmas[i], model, condition_vec_cfg, w_cfg, condition_vec_cg, w_cg, requires_grad
+                xt,
+                t,
+                alphas[i],
+                sigmas[i],
+                model,
+                condition_vec_cfg,
+                w_cfg,
+                condition_vec_cg,
+                w_cg,
+                requires_grad,
             )
 
             # clip the prediction
             pred = self.clip_prediction(pred, xt, alphas[i], sigmas[i])
 
             # noise & data prediction
-            eps_theta = pred if self.predict_noise else xtheta_to_epstheta(xt, alphas[i], sigmas[i], pred)
-            x_theta = pred if not self.predict_noise else epstheta_to_xtheta(xt, alphas[i], sigmas[i], pred)
+            eps_theta = (
+                pred if self.predict_noise else xtheta_to_epstheta(xt, alphas[i], sigmas[i], pred)
+            )
+            x_theta = (
+                pred
+                if not self.predict_noise
+                else epstheta_to_xtheta(xt, alphas[i], sigmas[i], pred)
+            )
 
             # one-step update
             if solver == "ddpm":
@@ -510,13 +558,20 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
                     xt += stds[i] * torch.randn_like(xt)
 
             elif solver == "ddim":
-                xt = alphas[i - 1] * ((xt - sigmas[i] * eps_theta) / alphas[i]) + sigmas[i - 1] * eps_theta
+                xt = (
+                    alphas[i - 1] * ((xt - sigmas[i] * eps_theta) / alphas[i])
+                    + sigmas[i - 1] * eps_theta
+                )
 
             elif solver == "ode_dpmsolver_1":
-                xt = (alphas[i - 1] / alphas[i]) * xt - sigmas[i - 1] * torch.expm1(hs[i]) * eps_theta
+                xt = (alphas[i - 1] / alphas[i]) * xt - sigmas[i - 1] * torch.expm1(
+                    hs[i]
+                ) * eps_theta
 
             elif solver == "ode_dpmsolver++_1":
-                xt = (sigmas[i - 1] / sigmas[i]) * xt - alphas[i - 1] * torch.expm1(-hs[i]) * x_theta
+                xt = (sigmas[i - 1] / sigmas[i]) * xt - alphas[i - 1] * torch.expm1(
+                    -hs[i]
+                ) * x_theta
 
             elif solver == "ode_dpmsolver++_2M":
                 buffer.append(x_theta)
@@ -525,7 +580,9 @@ class DiscreteDiffusionSDE(BaseDiffusionSDE):
                     D = (1 + 0.5 / r) * buffer[-1] - 0.5 / r * buffer[-2]
                     xt = (sigmas[i - 1] / sigmas[i]) * xt - alphas[i - 1] * torch.expm1(-hs[i]) * D
                 else:
-                    xt = (sigmas[i - 1] / sigmas[i]) * xt - alphas[i - 1] * torch.expm1(-hs[i]) * x_theta
+                    xt = (sigmas[i - 1] / sigmas[i]) * xt - alphas[i - 1] * torch.expm1(
+                        -hs[i]
+                    ) * x_theta
 
             elif solver == "sde_dpmsolver_1":
                 xt = (
@@ -680,7 +737,9 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
 
     # ==================== Training: Score Matching ======================
 
-    def add_noise(self, x0: torch.Tensor, t: Optional[torch.Tensor] = None, eps: Optional[torch.Tensor] = None):
+    def add_noise(
+        self, x0: torch.Tensor, t: Optional[torch.Tensor] = None, eps: Optional[torch.Tensor] = None
+    ):
         """Forward process of the diffusion model.
 
         Args:
@@ -808,7 +867,9 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
             fwd_alpha, fwd_sigma = self.noise_scheduler.t_to_schedule(
                 torch.tensor([warm_start_forward_level], device=prior.device)
             )
-            xt = warm_start_reference * fwd_alpha + fwd_sigma * torch.randn_like(warm_start_reference)
+            xt = warm_start_reference * fwd_alpha + fwd_sigma * torch.randn_like(
+                warm_start_reference
+            )
             sampling_schedule_params["t_max"] = warm_start_forward_level
         else:
             xt = torch.randn_like(prior) * temperature
@@ -818,16 +879,22 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
             log["sample_history"].append(xt.cpu().numpy())
 
         with torch.set_grad_enabled(requires_grad):
-            condition_vec_cfg = model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
+            condition_vec_cfg = (
+                model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
+            )
             condition_vec_cg = condition_cg
 
         sampling_scheduler = get_sampling_scheduler(sampling_schedule, **sampling_schedule_params)
-        t_schedule = sampling_scheduler(sample_steps, **sampling_schedule_params, device=self.device)
+        t_schedule = sampling_scheduler(
+            sample_steps, **sampling_schedule_params, device=self.device
+        )
 
         alphas, sigmas = self.noise_scheduler.t_to_schedule(t_schedule)
         logSNRs = torch.log(alphas / sigmas)
         hs = torch.zeros_like(logSNRs)
-        hs[1:] = logSNRs[:-1] - logSNRs[1:]  # hs[0] is not correctly calculated, but it will not be used.
+        hs[1:] = (
+            logSNRs[:-1] - logSNRs[1:]
+        )  # hs[0] is not correctly calculated, but it will not be used.
         stds = torch.zeros((sample_steps + 1,), device=self.device)
         stds[1:] = sigmas[:-1] / sigmas[1:] * (1 - (alphas[1:] / alphas[:-1]) ** 2).sqrt()
 
@@ -840,15 +907,30 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
 
             # guided sampling
             pred, logp = self.guided_sampling(
-                xt, t, alphas[i], sigmas[i], model, condition_vec_cfg, w_cfg, condition_vec_cg, w_cg, requires_grad
+                xt,
+                t,
+                alphas[i],
+                sigmas[i],
+                model,
+                condition_vec_cfg,
+                w_cfg,
+                condition_vec_cg,
+                w_cg,
+                requires_grad,
             )
 
             # clip the prediction
             pred = self.clip_prediction(pred, xt, alphas[i], sigmas[i])
 
             # transform to eps_theta
-            eps_theta = pred if self.predict_noise else xtheta_to_epstheta(xt, alphas[i], sigmas[i], pred)
-            x_theta = pred if not self.predict_noise else epstheta_to_xtheta(xt, alphas[i], sigmas[i], pred)
+            eps_theta = (
+                pred if self.predict_noise else xtheta_to_epstheta(xt, alphas[i], sigmas[i], pred)
+            )
+            x_theta = (
+                pred
+                if not self.predict_noise
+                else epstheta_to_xtheta(xt, alphas[i], sigmas[i], pred)
+            )
 
             # one-step update
             if solver == "ddpm":
@@ -859,13 +941,20 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
                     xt += stds[i] * torch.randn_like(xt)
 
             elif solver == "ddim":
-                xt = alphas[i - 1] * ((xt - sigmas[i] * eps_theta) / alphas[i]) + sigmas[i - 1] * eps_theta
+                xt = (
+                    alphas[i - 1] * ((xt - sigmas[i] * eps_theta) / alphas[i])
+                    + sigmas[i - 1] * eps_theta
+                )
 
             elif solver == "ode_dpmsolver_1":
-                xt = (alphas[i - 1] / alphas[i]) * xt - sigmas[i - 1] * torch.expm1(hs[i]) * eps_theta
+                xt = (alphas[i - 1] / alphas[i]) * xt - sigmas[i - 1] * torch.expm1(
+                    hs[i]
+                ) * eps_theta
 
             elif solver == "ode_dpmsolver++_1":
-                xt = (sigmas[i - 1] / sigmas[i]) * xt - alphas[i - 1] * torch.expm1(-hs[i]) * x_theta
+                xt = (sigmas[i - 1] / sigmas[i]) * xt - alphas[i - 1] * torch.expm1(
+                    -hs[i]
+                ) * x_theta
 
             elif solver == "ode_dpmsolver++_2M":
                 buffer.append(x_theta)
@@ -874,7 +963,9 @@ class ContinuousDiffusionSDE(BaseDiffusionSDE):
                     D = (1 + 0.5 / r) * buffer[-1] - 0.5 / r * buffer[-2]
                     xt = (sigmas[i - 1] / sigmas[i]) * xt - alphas[i - 1] * torch.expm1(-hs[i]) * D
                 else:
-                    xt = (sigmas[i - 1] / sigmas[i]) * xt - alphas[i - 1] * torch.expm1(-hs[i]) * x_theta
+                    xt = (sigmas[i - 1] / sigmas[i]) * xt - alphas[i - 1] * torch.expm1(
+                        -hs[i]
+                    ) * x_theta
 
             elif solver == "sde_dpmsolver_1":
                 xt = (

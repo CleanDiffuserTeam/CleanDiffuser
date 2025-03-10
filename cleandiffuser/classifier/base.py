@@ -14,9 +14,9 @@ class BaseClassifier(L.LightningModule):
     """
 
     def __init__(
-            self,
-            nn_classifier: BaseNNClassifier,
-            ema_rate: float = 0.995,
+        self,
+        nn_classifier: BaseNNClassifier,
+        ema_rate: float = 0.995,
     ):
         super().__init__()
         self.ema_rate = ema_rate
@@ -32,8 +32,7 @@ class BaseClassifier(L.LightningModule):
     def ema_update(self):
         with torch.no_grad():
             for p, p_ema in zip(self.model.parameters(), self.model_ema.parameters()):
-                p_ema.data.mul_(self.ema_rate).add_(
-                    p.data, alpha=1. - self.ema_rate)
+                p_ema.data.mul_(self.ema_rate).add_(p.data, alpha=1.0 - self.ema_rate)
 
     @staticmethod
     def ema_update_schedule(batch_idx: int):
@@ -49,7 +48,8 @@ class BaseClassifier(L.LightningModule):
         loss.backward()
         if isinstance(self.grad_clip_norm, float):
             grad_norm = torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), self.grad_clip_norm).item()
+                self.model.parameters(), self.grad_clip_norm
+            ).item()
         else:
             grad_norm = None
         self.optimizer.step()
@@ -79,10 +79,9 @@ class BaseClassifier(L.LightningModule):
         return logp.detach(), grad.detach()
 
     def save(self, path):
-        torch.save({
-            "model": self.model.state_dict(),
-            "model_ema": self.model_ema.state_dict()
-        }, path)
+        torch.save(
+            {"model": self.model.state_dict(), "model_ema": self.model_ema.state_dict()}, path
+        )
 
     def load(self, path):
         checkpoint = torch.load(path, map_location=self.device)

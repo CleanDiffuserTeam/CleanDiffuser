@@ -83,7 +83,15 @@ class ContinuousEDM(DiffusionModel):
         x_max: Optional[torch.Tensor] = None,
         x_min: Optional[torch.Tensor] = None,
     ):
-        super().__init__(nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate, optimizer_params)
+        super().__init__(
+            nn_diffusion,
+            nn_condition,
+            fix_mask,
+            loss_weight,
+            classifier,
+            ema_rate,
+            optimizer_params,
+        )
 
         self.sigma_data, self.sigma_min, self.sigma_max = sigma_data, sigma_min, sigma_max
         self.rho, self.P_mean, self.P_std = rho, P_mean, P_std
@@ -116,7 +124,12 @@ class ContinuousEDM(DiffusionModel):
 
     def D(self, x, sigma, condition=None, model=None):
         """Prepositioning in EDM"""
-        c_skip, c_out, c_in, c_noise = self.c_skip(sigma), self.c_out(sigma), self.c_in(sigma), self.c_noise(sigma)
+        c_skip, c_out, c_in, c_noise = (
+            self.c_skip(sigma),
+            self.c_out(sigma),
+            self.c_in(sigma),
+            self.c_noise(sigma),
+        )
         if model is None:
             model = self.model
         c_skip, c_in, c_out = (
@@ -154,7 +167,11 @@ class ContinuousEDM(DiffusionModel):
             eps (torch.Tensor):
                 The noise. shape: (batch_size, *x_shape).
         """
-        t = (torch.randn((x0.shape[0],), device=x0.device) * self.P_std + self.P_mean).exp() if t is None else t
+        t = (
+            (torch.randn((x0.shape[0],), device=x0.device) * self.P_std + self.P_mean).exp()
+            if t is None
+            else t
+        )
         eps = torch.randn_like(x0) if eps is None else eps
 
         scale = 1.0
@@ -172,7 +189,9 @@ class ContinuousEDM(DiffusionModel):
 
         loss = (self.D(xt, t, condition) - x0) ** 2
 
-        edm_loss_weight = at_least_ndim((t**2 + self.sigma_data**2) / ((t * self.sigma_data) ** 2), x0.dim())
+        edm_loss_weight = at_least_ndim(
+            (t**2 + self.sigma_data**2) / ((t * self.sigma_data) ** 2), x0.dim()
+        )
 
         return (loss * self.loss_weight * (1 - self.fix_mask) * edm_loss_weight).mean()
 
@@ -248,7 +267,9 @@ class ContinuousEDM(DiffusionModel):
                 if pred is None or pred_uncond is None:
                     condition = dict_apply(condition, concat_zeros, dim=0)
 
-                    pred_all = self.D(einops.repeat(xt, "b ... -> (2 b) ..."), t.repeat(2), condition, model)
+                    pred_all = self.D(
+                        einops.repeat(xt, "b ... -> (2 b) ..."), t.repeat(2), condition, model
+                    )
 
                     pred, pred_uncond = torch.chunk(pred_all, 2, dim=0)
 
@@ -273,7 +294,9 @@ class ContinuousEDM(DiffusionModel):
         One-step epsilon/x0 prediction with guidance.
         """
 
-        pred = self.classifier_free_guidance(xt, t, model, condition_cfg, w_cfg, None, None, requires_grad)
+        pred = self.classifier_free_guidance(
+            xt, t, model, condition_cfg, w_cfg, None, None, requires_grad
+        )
 
         pred, logp = self.classifier_guidance(xt, t, sigma, model, condition_cg, w_cg, pred)
 
@@ -355,7 +378,9 @@ class ContinuousEDM(DiffusionModel):
         - log: dict
             The log dictionary.
         """
-        assert solver in ["euler", "heun"], f"Solver {solver} is not supported. Use 'euler' or 'heun' instead."
+        assert solver in ["euler", "heun"], (
+            f"Solver {solver} is not supported. Use 'euler' or 'heun' instead."
+        )
 
         # ===================== Initialization =====================
         n_samples = prior.shape[0]
@@ -366,7 +391,9 @@ class ContinuousEDM(DiffusionModel):
         prior = prior.to(self.device)
         if isinstance(warm_start_reference, torch.Tensor) and 0.0 < warm_start_forward_level < 1.0:
             warm_start_reference = warm_start_reference.to(self.device)
-            fwd_sigma = self.sigma_min + (self.sigma_max - self.sigma_min) * warm_start_forward_level
+            fwd_sigma = (
+                self.sigma_min + (self.sigma_max - self.sigma_min) * warm_start_forward_level
+            )
             xt = warm_start_reference + fwd_sigma * torch.randn_like(warm_start_reference)
         else:
             fwd_sigma = self.sigma_max
@@ -377,7 +404,9 @@ class ContinuousEDM(DiffusionModel):
             log["sample_history"].append(xt.cpu().numpy())
 
         with torch.set_grad_enabled(requires_grad):
-            condition_vec_cfg = model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
+            condition_vec_cfg = (
+                model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
+            )
             condition_vec_cg = condition_cg
 
         # ===================== Sampling Schedule ====================
@@ -397,7 +426,16 @@ class ContinuousEDM(DiffusionModel):
 
             # guided sampling
             pred, logp = self.guided_sampling(
-                xt, t, 0, sigmas[i], model, condition_vec_cfg, w_cfg, condition_vec_cg, w_cg, requires_grad
+                xt,
+                t,
+                0,
+                sigmas[i],
+                model,
+                condition_vec_cfg,
+                w_cfg,
+                condition_vec_cg,
+                w_cg,
+                requires_grad,
             )
 
             # clip the prediction

@@ -5,6 +5,8 @@ import torch.nn as nn
 
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
 
+__all__ = ["DQLMlp"]
+
 
 class DQLMlp(BaseNNDiffusion):
     """Mlp diffusion model backbone for Diffusion Q-Learning (DQL).
@@ -42,10 +44,17 @@ class DQLMlp(BaseNNDiffusion):
     ):
         super().__init__(emb_dim, timestep_emb_type, timestep_emb_params)
 
-        self.time_mlp = nn.Sequential(nn.Linear(emb_dim, emb_dim * 2), nn.Mish(), nn.Linear(emb_dim * 2, emb_dim))
+        self.time_mlp = nn.Sequential(
+            nn.Linear(emb_dim, emb_dim * 2), nn.Mish(), nn.Linear(emb_dim * 2, emb_dim)
+        )
 
         self.mid_layer = nn.Sequential(
-            nn.Linear(x_dim + emb_dim, 256), nn.Mish(), nn.Linear(256, 256), nn.Mish(), nn.Linear(256, 256), nn.Mish()
+            nn.Linear(x_dim + emb_dim, 256),
+            nn.Mish(),
+            nn.Linear(256, 256),
+            nn.Mish(),
+            nn.Linear(256, 256),
+            nn.Mish(),
         )
 
         self.final_layer = nn.Linear(256, x_dim)

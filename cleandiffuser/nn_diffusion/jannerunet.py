@@ -8,6 +8,8 @@ import torch.nn as nn
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
 from cleandiffuser.utils import GroupNorm1d
 
+__all__ = ["JannerUNet1d"]
+
 
 def get_norm(dim: int, norm_type: str = "groupnorm"):
     if norm_type == "groupnorm":
@@ -50,14 +52,25 @@ class LayerNorm(nn.Module):
 
 
 class ResidualBlock(nn.Module):
-    def __init__(self, in_dim: int, out_dim: int, emb_dim: int, kernel_size: int = 3, norm_type: str = "groupnorm"):
+    def __init__(
+        self,
+        in_dim: int,
+        out_dim: int,
+        emb_dim: int,
+        kernel_size: int = 3,
+        norm_type: str = "groupnorm",
+    ):
         super().__init__()
 
         self.conv1 = nn.Sequential(
-            nn.Conv1d(in_dim, out_dim, kernel_size, padding=kernel_size // 2), get_norm(out_dim, norm_type), nn.Mish()
+            nn.Conv1d(in_dim, out_dim, kernel_size, padding=kernel_size // 2),
+            get_norm(out_dim, norm_type),
+            nn.Mish(),
         )
         self.conv2 = nn.Sequential(
-            nn.Conv1d(out_dim, out_dim, kernel_size, padding=kernel_size // 2), get_norm(out_dim, norm_type), nn.Mish()
+            nn.Conv1d(out_dim, out_dim, kernel_size, padding=kernel_size // 2),
+            get_norm(out_dim, norm_type),
+            nn.Mish(),
         )
         self.emb_mlp = nn.Sequential(nn.Mish(), nn.Linear(emb_dim, out_dim))
         self.residual_conv = nn.Conv1d(in_dim, out_dim, 1) if in_dim != out_dim else nn.Identity()
@@ -150,7 +163,9 @@ class JannerUNet1d(BaseNNDiffusion):
         dims = [x_dim] + [model_dim * m for m in np.cumprod(dim_mult)]
         in_out = list(zip(dims[:-1], dims[1:]))
 
-        self.map_emb = nn.Sequential(nn.Linear(emb_dim, model_dim * 4), nn.Mish(), nn.Linear(model_dim * 4, model_dim))
+        self.map_emb = nn.Sequential(
+            nn.Linear(emb_dim, model_dim * 4), nn.Mish(), nn.Linear(model_dim * 4, model_dim)
+        )
 
         self.downs = nn.ModuleList([])
         self.ups = nn.ModuleList([])
@@ -196,7 +211,9 @@ class JannerUNet1d(BaseNNDiffusion):
             nn.Conv1d(model_dim, x_dim, 1),
         )
 
-    def forward(self, x: torch.Tensor, noise: torch.Tensor, condition: Optional[torch.Tensor] = None):
+    def forward(
+        self, x: torch.Tensor, noise: torch.Tensor, condition: Optional[torch.Tensor] = None
+    ):
         """
         Input:
             x:          (b, horizon, in_dim)
@@ -238,3 +255,11 @@ class JannerUNet1d(BaseNNDiffusion):
 
         x = x.permute(0, 2, 1)
         return x
+
+
+if __name__ == "__main__":
+    model = JannerUNet1d(x_dim=10, emb_dim=16)
+    x = torch.randn((2, 32, 10))
+    t = torch.randint(1000, (2,))
+    condition = torch.randn((2, 16))
+    print(model(x, t, condition).shape)

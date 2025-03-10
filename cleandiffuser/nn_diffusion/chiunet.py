@@ -4,21 +4,33 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from cleandiffuser.nn_diffusion.base_nn_diffusion import BaseNNDiffusion
+from cleandiffuser.nn_diffusion.jannerunet import Downsample1d, Upsample1d
 from cleandiffuser.utils import GroupNorm1d
 
-from .base_nn_diffusion import BaseNNDiffusion
-from .jannerunet import Downsample1d, Upsample1d
+__all__ = ["ChiUNet1d"]
 
 
 class ChiResidualBlock(nn.Module):
-    def __init__(self, in_dim: int, out_dim: int, emb_dim: int, kernel_size: int = 3, cond_predict_scale: bool = False):
+    def __init__(
+        self,
+        in_dim: int,
+        out_dim: int,
+        emb_dim: int,
+        kernel_size: int = 3,
+        cond_predict_scale: bool = False,
+    ):
         super().__init__()
 
         self.conv1 = nn.Sequential(
-            nn.Conv1d(in_dim, out_dim, kernel_size, padding=kernel_size // 2), GroupNorm1d(out_dim, 8, 4), nn.Mish()
+            nn.Conv1d(in_dim, out_dim, kernel_size, padding=kernel_size // 2),
+            GroupNorm1d(out_dim, 8, 4),
+            nn.Mish(),
         )
         self.conv2 = nn.Sequential(
-            nn.Conv1d(out_dim, out_dim, kernel_size, padding=kernel_size // 2), GroupNorm1d(out_dim, 8, 4), nn.Mish()
+            nn.Conv1d(out_dim, out_dim, kernel_size, padding=kernel_size // 2),
+            GroupNorm1d(out_dim, 8, 4),
+            nn.Mish(),
         )
 
         cond_dim = 2 * out_dim if cond_predict_scale else out_dim
@@ -107,7 +119,9 @@ class ChiUNet1d(BaseNNDiffusion):
 
         dims = [x_dim] + [model_dim * m for m in np.cumprod(dim_mult)]
 
-        self.map_emb = nn.Sequential(nn.Linear(emb_dim, emb_dim * 4), nn.Mish(), nn.Linear(emb_dim * 4, emb_dim))
+        self.map_emb = nn.Sequential(
+            nn.Linear(emb_dim, emb_dim * 4), nn.Mish(), nn.Linear(emb_dim * 4, emb_dim)
+        )
 
         if obs_as_global_cond:
             self.global_cond_encoder = nn.Linear(condition_dim * condition_horizon, emb_dim)
@@ -118,8 +132,12 @@ class ChiUNet1d(BaseNNDiffusion):
             emb_dim = emb_dim
             self.local_cond_encoder = nn.ModuleList(
                 [
-                    ChiResidualBlock(condition_dim, model_dim, emb_dim, kernel_size, cond_predict_scale),
-                    ChiResidualBlock(condition_dim, model_dim, emb_dim, kernel_size, cond_predict_scale),
+                    ChiResidualBlock(
+                        condition_dim, model_dim, emb_dim, kernel_size, cond_predict_scale
+                    ),
+                    ChiResidualBlock(
+                        condition_dim, model_dim, emb_dim, kernel_size, cond_predict_scale
+                    ),
                     Downsample1d(model_dim),
                 ]
             )
@@ -137,7 +155,9 @@ class ChiUNet1d(BaseNNDiffusion):
                 nn.ModuleList(
                     [
                         ChiResidualBlock(dim_in, dim_out, emb_dim, kernel_size, cond_predict_scale),
-                        ChiResidualBlock(dim_out, dim_out, emb_dim, kernel_size, cond_predict_scale),
+                        ChiResidualBlock(
+                            dim_out, dim_out, emb_dim, kernel_size, cond_predict_scale
+                        ),
                         Downsample1d(dim_out) if not is_last else nn.Identity(),
                     ]
                 )
@@ -155,7 +175,9 @@ class ChiUNet1d(BaseNNDiffusion):
             self.ups.append(
                 nn.ModuleList(
                     [
-                        ChiResidualBlock(dim_out * 2, dim_in, emb_dim, kernel_size, cond_predict_scale),
+                        ChiResidualBlock(
+                            dim_out * 2, dim_in, emb_dim, kernel_size, cond_predict_scale
+                        ),
                         ChiResidualBlock(dim_in, dim_in, emb_dim, kernel_size, cond_predict_scale),
                         Upsample1d(dim_in) if not is_last else nn.Identity(),
                     ]
@@ -219,3 +241,11 @@ class ChiUNet1d(BaseNNDiffusion):
 
         x = x.permute(0, 2, 1)
         return x
+
+
+if __name__ == "__main__":
+    m = ChiUNet1d(x_dim=10, emb_dim=256, condition_dim=256, condition_horizon=1)
+    x = torch.randn(2, 16, 10)
+    t = torch.randint(1000, (2,))
+    condition = torch.randn(2, 1, 256)
+    print(m(x, t, condition).shape)

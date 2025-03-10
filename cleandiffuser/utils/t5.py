@@ -1,7 +1,6 @@
 from typing import List
 
 import torch
-from transformers import T5EncoderModel, T5Tokenizer
 
 
 class T5LanguageEncoder:
@@ -11,6 +10,8 @@ class T5LanguageEncoder:
         max_length: int = 32,
         device: str = "cpu",
     ):
+        from transformers import T5EncoderModel, T5Tokenizer
+
         self.device = device
         self.max_length = max_length
         self.tokenizer = T5Tokenizer.from_pretrained(pretrained_model_name_or_path)

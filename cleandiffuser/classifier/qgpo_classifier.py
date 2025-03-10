@@ -3,7 +3,7 @@ from typing import Dict
 import torch
 import torch.nn.functional as F
 
-from .base import BaseClassifier
+from cleandiffuser.classifier.base import BaseClassifier
 
 
 class QGPOClassifier(BaseClassifier):
@@ -12,7 +12,7 @@ class QGPOClassifier(BaseClassifier):
     Assuming nn_classifier is a NN used to predict y through x and t, i.e, pred_y = nn_classifier(x, t),
     logp is defined as - temperature * MSE(nn_classifier(x, t), y).
     """
-    
+
     def configure_optimizers(self):
         return torch.optim.Adam(self.model.parameters(), lr=1e-3)
 
@@ -49,7 +49,13 @@ class QGPOClassifier(BaseClassifier):
 
         return loss, {"f_max": f_max, "f_mean": f_mean, "f_min": f_min}
 
-    def update(self, x: torch.Tensor, noise: torch.Tensor, y: Dict[str, torch.Tensor], update_ema: bool = True):
+    def update(
+        self,
+        x: torch.Tensor,
+        noise: torch.Tensor,
+        y: Dict[str, torch.Tensor],
+        update_ema: bool = True,
+    ):
         loss, log = self.loss(x, noise, y)
         self.optimizer.zero_grad()
         loss.backward()

@@ -1,17 +1,16 @@
 import torch
 
+from cleandiffuser.classifier.base import BaseClassifier
 from cleandiffuser.nn_classifier import BaseNNClassifier
-
-from .base import BaseClassifier
 
 
 class OptimalityClassifier(BaseClassifier):
-    """ Optimality classifier for classifier-guidance.
+    """Optimality classifier for classifier-guidance.
 
     The classifier predicts the logp(O|x_t, t), where O is the optimality of x_t.
     Suppose that x_t is the denoising decision-making trajectory, O is defined such that
     p(O|x_t, t) = exp(R(x_0)) / Z, where R(x_0) is the expected return of the trajectory and
-    Z is a constant normalizing factor. 
+    Z is a constant normalizing factor.
 
     Args:
         nn_classifier (BaseNNClassifier): Neural network backbone.
@@ -19,14 +18,14 @@ class OptimalityClassifier(BaseClassifier):
     """
 
     def __init__(
-            self,
-            nn_classifier: BaseNNClassifier,
-            ema_rate: float = 0.995,
+        self,
+        nn_classifier: BaseNNClassifier,
+        ema_rate: float = 0.995,
     ):
         super().__init__(nn_classifier, ema_rate)
 
     def loss(self, x: torch.Tensor, t: torch.Tensor, R: torch.Tensor):
-        """ Loss function.
+        """Loss function.
 
         Args:
             x (torch.Tensor): Noisy trajectory x_t.
@@ -40,7 +39,7 @@ class OptimalityClassifier(BaseClassifier):
         return ((pred_R - R) ** 2).mean()
 
     def update(self, x: torch.Tensor, t: torch.Tensor, R: torch.Tensor):
-        """ One-step update.
+        """One-step update.
 
         Args:
             x (torch.Tensor): Noisy trajectory x_t.

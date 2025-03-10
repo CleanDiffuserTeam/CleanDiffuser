@@ -89,7 +89,15 @@ class DiscreteRectifiedFlow(DiffusionModel):
         diffusion_steps: int = 1000,
         discretization: Union[str, Callable] = "uniform",
     ):
-        super().__init__(nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate, optimizer_params)
+        super().__init__(
+            nn_diffusion,
+            nn_condition,
+            fix_mask,
+            loss_weight,
+            classifier,
+            ema_rate,
+            optimizer_params,
+        )
 
         assert classifier is None, "Rectified Flow does not support classifier-guidance."
         self.diffusion_steps = diffusion_steps
@@ -125,7 +133,11 @@ class DiscreteRectifiedFlow(DiffusionModel):
             t (torch.Tensor): Diffusion timestep.
             eps (torch.Tensor): Noise.
         """
-        t = torch.randint(1, self.diffusion_steps + 1, (x0.shape[0],), device=self.device) if t is None else t
+        t = (
+            torch.randint(1, self.diffusion_steps + 1, (x0.shape[0],), device=self.device)
+            if t is None
+            else t
+        )
         eps = torch.randn_like(x0) if eps is None else eps
 
         t_c = t / self.diffusion_steps
@@ -183,9 +195,9 @@ class DiscreteRectifiedFlow(DiffusionModel):
                 "x1" is the data from source distribution and is optional.
             batch_idx (int): Batch index.
         """
-        assert (
-            isinstance(batch, dict) and "x0" in batch.keys()
-        ), "The batch should contain the key `x0` for the input data."
+        assert isinstance(batch, dict) and "x0" in batch.keys(), (
+            "The batch should contain the key `x0` for the input data."
+        )
 
         x0 = batch["x0"]
         condition_cfg = batch.get("condition_cfg", None)
@@ -279,7 +291,9 @@ class DiscreteRectifiedFlow(DiffusionModel):
                 Whether to preserve the history of the model.
         """
         assert solver in self.supported_solvers, f"Solver {solver} is not supported."
-        assert w_cg == 0.0 and condition_cg is None, "Rectified Flow does not support classifier-guidance."
+        assert w_cg == 0.0 and condition_cg is None, (
+            "Rectified Flow does not support classifier-guidance."
+        )
 
         # ===================== Initialization =====================
         n_samples = prior.shape[0]
@@ -309,10 +323,14 @@ class DiscreteRectifiedFlow(DiffusionModel):
             log["sample_history"].append(xt.cpu().numpy())
 
         with torch.set_grad_enabled(requires_grad):
-            condition_vec_cfg = model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
+            condition_vec_cfg = (
+                model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
+            )
 
         sampling_scheduler = get_sampling_scheduler(sampling_schedule, **sampling_schedule_params)
-        t_schedule = sampling_scheduler(sample_steps, device=self.device, **sampling_schedule_params)
+        t_schedule = sampling_scheduler(
+            sample_steps, device=self.device, **sampling_schedule_params
+        )
         t_schedule[1:] = t_schedule[1:].clamp(1, None)
 
         # ===================== Denoising Loop ========================
@@ -320,7 +338,10 @@ class DiscreteRectifiedFlow(DiffusionModel):
         for i in reversed(loop_steps):
             t = torch.full((n_samples,), t_schedule[i], dtype=torch.long, device=self.device)
 
-            start_t, end_t = t_schedule[i] / self.diffusion_steps, t_schedule[i - 1] / self.diffusion_steps
+            start_t, end_t = (
+                t_schedule[i] / self.diffusion_steps,
+                t_schedule[i - 1] / self.diffusion_steps,
+            )
             delta_t = start_t - end_t
 
             # velocity
@@ -426,7 +447,15 @@ class ContinuousRectifiedFlow(DiffusionModel):
         x_max: Optional[torch.Tensor] = None,
         x_min: Optional[torch.Tensor] = None,
     ):
-        super().__init__(nn_diffusion, nn_condition, fix_mask, loss_weight, classifier, ema_rate, optimizer_params)
+        super().__init__(
+            nn_diffusion,
+            nn_condition,
+            fix_mask,
+            loss_weight,
+            classifier,
+            ema_rate,
+            optimizer_params,
+        )
 
         assert classifier is None, "Rectified Flow does not support classifier-guidance."
 
@@ -517,9 +546,9 @@ class ContinuousRectifiedFlow(DiffusionModel):
                 "x1" is the data from source distribution and is optional.
             batch_idx (int): Batch index.
         """
-        assert (
-            isinstance(batch, dict) and "x0" in batch.keys()
-        ), "The batch should contain the key `x0` for the input data."
+        assert isinstance(batch, dict) and "x0" in batch.keys(), (
+            "The batch should contain the key `x0` for the input data."
+        )
 
         x0 = batch["x0"]
         condition_cfg = batch.get("condition_cfg", None)
@@ -613,7 +642,9 @@ class ContinuousRectifiedFlow(DiffusionModel):
                 Whether to preserve the history of the model.
         """
         assert solver in self.supported_solvers, f"Solver {solver} is not supported."
-        assert w_cg == 0.0 and condition_cg is None, "Rectified Flow does not support classifier-guidance."
+        assert w_cg == 0.0 and condition_cg is None, (
+            "Rectified Flow does not support classifier-guidance."
+        )
 
         # ===================== Initialization =====================
         n_samples = prior.shape[0]
@@ -640,10 +671,14 @@ class ContinuousRectifiedFlow(DiffusionModel):
             log["sample_history"].append(xt.cpu().numpy())
 
         with torch.set_grad_enabled(requires_grad):
-            condition_vec_cfg = model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
+            condition_vec_cfg = (
+                model["condition"](condition_cfg, mask_cfg) if condition_cfg is not None else None
+            )
 
         sampling_scheduler = get_sampling_scheduler(sampling_schedule, **sampling_schedule_params)
-        t_schedule = sampling_scheduler(sample_steps, device=self.device, **sampling_schedule_params)
+        t_schedule = sampling_scheduler(
+            sample_steps, device=self.device, **sampling_schedule_params
+        )
 
         # ===================== Denoising Loop ========================
         loop_steps = [1] * diffusion_x_sampling_steps + list(range(1, sample_steps + 1))

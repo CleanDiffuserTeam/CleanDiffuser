@@ -1,20 +1,24 @@
-from typing import List, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
 
-from .base_nn_diffusion import BaseNNDiffusion
+from cleandiffuser.nn_diffusion.base_nn_diffusion import BaseNNDiffusion
+
+__all__ = ["TransitionTransformer"]
 
 
 class TransitionTransformer(BaseNNDiffusion):
     def __init__(
-            self,
-            obs_dim: int,
-            act_dim: int,
-            emb_dim: int,
-            d_model: int = 256, nhead: int = 4, num_layers: int = 2,
-            timestep_emb_type: str = "untrainable_fourier",
-            timestep_emb_params: Optional[dict] = None
+        self,
+        obs_dim: int,
+        act_dim: int,
+        emb_dim: int,
+        d_model: int = 256,
+        nhead: int = 4,
+        num_layers: int = 2,
+        timestep_emb_type: str = "untrainable_fourier",
+        timestep_emb_params: Optional[dict] = None,
     ):
         super().__init__(d_model, timestep_emb_type, timestep_emb_params)
         self.obs_dim, self.act_dim, self.emb_dim = obs_dim, act_dim, emb_dim
@@ -31,24 +35,20 @@ class TransitionTransformer(BaseNNDiffusion):
         self.tml_emb = nn.Parameter(torch.randn(1, 1, d_model))
 
         self.tfm = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(
-                d_model, nhead, 4 * d_model, batch_first=True),
-            num_layers)
+            nn.TransformerEncoderLayer(d_model, nhead, 4 * d_model, batch_first=True), num_layers
+        )
 
         self.obs_out = nn.Linear(d_model, obs_dim)
         self.act_out = nn.Linear(d_model, act_dim)
         self.rew_out = nn.Linear(d_model, 1)
         self.tml_out = nn.Linear(d_model, 1)
 
-    def forward(self,
-                x: torch.Tensor, t: torch.Tensor,
-                condition: Optional[torch.Tensor] = None):
-
-        obs = x[:, :self.obs_dim]
-        next_obs = x[:, self.obs_dim:self.obs_dim*2]
-        rew = x[:, self.obs_dim*2:self.obs_dim*2+1]
-        act = x[:, self.obs_dim*2+1:self.obs_dim*2+1+self.act_dim]
-        tml = x[:, self.obs_dim*2+1+self.act_dim:]
+    def forward(self, x: torch.Tensor, t: torch.Tensor, condition: Optional[torch.Tensor] = None):
+        obs = x[:, : self.obs_dim]
+        next_obs = x[:, self.obs_dim : self.obs_dim * 2]
+        rew = x[:, self.obs_dim * 2 : self.obs_dim * 2 + 1]
+        act = x[:, self.obs_dim * 2 + 1 : self.obs_dim * 2 + 1 + self.act_dim]
+        tml = x[:, self.obs_dim * 2 + 1 + self.act_dim :]
 
         cond = self.map_noise(t).unsqueeze(1)
         if condition is not None:
