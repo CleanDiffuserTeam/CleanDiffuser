@@ -26,7 +26,7 @@ class LiberoEnv(gym.Env):
         require_point_cloud: bool = False,
         num_points: int = 8192,
         camera_names: list = ["agentview", "robot0_eye_in_hand"],
-        max_episode_steps: int = 400,
+        max_episode_steps: int = 600,
         seed: int = 0,
         enable_pytorch3d_fps: bool = False,
         pointcloud_process_device: str = "cpu",
@@ -60,9 +60,6 @@ class LiberoEnv(gym.Env):
         benchmark_dict = benchmark.get_benchmark_dict()
         task_suite = benchmark_dict[self.TASK_SUITE_NAME]()
         task = task_suite.get_task(task_id)
-
-        task_description = task.language
-        self.task_description = task_description
         task_bddl_file = root_path / "bddl_files" / task.problem_folder / task.bddl_file
 
         env_args = {
@@ -74,6 +71,7 @@ class LiberoEnv(gym.Env):
         }
         self.env = OffScreenRenderEnv(**env_args)
         self.env.seed(seed)
+        self.task_description = self.env.language_instruction
 
         if require_point_cloud:
             import open3d as o3d

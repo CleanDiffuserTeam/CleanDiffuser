@@ -3,8 +3,8 @@ from typing import List
 import numpy as np
 import torch
 import zarr
-
 from cleandiffuser.utils import MinMaxNormalizer, create_indices
+from cleandiffuser.utils.codecs import jpeg  # noqa
 
 FULL_OBS_LIST = [
     "color",
@@ -21,24 +21,37 @@ FULL_OBS_LIST = [
 
 ACTION_MINMAX = {
     "libero_goal": {
-        "max": np.array([0.9375, 0.9375, 0.9375, 0.3558, 0.375, 0.375, 1.0], dtype=np.float32),
+        "max": np.array(
+            [0.9375, 0.9375, 0.9375, 0.3558, 0.375, 0.375, 1.0], dtype=np.float32
+        ),
         "min": np.array(
-            [-0.9375, -0.9375, -0.9375, -0.2583, -0.375, -0.2872, -1.0], dtype=np.float32
+            [-0.9375, -0.9375, -0.9375, -0.2583, -0.375, -0.2872, -1.0],
+            dtype=np.float32,
         ),
     },
     "libero_spatial": {
-        "max": np.array([0.9375, 0.9375, 0.9375, 0.1972, 0.3365, 0.375, 1.0], dtype=np.float32),
+        "max": np.array(
+            [0.9375, 0.9375, 0.9375, 0.1972, 0.3365, 0.375, 1.0], dtype=np.float32
+        ),
         "min": np.array(
             [-0.9375, -0.9375, -0.9375, -0.1886, -0.3675, -0.36, -1.0], dtype=np.float32
         ),
     },
     "libero_object": {
-        "max": np.array([0.9375, 0.90, 0.9375, 0.18, 0.375, 0.19, 1.0], dtype=np.float32),
-        "min": np.array([-0.89, -0.9375, -0.9375, -0.15, -0.356, -0.33, -1.0], dtype=np.float32),
+        "max": np.array(
+            [0.9375, 0.90, 0.9375, 0.18, 0.375, 0.19, 1.0], dtype=np.float32
+        ),
+        "min": np.array(
+            [-0.89, -0.9375, -0.9375, -0.15, -0.356, -0.33, -1.0], dtype=np.float32
+        ),
     },
     "libero_10": {
-        "max": np.array([0.9375, 0.92, 0.925, 0.305, 0.313, 0.375, 1.0], dtype=np.float32),
-        "min": np.array([-0.9375, -0.922, -0.9375, -0.24, -0.304, -0.3675, -1.0], dtype=np.float32),
+        "max": np.array(
+            [0.9375, 0.92, 0.925, 0.305, 0.313, 0.375, 1.0], dtype=np.float32
+        ),
+        "min": np.array(
+            [-0.9375, -0.922, -0.9375, -0.24, -0.304, -0.3675, -1.0], dtype=np.float32
+        ),
     },
 }
 
@@ -67,10 +80,10 @@ class LiberoDataset(torch.utils.data.Dataset):
                 ACTION_MINMAX["libero_object"]["min"],
                 ACTION_MINMAX["libero_object"]["max"],
             )
-        elif "libero_100" in str(data_path):
+        elif "libero_10" in str(data_path):
             act_min, act_max = (
-                ACTION_MINMAX["libero_100"]["min"],
-                ACTION_MINMAX["libero_100"]["max"],
+                ACTION_MINMAX["libero_10"]["min"],
+                ACTION_MINMAX["libero_10"]["max"],
             )
 
         self.root = zarr.open(str(data_path), mode="r")
@@ -102,16 +115,22 @@ class LiberoDataset(torch.utils.data.Dataset):
         return self.size
 
     def __getitem__(self, idx):
-        (buffer_start_idx, buffer_end_idx, sample_start_idx, sample_end_idx, end_idx) = (
-            self.indices[idx]
-        )
+        (
+            buffer_start_idx,
+            buffer_end_idx,
+            sample_start_idx,
+            sample_end_idx,
+            end_idx,
+        ) = self.indices[idx]
         episode_idx = self.episode_idx[idx]
 
         e_Ta = self.Ta - (self.To + self.Ta - 1 - sample_end_idx)
         action = self.root.data.actions[buffer_end_idx - e_Ta : buffer_end_idx]
         if self.To + self.Ta - 1 > sample_end_idx:
             action = np.pad(
-                action, ((0, self.To + self.Ta - 1 - sample_end_idx), (0, 0)), mode="edge"
+                action,
+                ((0, self.To + self.Ta - 1 - sample_end_idx), (0, 0)),
+                mode="edge",
             )
         assert action.shape[0] == self.Ta, f"{action.shape[0]} != {self.Ta}"
         action = self.normalizers["action"].normalize(action)

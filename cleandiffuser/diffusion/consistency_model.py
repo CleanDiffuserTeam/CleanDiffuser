@@ -4,7 +4,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from cleandiffuser.diffusion import ContinuousEDM, DiffusionModel
+from cleandiffuser.diffusion.basic import DiffusionModel
+from cleandiffuser.diffusion.edm import ContinuousEDM
 from cleandiffuser.nn_condition import BaseNNCondition
 from cleandiffuser.nn_diffusion import BaseNNDiffusion
 from cleandiffuser.utils import TensorDict, at_least_ndim

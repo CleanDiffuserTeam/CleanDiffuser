@@ -3,7 +3,7 @@ from typing import Optional
 
 import numpy as np
 
-from cleandiffuser.utils import at_least_ndim
+from cleandiffuser.utils.utils import at_least_ndim
 
 
 class EmptyNormalizer:
