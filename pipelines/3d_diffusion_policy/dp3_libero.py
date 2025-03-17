@@ -11,118 +11,61 @@ import torch.nn as nn
 import torchvision.transforms as T
 from pytorch_lightning.callbacks import ModelCheckpoint
 from timm.models import VisionTransformer
-from transformers import T5EncoderModel, T5Tokenizer
+from transformers import T5Config, T5EncoderModel, T5Tokenizer
 
 from cleandiffuser.dataset.libero_dataset import LiberoDataset
 from cleandiffuser.diffusion import ContinuousDiffusionSDE
 from cleandiffuser.env import libero
-from cleandiffuser.nn_condition import DP3PointCloudCondition
+from cleandiffuser.nn_condition import BaseNNCondition, DP3PointCloudCondition
 from cleandiffuser.nn_diffusion import DiT1dWithCrossAttention
-from cleandiffuser.utils import set_seed
-
-
-class T5LanguageEncoder:
-    """T5LanguageEncoder
-
-    A wrapped T5 encoder for convinient language encoding.
-    It accepts a list of sentences and returns the feature tensor and padding mask.
-    The length of the output tensor equals to the length of the longest sentence.
-
-    Args:
-        pretrained_model_name_or_path: The name or path of the pretrained model.
-        device: The device to run the model on.
-
-    Examples:
-        >>> lang_encoder = T5LanguageEncoder()
-        >>> h, mask = lang_encoder(["Hello world!", "How are you?"])
-        >>> print(h.shape, mask.shape)
-        torch.Size([2, 4, 768]) torch.Size([2, 4])
-
-    """
-
-    def __init__(
-        self,
-        pretrained_model_name_or_path: str = "google-t5/t5-base",
-        device: str = "cpu",
-    ):
-        self.device = device
-        self.tokenizer = T5Tokenizer.from_pretrained(pretrained_model_name_or_path)
-        self.model = T5EncoderModel.from_pretrained(pretrained_model_name_or_path).to(device).eval()
-
-    @torch.no_grad()
-    def encode(self, sentences: List[str]):
-        inputs = self.tokenizer(sentences, return_tensors="pt", padding=True)
-        input_ids = inputs.input_ids
-        outputs = self.model(input_ids=input_ids.to(self.device))
-        last_hidden_states = outputs.last_hidden_state
-        return last_hidden_states, inputs.attention_mask
-
-    def __call__(self, sentences: List[str]):
-        return self.encode(sentences)
+from cleandiffuser.utils import UntrainablePositionalEmbedding, set_seed
 
 
 class PointNetAndT5PCLanguageCondition(DP3PointCloudCondition):
     def __init__(
         self,
-        pointcloud_feat_dim: int = 384,
         fps_downsample_points: Optional[int] = 1024,
         pointnet_hidden_sizes: List[int] = (64, 128, 256),
         t5_pretrained_model_name_or_path: str = "google-t5/t5-base",
-        t5_feat_dim: int = 384,
+        t5_hidden_dim: int = 768,
+        t5_max_seq_len: int = 32,
+        emb_dim: int = 384,
         To: int = 2,
     ):
         super().__init__(
-            emb_dim=pointcloud_feat_dim,
+            emb_dim=emb_dim,
             fps_downsample_points=fps_downsample_points,
             hidden_sizes=pointnet_hidden_sizes,
         )
-        self.tokenizer = T5Tokenizer.from_pretrained(t5_pretrained_model_name_or_path)
-        self.model = (
-            T5EncoderModel.from_pretrained(t5_pretrained_model_name_or_path)
-            .eval()
-            .requires_grad_(False)
+        self.t5_adapter = nn.Sequential(
+            nn.Linear(t5_hidden_dim, emb_dim), nn.GELU(approximate="tanh")
         )
-        self.t5_proj = nn.Sequential(
-            nn.Linear(768, t5_feat_dim),
-            nn.GELU(approximate="tanh"),
-            nn.Linear(t5_feat_dim, t5_feat_dim),
+        t5_pos_emb = (
+            UntrainablePositionalEmbedding(emb_dim, 100)(torch.arange(t5_max_seq_len))[None] * 0.2
         )
-        self.pc_feat_proj = nn.Linear(pointcloud_feat_dim * To, pointcloud_feat_dim)
-        self.lang_pos_emb = nn.Parameter(torch.randn(1, 32, t5_feat_dim) * 0.02)
-        self.To_pos_emb = nn.Parameter(torch.randn(1, To, pointcloud_feat_dim) * 0.02)
+        self.t5_pos_emb = nn.Parameter(t5_pos_emb)
 
-    @torch.no_grad()
-    def language_encode(self, sentences: List[str]):
-        inputs = self.tokenizer(sentences, return_tensors="pt", padding=True)
-        input_ids = inputs.input_ids
-        outputs = self.model(input_ids=input_ids.to(self.model.device))
-        last_hidden_states = outputs.last_hidden_state
-        return last_hidden_states, inputs.attention_mask
+        self.To_pos_emb = nn.Parameter(torch.randn(1, To, emb_dim) * 0.02)
+        self.pc_adapter = nn.Linear(emb_dim * To, emb_dim)
 
     def forward(self, condition: Dict[str, torch.Tensor], mask: Optional[torch.Tensor] = None):
         pointcloud = condition["pointcloud"]
-        language = condition.get("language", None)
-        language_embedding = condition.get("language_embedding", None)
-        language_mask = condition.get("language_mask", None)
-        assert language is not None or language_embedding is not None, (
-            "Either language or language_embedding and language_mask must be provided."
-        )
+        b = pointcloud.shape[0]
 
-        if language is not None:
-            language_embedding, language_mask = self.language_encode(language)
+        language_embedding = condition["language_embedding"]
+        language_mask = condition["language_mask"]
 
         # transform to pytorch attention padding mask, where True means padding.
         if language_mask is not None:
             language_mask = torch.logical_not(language_mask.to(torch.bool))
 
         pc_feat = super().forward(einops.rearrange(pointcloud, "b t n d -> (b t) n d"))
-        pc_feat = einops.rearrange(pc_feat, "(b t) d -> b t d", b=pointcloud.shape[0])
+        pc_feat = einops.rearrange(pc_feat, "(b t) d -> b t d", b=b)
         pc_feat = pc_feat + self.To_pos_emb
         pc_feat = einops.rearrange(pc_feat, "b t d -> b (t d)")
-        pc_feat = self.pc_feat_proj(pc_feat)
+        pc_feat = self.pc_adapter(pc_feat)
 
-        lang_feat = self.t5_proj(language_embedding)
-        lang_feat = lang_feat + self.lang_pos_emb
+        lang_feat = self.t5_adapter(language_embedding) + self.t5_pos_emb
 
         return {
             "vec_condition": pc_feat,
@@ -158,14 +101,14 @@ class DatasetWrapper:
 task_suite = "libero_goal"
 t5_pretrained_model_name_or_path = "/home/dzb/pretrained/t5-base"
 seed = 0
-To = 2
+To = 1
 Ta = 16
 num_act_exec = 8
-mode = "rendering"  # training, inference or rendering
+mode = "training"  # training, inference or rendering
 dataset_path = Path(__file__).parents[2] / f"dev/libero/{task_suite}.zarr"
-devices = [3]  # List of GPU ids to train on, cuda:0 for default
+devices = [0, 1, 2, 3]  # List of GPU ids to train on, cuda:0 for default
 default_root_dir = Path(__file__).parents[2] / f"results/3d_diffusion_policy/{task_suite}/"
-training_steps = 500_000
+training_steps = 50_000
 save_every_n_steps = 5_000
 ckpt_file = "epoch=331-step=165000.ckpt"
 env_name = "libero-goal-v0"
@@ -183,17 +126,18 @@ if __name__ == "__main__":
         Ta=Ta,
     )
     act_dim = 7
-    lowdim_dim = 9
 
     dataloader = torch.utils.data.DataLoader(
         DatasetWrapper(dataset),
-        batch_size=128,
+        batch_size=64,
         shuffle=True,
-        num_workers=4,
+        num_workers=8,
         persistent_workers=True,
     )
 
     # --- Model ---
+    t5_hidden_dim = T5Config.from_pretrained(t5_pretrained_model_name_or_path).d_model
+
     nn_diffusion = DiT1dWithCrossAttention(
         x_dim=act_dim,
         x_seq_len=Ta,
@@ -205,16 +149,18 @@ if __name__ == "__main__":
         timestep_emb_params={"scale": 0.2},
     )
     nn_condition = PointNetAndT5PCLanguageCondition(
-        pointcloud_feat_dim=384,
         fps_downsample_points=1024,
         t5_pretrained_model_name_or_path=t5_pretrained_model_name_or_path,
-        t5_feat_dim=384,
+        t5_hidden_dim=t5_hidden_dim,
+        t5_max_seq_len=32,
+        emb_dim=384,
         To=To,
     )
 
     policy = ContinuousDiffusionSDE(
         nn_diffusion=nn_diffusion,
         nn_condition=nn_condition,
+        ema_rate=0.75,
         x_max=torch.full((Ta, act_dim), 1.0),
         x_min=torch.full((Ta, act_dim), -1.0),
     )
@@ -224,13 +170,14 @@ if __name__ == "__main__":
         callback = ModelCheckpoint(
             dirpath=default_root_dir,
             every_n_train_steps=save_every_n_steps,
-            # save_top_k=-1,
+            save_top_k=-1,
         )
         trainer = L.Trainer(
             devices=devices,
             max_steps=training_steps,
             callbacks=[callback],
             default_root_dir=default_root_dir,
+            precision="bf16-mixed",
         )
         trainer.fit(policy, dataloader)
 
