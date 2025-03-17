@@ -26,6 +26,9 @@
 ·
 </p>
 
+> Hi there! We have re-implemented **CleanDiffuser** in **PyTorch Lightning** style! With Lightning, you can easily leverage advanced deep learning techniques such as **mixed precision, multi-GPU/multi-node training**, and more. These updates are now available in the **`lightning` branch**. Additionally, this branch features **simplified and more readable algorithm implementations**, **pretrained models (including inverse dynamics and IQL)** to facilitate algorithm development, and **broader environment support**. We highly recommend switching to the **`lightning` branch**, as it will soon replace the **`main` branch**, which will then be archived as legacy. 🚀
+
+
 **CleanDiffuser** is an easy-to-use modularized Diffusion Model library tailored for decision-making, which comprehensively integrates different types of diffusion algorithmic branches. CleanDiffuser offers a variety of advanced *diffusion models*, *network structures*, diverse *conditions*, and *algorithm pipelines* in a simple and user-friendly manner. Inheriting the design philosophy of [CleanRL](https://github.com/vwxyzjn/cleanrl) and [Diffusers](https://github.com/huggingface/diffusers), CleanDiffuser emphasizes **usability, simplicity, and customizability**. We hope that CleanDiffuser will serve as a foundational tool library, providing long-term support for Diffusion Model research in the decision-making community, facilitating the application of research for scientists and practitioners alike. The highlight features of CleanDiffuser are:
 
 - 🚀 Amazing features specially tailored for decision-making tasks
