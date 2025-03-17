@@ -47,7 +47,7 @@ We strongly recommend reading [papers](https://arxiv.org/abs/2406.09509) and [do
 
 <!-- NEWS -->
 ## 🔥 News and Change Log
-- [**2025-03-10**] 🎉 TODO
+- [**2025-03-10**] 🎉 Reimplement pipeline files in Lightning style. Add support for pretrained inverse dynamics models and IQL models. Add Gym-like environment wrappers for popular embodied AI benchmarks (e.g., PushT, Robomimic, Kitchen, Libero) and their datasets. Please see the [update logs](assets/update0310.md) for more details.
 - [**2025-02-15**] 🥳 We have added a diffusion planner based on empirical studies using CleanDiffuser, [Diffusion Veteran](https://openreview.net/forum?id=7BQkXXM8Fy).
 - [**2024-09-26**] 🎁 Our paper [CleanDiffuser](https://arxiv.org/abs/2406.09509), has been accepted by **NeurIPS 2024 Datasets and Benchmark Track**!
 - [**2024-08-27**] 🥳 We have added a lightning-fast diffusion planner, [DiffuserLite](https://arxiv.org/pdf/2401.15443), and two popular diffusion policies, [SfBC](https://arxiv.org/abs/2209.14548) and [QGPO](https://arxiv.org/abs/2304.12824), to the pipeline. Additionally, we have updated some unit tests and [API documentation](https://cleandiffuserteam.github.io/CleanDiffuserDocs/).

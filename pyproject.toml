@@ -23,6 +23,8 @@ dependencies = [
     "imagecodecs",
     "torch>1.0.0",
     "torchvision",
+    "pytorch_lightning",
+    "termcolor",
 ]
 
 [project.urls]

@@ -358,7 +358,7 @@ class DiscreteRectifiedFlow(DiffusionModel):
                     condition = dict_apply(condition_vec_cfg, concat_zeros, dim=0)
 
                     vel_all = model["diffusion"](
-                        einops.repeat(xt, "b ... -> (2 b) ...", t.repeat(2)), t.repeat(2), condition
+                        einops.repeat(xt, "b ... -> (2 b) ..."), t.repeat(2), condition
                     )
 
                     vel, vel_uncond = torch.chunk(vel_all, 2, dim=0)
@@ -701,7 +701,7 @@ class ContinuousRectifiedFlow(DiffusionModel):
                     condition = dict_apply(condition_vec_cfg, concat_zeros, dim=0)
 
                     vel_all = model["diffusion"](
-                        einops.repeat(xt, "b ... -> (2 b) ...", t.repeat(2)), t.repeat(2), condition
+                        einops.repeat(xt, "b ... -> (2 b) ..."), t.repeat(2), condition
                     )
 
                     vel, vel_uncond = torch.chunk(vel_all, 2, dim=0)

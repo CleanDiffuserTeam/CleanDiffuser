@@ -49,4 +49,6 @@ Use `from_pretrained` method to create a pretrained model. It is a `classmethod`
 ```
 `params` is a dictionary containing the hyperparameters used to train the model. **Note that the training data is Gaussian normalized to improve the model performance. Related hyperparameters are also included in this dictionary.** If you are using CleanDiffuser-provided dataset, these normalizations are compatible with the default dataset setting. Otherwise, you need to manually normalize the dataset before using the pretrained model.
 
+Checkpoints can be downloaded from [here](https://1drv.ms/u/c/ba682474b24f6989/EVgO7dzZXIJNr-pZfk511GMBX2cAIMr30S7uz9XkML_fyA?e=y2GSHI). Please download this zip file and extract it to `~/`.
+
 Our `decision_diffuser` pipeline also uses these pretrained models to infer the actions. See `CleanDiffuser/pipelines/decision_diffuser/dd_d4rl.py` and take it as an example to use pretrained inverse dynamic models!
