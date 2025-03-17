@@ -10,14 +10,13 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as T
 from pytorch_lightning.callbacks import ModelCheckpoint
-from timm.models import VisionTransformer
 from transformers import T5Config, T5EncoderModel, T5Tokenizer
 
 from cleandiffuser.dataset.libero_dataset import LiberoDataset
 from cleandiffuser.diffusion import ContinuousDiffusionSDE
 from cleandiffuser.env import libero
 from cleandiffuser.nn_condition import BaseNNCondition, DP3PointCloudCondition
-from cleandiffuser.nn_diffusion import DiT1dWithCrossAttention
+from cleandiffuser.nn_diffusion import DiT1d
 from cleandiffuser.utils import UntrainablePositionalEmbedding, set_seed
 
 
@@ -138,13 +137,15 @@ if __name__ == "__main__":
     # --- Model ---
     t5_hidden_dim = T5Config.from_pretrained(t5_pretrained_model_name_or_path).d_model
 
-    nn_diffusion = DiT1dWithCrossAttention(
+    nn_diffusion = DiT1d(
         x_dim=act_dim,
         x_seq_len=Ta,
         emb_dim=384,
         d_model=384,
         n_heads=6,
         depth=12,
+        use_cross_attn=True,
+        adaLN_on_cross_attn=False,
         timestep_emb_type="untrainable_fourier",
         timestep_emb_params={"scale": 0.2},
     )
