@@ -71,8 +71,8 @@ $ conda install pytorch==2.2.2 torchvision==0.17.2 pytorch-cuda=12.1 -c pytorch 
 #### 3. Install CleanDiffuser from source
 ```bash
 $ git clone https://github.com/CleanDiffuserTeam/CleanDiffuser.git
-$ git checkout lightning
 $ cd CleanDiffuser
+$ git checkout lightning
 $ pip install -e .
 ```
 #### 4. Optional Dependencies
