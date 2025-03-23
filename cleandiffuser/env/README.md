@@ -67,7 +67,7 @@ see [this file](./kitchen/base.py) for more details.
 
 ## 4. [Libero](https://libero-project.github.io/main.html)
 ### 4.1 Requirements
-You need to install libero following the [installation instructions](https://lifelong-robot-learning.github.io/LIBERO/html/getting_started/installation.html). If you need to access 3d information, e.g. depth/pointcloud, you also need to install [pytorch3d](https://github.com/facebookresearch/pytorch3d) and [open3d](https://www.open3d.org/).
+You need to install libero following the [installation instructions](https://lifelong-robot-learning.github.io/LIBERO/html/getting_started/installation.html). If you need to access 3d information, e.g. depth/pointcloud, you also need to install [pytorch3d](https://github.com/facebookresearch/pytorch3d) and [open3d](https://www.open3d.org/). For anyone who has difficulty installing pytorch3d, you may try this [guide](https://github.com/facebookresearch/pytorch3d/discussions/1752).
 
 ### 4.2 Usage
 Please refer to [this file](./libero/README.md). This README file contains all instructions from dataset generation to environment creation.

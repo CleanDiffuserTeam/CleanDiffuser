@@ -1,7 +1,6 @@
 from typing import Optional
 
 import numpy as np
-import timm
 import torch
 import torch.nn as nn
 
@@ -391,6 +390,7 @@ class ResNetImageCondition(IdentityCondition):
         **kwargs,
     ):
         super().__init__(dropout)
+        import timm
         self.flatten = flatten
         self.resnet = timm.create_model(model_name, pretrained=pretrained, **kwargs)
         if freeze:
