@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import torchvision.transforms as T
 from pytorch_lightning.callbacks import ModelCheckpoint
+from termcolor import cprint
 from timm.models import VisionTransformer
 from transformers import T5Config, T5EncoderModel, T5Tokenizer
 
@@ -19,6 +20,7 @@ from cleandiffuser.env import libero
 from cleandiffuser.nn_condition import BaseNNCondition, DP3PointCloudCondition
 from cleandiffuser.nn_diffusion import DiT1dWithCrossAttention
 from cleandiffuser.utils import UntrainablePositionalEmbedding, set_seed
+from cleandiffuser.utils.t5 import T5LanguageEncoder
 
 
 class PointNetAndT5PCLanguageCondition(DP3PointCloudCondition):
@@ -182,13 +184,15 @@ if __name__ == "__main__":
         trainer.fit(policy, dataloader)
 
     # -- rendering --
-    elif mode == "rendering":
+    elif mode == "inference":
+        t5_language_encoder = T5LanguageEncoder(
+            pretrained_model_name_or_path=t5_pretrained_model_name_or_path,
+            max_length=32,
+            device=f"cuda:{devices[0]}",
+        )
         import imageio
 
         device = f"cuda:{devices[0]}"
-        lang_encoder = T5LanguageEncoder(
-            pretrained_model_name_or_path=t5_pretrained_model_name_or_path, device=device
-        )
 
         env = gym.make(
             env_name,
@@ -200,76 +204,86 @@ if __name__ == "__main__":
             enable_pytorch3d_fps=True,
             pointcloud_process_device=device,
         )
-        print(env.task_description)
+        cprint(f"TASK: {env.task_description}", "green", attrs=["bold"])
+
+        lang_emb, lang_mask = t5_language_encoder([env.task_description])
+
         normalizer = dataset.get_normalizer()
 
         policy.load_state_dict(torch.load(default_root_dir / ckpt_file)["state_dict"])
         policy = policy.to(device).eval()
 
         prior = torch.zeros((1, Ta, act_dim), device=device)
-        obs, all_done, all_rew = env.reset(), False, 0
 
-        lang_emb, lang_mask = lang_encoder.encode([env.task_description])
-        lang_emb = lang_emb.cpu().numpy()[0]
-        lang_mask = lang_mask.cpu().numpy()[0]
-        if lang_emb.shape[0] < 32:
-            lang_emb = np.pad(lang_emb, ((0, 32 - lang_emb.shape[0]), (0, 0)))
-            lang_mask = np.pad(lang_mask, (0, 32 - lang_mask.shape[0]))
-        elif lang_emb.shape[0] > 32:
-            lang_emb = lang_emb[:32, :]
-            lang_mask = lang_mask[:32]
-        lang_emb = torch.tensor(lang_emb, device=device)[None]
-        lang_mask = torch.tensor(lang_mask, device=device)[None]
+        success = []
 
-        pointcloud = torch.tensor(obs["agentview_pointcloud"], device=device, dtype=torch.float32)
-        pointcloud = pointcloud[None, None].repeat(1, To, 1, 1)
+        for init_state_id in range(env.num_init_states):
+            dummy_steps = 0
+            obs, all_done, all_rew = env.reset(init_state_id=init_state_id), False, 0
 
-        frames = []
-        frames.append(
-            np.concatenate([obs["agentview_image"], obs["robot0_eye_in_hand_image"]], 2).transpose(
-                1, 2, 0
+            pointcloud = torch.tensor(
+                obs["agentview_pointcloud"], device=device, dtype=torch.float32
             )
-        )
-        while not np.all(all_done):
-            act, log = policy.sample(
-                prior,
-                solver="ddpm",
-                sample_steps=sampling_steps,
-                condition_cfg={
-                    "pointcloud": pointcloud,
-                    "language_embedding": lang_emb,
-                    "language_mask": lang_mask,
-                },
-                w_cfg=1.0,
-            )
-            # act = act.cpu().numpy()
-            act = normalizer["action"].unnormalize(act.cpu().numpy())
+            pointcloud = pointcloud[None, None].repeat(1, To, 1, 1)
 
-            for i in range(num_act_exec):
-                next_obs, rew, done, _ = env.step(act[0, i])
-                all_done = np.logical_or(all_done, done)
-                all_rew += rew
-                frames.append(
-                    np.concatenate(
-                        [next_obs["agentview_image"], next_obs["robot0_eye_in_hand_image"]], 2
-                    ).transpose(1, 2, 0)
+            frames = []
+            frames.append(
+                np.concatenate(
+                    [obs["agentview_image"], obs["robot0_eye_in_hand_image"]], 2
+                ).transpose(1, 2, 0)
+            )
+            while not np.all(all_done):
+                act, log = policy.sample(
+                    prior,
+                    solver="ddpm",
+                    sample_steps=sampling_steps,
+                    condition_cfg={
+                        "pointcloud": pointcloud,
+                        "language_embedding": lang_emb,
+                        "language_mask": lang_mask,
+                    },
+                    use_ema=False,
+                    w_cfg=1.0,
                 )
+                act = normalizer["action"].unnormalize(act.cpu().numpy())
 
-                if i >= num_act_exec - To:
-                    this_pointcloud = torch.tensor(
-                        next_obs["agentview_pointcloud"], device=device, dtype=torch.float32
+                # Objects may fall down from sky when initializing the environment
+                # Take a few dummy steps to stabilize the environment
+                if dummy_steps < 2:
+                    act = np.zeros((1, num_act_exec, act_dim), dtype=np.float32)
+                    dummy_steps += 1
+
+                for i in range(num_act_exec):
+                    next_obs, rew, done, _ = env.step(act[0, i])
+                    all_done = np.logical_or(all_done, done)
+                    all_rew += rew
+
+                    if i >= num_act_exec - To:
+                        this_pointcloud = torch.tensor(
+                            next_obs["agentview_pointcloud"], device=device, dtype=torch.float32
+                        )
+                        pointcloud[:, i - num_act_exec + To] = this_pointcloud[None]
+
+                    if np.all(all_done):
+                        break
+
+                    frames.append(
+                        np.concatenate(
+                            [next_obs["agentview_image"], next_obs["robot0_eye_in_hand_image"]], 2
+                        ).transpose(1, 2, 0)
                     )
-                    pointcloud[:, i - num_act_exec + To] = this_pointcloud[None]
 
-                if np.all(all_done):
-                    break
+                cprint(f"[Test {init_state_id}] Success: {all_rew}", "green")
 
-            print("Rewards:", all_rew)
+            writer = imageio.get_writer(default_root_dir / "video.mp4", fps=30)
+            for frame in frames:
+                writer.append_data(frame)
+            writer.close()
 
-        writer = imageio.get_writer(default_root_dir / "video.mp4", fps=30)
-        for frame in frames:
-            writer.append_data(frame)
-        writer.close()
+            if all_rew:
+                success.append(True)
+
+        print(f"Success rate: {np.sum(success) / env.num_init_states}")
 
         env.close()
 
