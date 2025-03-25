@@ -11,3 +11,4 @@ from .pearcetransformer import PearceTransformer
 from .sfbc_unet import SfBCUNet
 from .transition_transformer import TransitionTransformer
 from .unet import UNet1d
+from .unet2d import UNet2d
