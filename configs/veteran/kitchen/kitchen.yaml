@@ -57,7 +57,7 @@ save_interval: 100000
 # Inference
 num_envs: 50
 num_episodes: 20
-planner_num_candidates: 50
+planner_num_candidates: 150
 planner_ckpt: 1000000
 critic_ckpt: 200000
 policy_ckpt: 1000000
